@@ -244,19 +244,46 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
     for object in blenderobjects.values():
         blobject = object.object
         anim = blobject.animation_data
-        #Is there animation data at all?
+        # Is there animation data at all?
         if anim is not None and anim.action is not None:
+            quat_anim = {}
+            has_euler_keys = False
+            # Prefer quaternion curves if the object is actually in quaternion mode.
+            prefer_quat = (getattr(blobject, "rotation_mode", "XYZ") == 'QUATERNION')
             for curve in anim.action.fcurves:
+                data_path = curve.data_path
                 for akeyframe in curve.keyframe_points:
-                    keyframe, keyvalue = int(akeyframe.co[0]), akeyframe.co[1]
-                    if curve.data_path == 'rotation_euler':
-                        if not keyframe in object.rotanim:
-                            object.rotanim[keyframe] = [0.0,0.0,0.0]
+                    keyframe = int(akeyframe.co[0])
+                    keyvalue = akeyframe.co[1]
+                    # Euler rotation curves (only if we don't explicitly prefer quats)
+                    if data_path == 'rotation_euler' and not prefer_quat:
+                        has_euler_keys = True
+                        if keyframe not in object.rotanim:
+                            object.rotanim[keyframe] = [0.0, 0.0, 0.0]
                         object.rotanim[keyframe][curve.array_index] = keyvalue
-                    if curve.data_path == 'location':
-                        if not keyframe in object.posanim:
-                            object.posanim[keyframe] = [0.0,0.0,0.0]
+                    # Quaternion rotation curves
+                    elif data_path == 'rotation_quaternion':
+                        if keyframe not in quat_anim:
+                            # Identity quaternion (w, x, y, z)
+                            quat_anim[keyframe] = [1.0, 0.0, 0.0, 0.0]
+                        quat_anim[keyframe][curve.array_index] = keyvalue
+                    # Location curves
+                    elif data_path == 'location':
+                        if keyframe not in object.posanim:
+                            object.posanim[keyframe] = [0.0, 0.0, 0.0]
                         object.posanim[keyframe][curve.array_index] = keyvalue
+
+            # If we have quaternion curves, convert them to Euler
+            # - always, when the object is in QUATERNION mode
+            # - otherwise, only if we didn't find usable Euler keys
+            if quat_anim and (prefer_quat or not has_euler_keys):
+                from mathutils import Quaternion
+                for frame, quat_vals in quat_anim.items():
+                    q = Quaternion(quat_vals)  # (w, x, y, z)
+                    # Convert to Euler in Blender's default XYZ order;
+                    # later we remap to the Battlezone YZX convention.
+                    eul = q.to_euler('XYZ')
+                    object.rotanim[frame] = [eul.x, eul.y, eul.z]
     
     '''
     Read the element data in blender and get it ready for writing later.
