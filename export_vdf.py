@@ -190,11 +190,26 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
                     GEO.parent = 'WORLD'
             else:
                 GEO.parent = 'WORLD'
+
+            # --------------------------------------------------
+            # Transform with SCALE baked in (right/up/front/pos)
+            # --------------------------------------------------
             euler = mathutils.Euler((0.0, math.radians(45.0),0.0),'YZX')
             euler[:] = object.rotation_euler.x, object.rotation_euler.z, object.rotation_euler.y
-            thematrix = euler.to_matrix()
+            rot_matrix = euler.to_matrix()   # 3x3
+
+            # Make an explicit 3x3 diagonal scale matrix
+            sx, sy, sz = object.scale
+            scale_mat = mathutils.Matrix((
+                (sx, 0.0, 0.0),
+                (0.0, sy, 0.0),
+                (0.0, 0.0, sz),
+            ))
+
+            thematrix = rot_matrix @ scale_mat
+
             GEO.matrix[0:3] = thematrix[0][0:3]
-            GEO.matrix[3:7] = thematrix[1][0:3]
+            GEO.matrix[3:6] = thematrix[1][0:3]
             GEO.matrix[6:9] = thematrix[2][0:3]
             Translation = object.matrix_local.to_translation()
             GEO.matrix[9:12] = Translation.x, Translation.z, Translation.y
