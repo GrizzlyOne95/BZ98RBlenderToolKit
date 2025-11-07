@@ -61,6 +61,7 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
         # Read VGEO header.
         position = VGEO.Read(fileContent, position)
 
+        # Read all GEO slots (28 LOD-bands × geocount), including NULLs
         for i in range(28):
             for j in range(VGEO.geocount):
                 GEO = vdf_classes.GEOData()
@@ -122,6 +123,9 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
                 # Not enough bytes even for a COLP header.
                 COLP.data = [0.0] * 12
 
+        # ------------------------------------------------------------------
+        # Recreate the inner/outer collision boxes from COLP
+        # ------------------------------------------------------------------
         innermesh = bpy.data.meshes.new("mesh")
         innerobj = bpy.data.objects.new('inner_col', innermesh)
         outermesh = bpy.data.meshes.new("mesh")
@@ -148,6 +152,7 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
         bminner.to_mesh(innermesh)
         bminner.free
 
+        # Create mesh for outer box.
         bmouter = bmesh.new()
         for vert in [
             (XMaxOut, YMaxOut, ZMinOut),
@@ -164,6 +169,9 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
         bmouter.to_mesh(outermesh)
         bmouter.free
 
+        # ------------------------------------------------------------------
+        # Load GEOs and recreate Blender objects
+        # ------------------------------------------------------------------
         if ImportGEOs:
             # Load all the geos we now know about.
             OBJList = {}
@@ -218,6 +226,9 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
                     currentgeo = 0
                     currentlod = currentlod + 1
 
+            # ------------------------------------------------------------------
+            # Parent GEO objects according to GEO.parent
+            # ------------------------------------------------------------------
             for Model in OBJList.values():
                 if Model.geo.parent.lower() != 'world' and Model.geo.parent.lower() in OBJList:
                     Parent = OBJList[Model.geo.parent.lower()]
@@ -232,6 +243,9 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
                     if Parent is not None:
                         Model.object.parent = Parent.object
 
+            # ------------------------------------------------------------------
+            # Apply transform (rotation + scale + position) from GEO.matrix
+            # ------------------------------------------------------------------
             Matrix = mathutils.Matrix
             Vector = mathutils.Vector
 
@@ -240,31 +254,73 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
                 if Model.object.parent is None:
                     obj = Model.object
                     geo = Model.geo
-                    mat = Matrix()
-                    mat[0][0:3] = geo.matrix[0], geo.matrix[1], geo.matrix[2]
-                    mat[1][0:3] = geo.matrix[3], geo.matrix[4], geo.matrix[5]
-                    mat[2][0:3] = geo.matrix[6], geo.matrix[7], geo.matrix[8]
-                    rotation = mat.to_euler()
+
+                    # Rebuild 3x3 basis from GEO matrix (right, up, front w/ scale baked in)
+                    mat3 = mathutils.Matrix((
+                        (geo.matrix[0], geo.matrix[1], geo.matrix[2]),
+                        (geo.matrix[3], geo.matrix[4], geo.matrix[5]),
+                        (geo.matrix[6], geo.matrix[7], geo.matrix[8]),
+                    ))
+
+                    # Decompose: scale from column lengths, then normalize columns to get pure rotation
+                    sx = mat3.col[0].length
+                    sy = mat3.col[1].length
+                    sz = mat3.col[2].length
+
+                    rot_mat = mat3.copy()
+                    if sx != 0.0:
+                        rot_mat.col[0] /= sx
+                    if sy != 0.0:
+                        rot_mat.col[1] /= sy
+                    if sz != 0.0:
+                        rot_mat.col[2] /= sz
+
+                    rotation = rot_mat.to_euler()
                     rotation[:] = rotation[0], rotation[2], rotation[1]
                     obj.rotation_mode = 'YZX'
                     obj.rotation_euler = rotation
-                    obj.location = Vector((geo.matrix[9], geo.matrix[11], geo.matrix[10]))
+
+                    # Apply scale that was encoded in the basis vectors
+                    obj.scale = mathutils.Vector((sx, sy, sz))
+
+                    # Position (same axis remap as before)
+                    obj.location = mathutils.Vector((geo.matrix[9], geo.matrix[11], geo.matrix[10]))
 
             # Position children to their parents.
             for Model in OBJList.values():
                 if Model.object.parent is not None:
                     obj = Model.object
                     geo = Model.geo
-                    mat = Matrix()
-                    mat[0][0:3] = geo.matrix[0], geo.matrix[1], geo.matrix[2]
-                    mat[1][0:3] = geo.matrix[3], geo.matrix[4], geo.matrix[5]
-                    mat[2][0:3] = geo.matrix[6], geo.matrix[7], geo.matrix[8]
-                    rotation = mat.to_euler()
+
+                    mat3 = mathutils.Matrix((
+                        (geo.matrix[0], geo.matrix[1], geo.matrix[2]),
+                        (geo.matrix[3], geo.matrix[4], geo.matrix[5]),
+                        (geo.matrix[6], geo.matrix[7], geo.matrix[8]),
+                    ))
+
+                    sx = mat3.col[0].length
+                    sy = mat3.col[1].length
+                    sz = mat3.col[2].length
+
+                    rot_mat = mat3.copy()
+                    if sx != 0.0:
+                        rot_mat.col[0] /= sx
+                    if sy != 0.0:
+                        rot_mat.col[1] /= sy
+                    if sz != 0.0:
+                        rot_mat.col[2] /= sz
+
+                    rotation = rot_mat.to_euler()
                     rotation[:] = rotation[0], rotation[2], rotation[1]
                     obj.rotation_mode = 'YZX'
                     obj.rotation_euler = rotation
-                    obj.location = Vector((geo.matrix[9], geo.matrix[11], geo.matrix[10]))
 
+                    obj.scale = mathutils.Vector((sx, sy, sz))
+                    obj.location = mathutils.Vector((geo.matrix[9], geo.matrix[11], geo.matrix[10]))
+
+        # ------------------------------------------------------------------
+        # Load animation into the scene (if present and requested)
+        # ------------------------------------------------------------------
         bpy.context.scene.AnimationCollection.clear()
         if ImportGEOs and ImportAnimations:
             for element in ANIMelements:
@@ -281,7 +337,8 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
                 if geoname in ANIMorientations:
                     modelanim = ANIMorientations[geoname]
                     if modelanim.rotationcount > 0:
-                        for index in range(modelanim.rotationindex, modelanim.rotationindex + modelanim.rotationcount):
+                        for index in range(modelanim.rotationindex,
+                                           modelanim.rotationindex + modelanim.rotationcount):
                             RotQuaternion = mathutils.Quaternion((
                                 ANIMrotations[index].translate[0],
                                 ANIMrotations[index].translate[1],
@@ -296,13 +353,15 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True, PreserveF
                                 EndFrame = ANIMrotations[index].frame
 
                     if modelanim.positioncount > 0:
-                        for index in range(modelanim.positionindex, modelanim.positionindex + modelanim.positioncount):
+                        for index in range(modelanim.positionindex,
+                                           modelanim.positionindex + modelanim.positioncount):
                             Model.object.location = (
                                 ANIMpositions[index].translate[0],
                                 ANIMpositions[index].translate[2],
                                 ANIMpositions[index].translate[1]
                             )
-                            Model.object.keyframe_insert(data_path="location", frame=ANIMpositions[index].frame)
+                            Model.object.keyframe_insert(data_path="location",
+                                                         frame=ANIMpositions[index].frame)
                             if ANIMpositions[index].frame > EndFrame:
                                 EndFrame = ANIMpositions[index].frame
 
