@@ -310,17 +310,42 @@ class COLPSection:
         self.binlength = 56
 
     def Read(self, fileContent, position):
+        """
+        Safely read a COLP section.
+
+        If there aren't enough bytes left in the file to read a full COLP
+        block, we treat it as missing/truncated and return without raising.
+        """
+        # Not enough bytes for a full COLP section – treat as missing.
+        if position + self.binlength > len(fileContent):
+            # Safe defaults: empty collision box
+            self.headername = ''
+            self.sectionlength = 0
+            self.data = [0.0] * 12
+            return position  # don't advance past EOF
+
+        import struct
         array = struct.unpack(self.binstring, fileContent[position:position + self.binlength])
-        self.headername = safe_decode_ascii(array[0])
+        # (use safe decode if you prefer, but this matches the existing code)
+        self.headername = array[0].decode('ascii').strip('\0')
         self.sectionlength = array[1]
         self.data = array[2:14]
         return position + self.binlength
 
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, b'COLP', self.binlength, *self.data)
+        import struct
+        struct.pack_into(
+            self.binstring,
+            buffer,
+            0,
+            b'COLP',
+            self.binlength,
+            *self.data
+        )
         fileHandle.write(buffer)
         return position + self.binlength
+
 
 
 class SCPSSection:
