@@ -6,3 +6,4 @@ All credit to Kindrad for Blender plugin code for Ogre Mesh code.
 
 - Fixed GEO Normal Exports for BZR
 - Fixed VDF/SDF/Geo imports for non-ASCII characters in files (e.g. TRO VDF's)
+- Fixed bad material indices 
