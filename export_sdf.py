@@ -211,23 +211,55 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
     '''
     Load all the keyframes for more specific handling below.
     '''
-    for object in blenderobjects.values():
-        blobject = object.object
+    for bo in blenderobjects.values():
+        blobject = bo.object
         anim = blobject.animation_data
-        #Is there animation data at all?
-        if anim is not None and anim.action is not None:
+        # Is there animation data at all?
+        if anim is None or anim.action is None:
+            continue
+
+        # If the object is in quaternion rotation mode, read quaternion curves and convert to Euler.
+        if getattr(blobject, "rotation_mode", "XYZ") == 'QUATERNION':
+            quat_anim = {}
+            for curve in anim.action.fcurves:
+                data_path = curve.data_path
+                for akeyframe in curve.keyframe_points:
+                    keyframe = int(akeyframe.co[0])
+                    keyvalue = akeyframe.co[1]
+
+                    if data_path == 'rotation_quaternion':
+                        if keyframe not in quat_anim:
+                            # Identity quaternion (w, x, y, z)
+                            quat_anim[keyframe] = [1.0, 0.0, 0.0, 0.0]
+                        quat_anim[keyframe][curve.array_index] = keyvalue
+                    elif data_path == 'location':
+                        if keyframe not in bo.posanim:
+                            bo.posanim[keyframe] = [0.0, 0.0, 0.0]
+                        bo.posanim[keyframe][curve.array_index] = keyvalue
+
+            # Convert collected quaternions to Euler XYZ and store just like the original Euler path.
+            if quat_anim:
+                from mathutils import Quaternion
+                for frame, quat_vals in quat_anim.items():
+                    q = Quaternion(quat_vals)  # (w, x, y, z)
+                    eul = q.to_euler('XYZ')
+                    bo.rotanim[frame] = [eul.x, eul.y, eul.z]
+
+        else:
+            # ORIGINAL EULER-ONLY BEHAVIOR (unchanged), plus location.
             for curve in anim.action.fcurves:
                 for akeyframe in curve.keyframe_points:
-                    keyframe, keyvalue = int(akeyframe.co[0]), akeyframe.co[1]
+                    keyframe = int(akeyframe.co[0])
+                    keyvalue = akeyframe.co[1]
                     if curve.data_path == 'rotation_euler':
-                        if not keyframe in object.rotanim:
-                            object.rotanim[keyframe] = [0.0,0.0,0.0]
-                        object.rotanim[keyframe][curve.array_index] = keyvalue
+                        if keyframe not in bo.rotanim:
+                            bo.rotanim[keyframe] = [0.0, 0.0, 0.0]
+                        bo.rotanim[keyframe][curve.array_index] = keyvalue
                     if curve.data_path == 'location':
-                        if not keyframe in object.posanim:
-                            object.posanim[keyframe] = [0.0,0.0,0.0]
-                        object.posanim[keyframe][curve.array_index] = keyvalue
-    
+                        if keyframe not in bo.posanim:
+                            bo.posanim[keyframe] = [0.0, 0.0, 0.0]
+                        bo.posanim[keyframe][curve.array_index] = keyvalue
+
     '''
     Read the element data in blender and get it ready for writing later.
     '''
