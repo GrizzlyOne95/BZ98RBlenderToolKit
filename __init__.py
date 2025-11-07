@@ -213,26 +213,72 @@ class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
     )
 
 geotypes = []
-for i in range(0,80):
-    geotypes.append((i,str(i) + " - Unknown", ""))
-    
-def insertgeotypedata(i,name):
-    geotypes[i] = (i,str(i) + f' - {name}', "")
+# Build default "Unknown" entries up through at least the highest known ID (81)
+for i in range(0, 82):
+    geotypes.append((i, f"{i} - Unknown", ""))
 
-insertgeotypedata(33, 'LGT(Vehicle Light?)')
-insertgeotypedata(34, 'Radar(Unknown if this does anything)')
-insertgeotypedata(38, 'LGT(Vehicle Light?)')
-insertgeotypedata(40, 'Point of View(Sniper Dot/1ST Person position)')
-insertgeotypedata(60, 'Vehicle Body')
-insertgeotypedata(65, 'Turret(tx1/ty1 suffix)')
-insertgeotypedata(66, 'Rotator')
-insertgeotypedata(67, 'Fin/Thruster')
-insertgeotypedata(68, 'Aerodynamic Side Fin')
-insertgeotypedata(70, 'Producer Smoke')
-insertgeotypedata(71, 'Cannon Hardpoint')
-insertgeotypedata(72, 'Rocket Hardpoint')
-insertgeotypedata(73, 'Mortar Hardpoint')
-insertgeotypedata(74, 'Special Hardpoint/Producer/Tug')
+
+def insertgeotypedata(idx, label):
+    geotypes[idx] = (idx, f"{idx} - {label}", "")
+
+
+# -------------------------------------------------------------------
+# GEO CLASS IDs (from Battlezone’s CLASS_ID_* definitions)
+# -------------------------------------------------------------------
+insertgeotypedata(0,  "NONE (Does nothing, part of main object)")
+insertgeotypedata(1,  "HELICOPTER (Crashes game as VDF/SDF – do not use)")
+insertgeotypedata(2,  "STRUCTURE1 (Wooden structures, unknown)")
+insertgeotypedata(3,  "POWERUP (Crashes game as VDF/SDF)")
+insertgeotypedata(4,  "PERSON (Unknown / untested)")
+insertgeotypedata(5,  "SIGN (Unknown / untested)")
+insertgeotypedata(6,  "VEHICLE (Unknown / untested)")
+insertgeotypedata(7,  "SCRAP (Scrap material)")
+insertgeotypedata(8,  "BRIDGE (Structure containing floor; likely no extra behavior)")
+insertgeotypedata(9,  "FLOOR (Bridge floor; likely no extra behavior)")
+insertgeotypedata(10, "STRUCTURE2 (Metal structures)")
+insertgeotypedata(11, "SCROUNGE (Faces GEO toward camera)")
+
+# Old “LGT” guess – still unknown, keep for completeness
+insertgeotypedata(33, "LGT (Vehicle light? – legacy guess)")
+
+insertgeotypedata(15, "SPINNER (Spinner / rotating geo; usable on VDFs & buildings)")
+
+insertgeotypedata(34, "RADAR (Unknown, likely no effect)")
+insertgeotypedata(38, "HEADLIGHT_MASK (Redux headlight bone)")
+insertgeotypedata(40, "EYEPOINT (POV / sniper dot / 1st-person origin)")
+insertgeotypedata(42, "COM (Center of mass; unused)")
+
+# Legacy geometry “role” IDs
+insertgeotypedata(50, "WEAPON (Weapon geometry – legacy)")
+insertgeotypedata(51, "ORDNANCE (Ordnance geometry – legacy)")
+insertgeotypedata(52, "EXPLOSION (Explosion geometry)")
+insertgeotypedata(53, "CHUNK (Chunk geometry)")
+insertgeotypedata(54, "SORT_OBJECT (Sorting object)")
+insertgeotypedata(55, "NONCOLLIDABLE (Non-collidable geometry)")
+
+# Modern geometry role IDs
+insertgeotypedata(60, "VEHICLE_GEOMETRY (Vehicle geometry / body)")
+insertgeotypedata(61, "STRUCTURE_GEOMETRY (Structure geometry)")
+insertgeotypedata(63, "WEAPON_GEOMETRY (Weapon geometry)")
+insertgeotypedata(64, "ORDNANCE_GEOMETRY (Ordnance geometry)")
+insertgeotypedata(65, "TURRET_GEOMETRY (X/Y turret rotators, gun towers)")
+insertgeotypedata(66, "ROTOR_GEOMETRY (Rotates on A/D thrust)")
+insertgeotypedata(67, "NACELLE_GEOMETRY (Thrust/steering nacelle; W/A/S/D + flame)")
+insertgeotypedata(68, "FIN_GEOMETRY (Steering fin)")
+insertgeotypedata(69, "COCKPIT_GEOMETRY (Cockpit geometry)")
+
+# Hardpoints & emitters
+insertgeotypedata(70, "WEAPON_HARDPOINT (* hardpoint, no default powerups) Also Prod Unit Smoke Emitter")
+insertgeotypedata(71, "CANNON_HARDPOINT")
+insertgeotypedata(72, "ROCKET_HARDPOINT")
+insertgeotypedata(73, "MORTAR_HARDPOINT")
+insertgeotypedata(74, "SPECIAL_HARDPOINT (where prod unit throws out a build")
+insertgeotypedata(75, "FLAME_EMITTER (Visible on full forward thrust). Makes the geo geometry invisible.")
+insertgeotypedata(76, "SMOKE_EMITTER")
+insertgeotypedata(77, "DUST_EMITTER")
+
+insertgeotypedata(81, "PARKING_LOT (Hangar / supply pad center of effect)")
+
     
 class GEOPropertyGroup(bpy.types.PropertyGroup):
     GenerateCollision: bpy.props.BoolProperty(
@@ -306,12 +352,13 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
     )
     
     GEOFlags: bpy.props.IntProperty(
-        name = "GEO Flags",
-        description="",
-        default = 0,
-        min = -500000,
-        max = 500000
+        name="GEO Flags",
+        description="Bitfield of GEO flags (32-bit). Each bit enables a specific Battlezone GEO behavior.",
+        default=0,
+        min=-2147483648,
+        max=2147483647,
     )
+
     
     SDFDDR: bpy.props.IntProperty(
         name = "DDR",
@@ -754,40 +801,51 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
                                             ))
         return export_vdf.export(bpy.context, **keywords)
         
+import bpy
+from bpy_extras.io_utils import ExportHelper
+from bpy.props import BoolProperty, StringProperty
+from . import export_sdf
+
+
 class ExportSDF(bpy.types.Operator, ExportHelper):
+    """Exports a Battlezone SDF file"""
     bl_idname = "export_scene.sdf"
     bl_label = "Export SDF"
-    bl_description = "Export a Battlezone .SDF file"
-    bl_options = {'PRESET', 'UNDO'}
+    bl_description = (
+        "Export a Battlezone SDF structure file (.sdf). "
+        "Note: Must have at least one animation defined in the Scene's Animation Collection "
+        "for animation data to be included."
+    )
     filename_ext = ".sdf"
     filter_glob: StringProperty(
-            default="*.sdf",
-            options={'HIDDEN'},
-            )
+        default="*.sdf",
+        options={'HIDDEN'},
+        maxlen=255,
+    )
 
     ExportAnimations: BoolProperty(
-            name="Export Animations",
-            description="Export Animations for the VDF",
-            default=True,
+        name="Export Animations",
+        description="Export any animation data defined in Scene.AnimationCollection",
+        default=True,
+    )
+    ExportSDFOnly: BoolProperty(
+        name="Export SDF Only",
+        description="Skip exporting referenced GEO files; export only the SDF container",
+        default=False,
+    )
+
+    def execute(self, context):
+        # Warn if there are no animation definitions in the Scene
+        anims = getattr(context.scene, "AnimationCollection", None)
+        if not anims or len(anims) == 0:
+            self.report(
+                {'WARNING'},
+                "No animations defined in Scene.AnimationCollection — exported SDF will contain no ANIM data."
             )
 
-    ExportSDFOnly: BoolProperty(
-            name="Export Only SDF(Don't Export GEOs)",
-            description="Export only the SDF file to preserve old GEO files",
-            default=False,
-            )
-    
-    def execute(self, context):
-        from . import export_sdf
-        #Don't pass a ton of stupid stuff to our export function. Who even cares!
-        keywords = self.as_keywords(ignore=("axis_forward",
-                                            "axis_up",
-                                            "filter_glob",
-                                            "split_mode",
-                                            "check_existing",
-                                            "relpath"
-                                            ))
-        return export_sdf.export(bpy.context, **keywords)
+        keywords = self.as_keywords(ignore=("check_existing", "filter_glob"))
+        return export_sdf.export(context, **keywords)
+
 
 def menu_func_import(self, context):
     self.layout.operator(ImportGEO.bl_idname, text="Battlezone Geometry (.geo)")
