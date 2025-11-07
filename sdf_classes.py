@@ -27,9 +27,11 @@ class SDFHeader:
         return position + self.binlength
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring,fileHandle, buffer, 0, b'BWD2' ,8, b'REV', 12, 8)
+        # Same layout as VDFHeader, but with the SDF-specific "Unknown" field value (8).
+        struct.pack_into(self.binstring, buffer, 0, b'BWD2', 8, b'REV', 12, 8)
         fileHandle.write(buffer)
         return self.binlength + position
+
         
 class SDFCHeader:
     def __init__(self):
@@ -82,7 +84,8 @@ class SGEOHeader:
 #Represents the most important information of a GEO.        
 class GEOData:
     def __init__(self):
-        self.binstring = '=8s12f8s7fifi4f'
+        # 7f i i i 4f => type:int, geoflags:int, ddr:int
+        self.binstring = '=8s12f8s7fiii4f'
         self.binlength = 120
     def Read (self, fileContent, position):
         array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
@@ -93,7 +96,7 @@ class GEOData:
         self.sphereradius = array[17]
         self.boxhalfheight = array[18:21]
         self.type = array[21]
-        self.geoflags = array[22]
+        self.geoflags = array[22]   # now an int
         self.ddr = array[23]
         self.x = array[24]
         self.y = array[25]
@@ -102,42 +105,96 @@ class GEOData:
         return position + self.binlength
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, 
-        bytes(self.name,'ascii', errors='ignore'), 
-        self.matrix[0], self.matrix[1], self.matrix[2], self.matrix[3], self.matrix[4], self.matrix[5], self.matrix[6], self.matrix[7], self.matrix[8], self.matrix[9], self.matrix[10], self.matrix[11],
-        bytes(self.parent,'ascii', errors='ignore'), 
-        self.geocenter[0], self.geocenter[1], self.geocenter[2], 
-        self.sphereradius, 
-        self.boxhalfheight[0], self.boxhalfheight[1], self.boxhalfheight[2], 
-        self.type, 
-        self.geoflags, 
-        self.ddr, 
-        self.x, self.y, self.z, self.time)
+        struct.pack_into(
+            self.binstring,
+            buffer,
+            0,
+            bytes(self.name, 'ascii', errors='ignore'),
+            self.matrix[0], self.matrix[1], self.matrix[2], self.matrix[3],
+            self.matrix[4], self.matrix[5], self.matrix[6], self.matrix[7],
+            self.matrix[8], self.matrix[9], self.matrix[10], self.matrix[11],
+            bytes(self.parent, 'ascii', errors='ignore'),
+            self.geocenter[0], self.geocenter[1], self.geocenter[2],
+            self.sphereradius,
+            self.boxhalfheight[0], self.boxhalfheight[1], self.boxhalfheight[2],
+            self.type,
+            self.geoflags,      # packed as int
+            self.ddr,
+            self.x, self.y, self.z, self.time,
+        )
         fileHandle.write(buffer)
         return position + self.binlength
 
+
 class ANIMHeader:
     def __init__(self):
-        self.binstring = '=4si16s6i6i'
+        # 4s  i   16s   5i         i      6i
+        # tag len name counts      null2  unknown2+reserved(5)
+        self.binstring = '=4si16s5ii6i'
         self.binlength = 72
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+        # sane defaults so export works even if exporter doesn't set everything
+        self.headername = 'ANIM'
+        self.sectionlength = self.binlength
+        self.name = ""
+        self.elementscount = 0
+        self.orientationscount = 0
+        self.rotationcount = 0
+        self.translation2count = 0
+        self.positioncount = 0
+        self.null2 = 0
+        self.unknown2 = 0
+        # 5 reserved ints (we won't really use them)
+        self._reserved = [0] * 5
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring,
+            fileContent[position:position + self.binlength]
+        )
+        # 0..2: tag, len, name
         self.headername = safe_decode_ascii(array[0])
         self.sectionlength = array[1]
         self.name = safe_decode_ascii(array[2])
-        self.elementscount = array[3]
-        self.orientationscount = array[4]
-        self.rotationcount = array[5]
-        self.translation2count = array[6]
-        self.positioncount = array[7]
-        self.null = array[8:14]
+        # 3..7: 5 counts
+        self.elementscount      = array[3]
+        self.orientationscount  = array[4]
+        self.rotationcount      = array[5]
+        self.translation2count  = array[6]
+        self.positioncount      = array[7]
+        # 8: null2
+        self.null2   = array[8]
+        # 9..14: unknown2 + 5 reserved ints
+        self.unknown2 = array[9]
+        self._reserved = list(array[10:15])
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        #struct.pack_into(self.binstring, buffer, 0, b'ANIM', self.sectionlength, b'ANIMTEST\0\0\0\0\0\0\0\0', self.elementscount, self.orientationscount, self.rotationcount, self.translation2count, self.positioncount, 0, 0, 0, 0, 0, 0)
-        struct.pack_into(self.binstring, buffer, 0, b'ANIM', self.sectionlength, b'.', self.elementscount, self.orientationscount, self.rotationcount, self.translation2count, self.positioncount, 0, 0, 0, 0, 0, 0)
+        struct.pack_into(
+            self.binstring,
+            buffer,
+            0,
+            b'ANIM',
+            int(self.sectionlength),
+            bytes(self.name or "", 'ascii', errors='ignore'),
+            # 5 counts:
+            int(self.elementscount),
+            int(self.orientationscount),
+            int(self.rotationcount),
+            int(self.translation2count),
+            int(self.positioncount),
+            # null2:
+            int(self.null2),
+            # unknown2 + 5 reserved:
+            int(self.unknown2),
+            0, 0, 0, 0, 0
+        )
         fileHandle.write(buffer)
         return position + self.binlength
+
+
+
 
 class ANIMElement:
     def __init__(self):
