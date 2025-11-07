@@ -133,6 +133,17 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
     Matrix = mathutils.Matrix
     Vector = mathutils.Vector
     for object in bpy.data.objects:
+        # --- Failsafe: fix invalid material indices on this object's mesh ---
+        mesh = getattr(object, "data", None)
+        if hasattr(mesh, "polygons"):
+            mat_count = len(mesh.materials)
+            if mat_count > 0:
+                for poly in mesh.polygons:
+                    idx = getattr(poly, "material_index", 0)
+                    if idx is None or idx < 0 or idx >= mat_count:
+                        print(f"[BZ VDF Export] Warning: invalid material index {idx} on polygon {poly.index} of object {object.name}; resetting to 0.")
+                        poly.material_index = 0
+
         if object.name.lower() in ['inner_col','innercol','inner_collision',"innercollision"]:
             collisioninner = object
             offset = Vector((0.0,0.0,0.0)) - collisioninner.location
