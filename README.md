@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project are documented in this file.
 
+# Quick Updates Recap
+- Blender 4.5.1 Support
+- GeoFlags are read and written properly
+- The Red Odyssey VDF's import without crashing
+- If Battlezone Material Name is blank, it auto generates a safe file name on export based on Blender material name
+- Any matching detected .MAP files are decoded into .PNG and loaded into Blender as a material node for previewing
+- Invalid material indices are automatically fixed on export
+- Exporter no longer ignogres Quaternion animation keyframes and auto converts
+- GEO Scaling is no longer ignored and will be written/ignored as they can change behavior in game
+
+
 ## [0.9.4] – 2025-11-07
 ### Blender 4.5.1 compatibility & major robustness pass
 
