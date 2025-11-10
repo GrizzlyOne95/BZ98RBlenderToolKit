@@ -33,8 +33,8 @@ if "bpy" in locals():
 bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5.1)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
-    "author": "Commando950",
-    "version": (0, 9, 4),
+    "author": "Commando950/DivisionByZero/GrizzlyOne95",
+    "version": (0, 9, 5),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -509,7 +509,8 @@ class BattlezoneMaterialProperties(bpy.types.Panel):
         box = layout.box()
         box.label(text="Material Settings")
         box.prop( MaterialPropertyGroup, "MapTexture")
-        box.prop( Material, "diffuse_color")
+        # Fix: use the current material, not an undefined 'Material'
+        box.prop( material, "diffuse_color")
       
 
 '''
@@ -525,13 +526,6 @@ class OPCreateNewElement(bpy.types.Operator):
     def execute(self, context):
         item = context.scene.AnimationCollection.add()
         item.Index = len(context.scene.AnimationCollection)-1
-        '''
-        item.Index = 0
-        item.Start = 0
-        item.Length = 0
-        item.Loop = 1
-        item.Speed = 15
-        '''
         return {'FINISHED'}
 
 class OPDeleteElement(bpy.types.Operator):
@@ -664,6 +658,12 @@ class ImportGEO(bpy.types.Operator, ImportHelper):
             description="Preserves all colors from the GEOs by making a material for every single face! Each face material will preserve the original GEO color.",
             default=True,
             )
+
+    ImportMapTextures: BoolProperty(
+            name="Auto-load .map textures",
+            description="Automatically load matching .map files for materials and hook them up as image textures.",
+            default=True,
+            )
     
     def execute(self, context):
         from . import import_geo
@@ -699,6 +699,12 @@ class ImportVDF(bpy.types.Operator, ImportHelper):
             default=True,
             )
 
+    ImportMapTextures: BoolProperty(
+            name="Auto-load .map textures",
+            description="Automatically load matching .map files for materials and hook them up as image textures.",
+            default=True,
+            )
+
     def execute(self, context):
         from . import import_vdf
         #Don't pass a ton of stupid stuff to our load function. Who even cares!
@@ -731,6 +737,12 @@ class ImportSDF(bpy.types.Operator, ImportHelper):
             description="Preserves all colors from the GEOs by making a material for every single face! Each face material will preserve the original GEO color",
             default=True,
             )
+
+    ImportMapTextures: BoolProperty(
+            name="Auto-load .map textures",
+            description="Automatically load matching .map files for materials and hook them up as image textures.",
+            default=True,
+            )
     
     def execute(self, context):
         from . import import_sdf
@@ -743,68 +755,117 @@ class ImportSDF(bpy.types.Operator, ImportHelper):
         return import_sdf.load(bpy.context, **keywords)
         
 class ExportGEO(bpy.types.Operator, ExportHelper):
-    bl_idname = "export_scene.geo"
+    bl_idname = "export_scene.geo"  # keep your existing idname if the rest of your addon expects this
     bl_label = "Export GEO"
     bl_description = "Export a Battlezone .GEO file"
     bl_options = {'PRESET', 'UNDO'}
+
     filename_ext = ".geo"
+
     filter_glob: StringProperty(
-            default="*.geo",
-            options={'HIDDEN'},
-            )
-    
+        default="*.geo",
+        options={'HIDDEN'},
+    )
+
+    # NEW: checkbox for Ogre conversion
+    auto_port_ogre: BoolProperty(
+        name="Convert export to BZ98R Mesh/Skeleton/Material",
+        description=(
+            "After writing the GEO, run the Battlezone model porter to create "
+            "OGRE .mesh/.skeleton/.material/.dds in the same directory"
+        ),
+        default=False,
+    )
+
     def execute(self, context):
         from . import export_geo
-        #Don't pass a ton of stupid stuff to our export function. Who even cares!
-        keywords = self.as_keywords(ignore=("axis_forward",
-                                            "axis_up",
-                                            "filter_glob",
-                                            "split_mode",
-                                            "check_existing",
-                                            "relpath"
-                                            ))
-                                            
-        return export_geo.export(bpy.context, **keywords)
+        from . import ogre_autoport
+
+        keywords = self.as_keywords(ignore=(
+            "axis_forward",
+            "axis_up",
+            "filter_glob",
+            "split_mode",
+            "check_existing",
+            "relpath",
+            "auto_port_ogre",  # 👈 add this
+        ))
+
+        result = export_geo.export(context, **keywords)
+
+        if result == {'FINISHED'} and self.auto_port_ogre:
+            ogre_autoport.auto_port_bz98_to_ogre(self.filepath)
+
+        return result
+
         
+import bpy
+from bpy_extras.io_utils import ExportHelper
+from bpy.props import StringProperty, BoolProperty
+
+
 class ExportVDF(bpy.types.Operator, ExportHelper):
     bl_idname = "export_scene.vdf"
     bl_label = "Export VDF"
     bl_description = "Export a Battlezone .VDF file"
     bl_options = {'PRESET', 'UNDO'}
+
     filename_ext = ".vdf"
+
     filter_glob: StringProperty(
-            default="*.vdf",
-            options={'HIDDEN'},
-            )
+        default="*.vdf",
+        options={'HIDDEN'},
+    )
 
     ExportAnimations: BoolProperty(
-            name="Export Animations",
-            description="Export Animations for the VDF",
-            default=True,
-            )
+        name="Export Animations",
+        description="Export Animations for the VDF",
+        default=True,
+    )
 
     ExportVDFOnly: BoolProperty(
-            name="Export Only VDF(Don't Export GEOs)",
-            description="Export only the VDF file to preserve old GEO files",
-            default=False,
-            )
-    
+        name="Export Only VDF (Don't Export GEOs)",
+        description="Export only the VDF file to preserve old GEO files",
+        default=False,
+    )
+
+    # NEW: Ogre auto-port checkbox
+    auto_port_ogre: BoolProperty(
+        name="Convert export to BZ98R Mesh/Skeleton/Material",
+        description=(
+            "After writing the VDF, run the Battlezone model porter to create "
+            "OGRE .mesh/.skeleton/.material/.dds in the same directory"
+        ),
+        default=False,
+    )
+
     def execute(self, context):
         from . import export_vdf
-        #Don't pass a ton of stupid stuff to our export function. Who even cares!
-        keywords = self.as_keywords(ignore=("axis_forward",
-                                            "axis_up",
-                                            "filter_glob",
-                                            "split_mode",
-                                            "check_existing",
-                                            "relpath"
-                                            ))
-        return export_vdf.export(bpy.context, **keywords)
+        from . import ogre_autoport
+
+        # Don't pass a ton of stupid stuff to our export function. Who even cares!
+        keywords = self.as_keywords(ignore=(
+            "axis_forward",
+            "axis_up",
+            "filter_glob",
+            "split_mode",
+            "check_existing",
+            "relpath",
+            "auto_port_ogre",  # 👈 add this
+        ))
+
+        result = export_vdf.export(context, **keywords)
+
+        if result == {'FINISHED'} and self.auto_port_ogre:
+            ogre_autoport.auto_port_bz98_to_ogre(self.filepath)
+
+        return result
+
+
         
 import bpy
 from bpy_extras.io_utils import ExportHelper
-from bpy.props import BoolProperty, StringProperty
-from . import export_sdf
+from bpy.props import StringProperty, BoolProperty
 
 
 class ExportSDF(bpy.types.Operator, ExportHelper):
@@ -816,7 +877,9 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         "Note: Must have at least one animation defined in the Scene's Animation Collection "
         "for animation data to be included."
     )
+
     filename_ext = ".sdf"
+
     filter_glob: StringProperty(
         default="*.sdf",
         options={'HIDDEN'},
@@ -828,23 +891,52 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         description="Export any animation data defined in Scene.AnimationCollection",
         default=True,
     )
+
     ExportSDFOnly: BoolProperty(
         name="Export SDF Only",
         description="Skip exporting referenced GEO files; export only the SDF container",
         default=False,
     )
 
+    # NEW: Ogre auto-port toggle
+    auto_port_ogre: BoolProperty(
+        name="Convert export to BZ98R Mesh/Skeleton/Material",
+        description=(
+            "After writing the SDF, run the Battlezone model porter to create "
+            "OGRE .mesh/.skeleton/.material/.dds in the same directory"
+        ),
+        default=False,
+    )
+
     def execute(self, context):
+        from . import export_sdf
+        from . import ogre_autoport
+
         # Warn if there are no animation definitions in the Scene
         anims = getattr(context.scene, "AnimationCollection", None)
-        if not anims or len(anims) == 0:
+        if self.ExportAnimations and (not anims or len(anims) == 0):
             self.report(
                 {'WARNING'},
-                "No animations defined in Scene.AnimationCollection — exported SDF will contain no ANIM data."
+                "No animations defined in Scene.AnimationCollection — "
+                "exported SDF will contain no ANIM data."
             )
 
-        keywords = self.as_keywords(ignore=("check_existing", "filter_glob"))
-        return export_sdf.export(context, **keywords)
+        keywords = self.as_keywords(ignore=(
+            "check_existing",
+            "filter_glob",
+            "auto_port_ogre",   # 👈 add this
+        ))
+
+        # Do the normal SDF export
+        result = export_sdf.export(context, **keywords)
+
+        # If export succeeded and user enabled the toggle, run OGRE converter
+        if result == {'FINISHED'} and self.auto_port_ogre:
+            ogre_autoport.auto_port_bz98_to_ogre(self.filepath)
+
+        return result
+
+
 
 
 def menu_func_import(self, context):
