@@ -106,3 +106,6 @@ All notable changes to this project are documented in this file.
 - **Centralized registration**
   - PropertyGroups, panels, operators, and import/export classes are now registered from lists (`Properties`, `GUIClasses`, `ImportExportClasses`), simplifying future additions and ensuring all pieces unregister cleanly.
 
+### CREDITS
+- DivisionByZero for bzmap.py, bzmap_serializer.py, and bzact_serializer.py
+- Commando950 for original SDF/VDF/Geo Blender Editor Plugin 
