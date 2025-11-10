@@ -11,6 +11,7 @@ All notable changes to this project are documented in this file.
 - Exporter no longer ignogres Quaternion animation keyframes and auto converts
 - GEO Scaling is no longer ignored and will be written/ignored as they can change behavior in game
 - Option on exports to auto port the result to Ogre mesh/skeleton/material (Redux format)
+- Import/Export Redux format meshes/skeletons
 
 
 ## [0.9.4] – 2025-11-07
@@ -120,4 +121,5 @@ All notable changes to this project are documented in this file.
 
 ### CREDITS
 - DivisionByZero for bzmap.py, bzmap_serializer.py, and bzact_serializer.py
-- Commando950 for original SDF/VDF/Geo Blender Editor Plugin 
+- Commando950 for original SDF/VDF/Geo Blender Editor Plugin
+- Kindrad for Ogre Import/Export code
