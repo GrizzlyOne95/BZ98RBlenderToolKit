@@ -293,6 +293,117 @@ insertgeotypedata(77, "DUST_EMITTER")
 
 insertgeotypedata(81, "PARKING_LOT (Hangar / supply pad center of effect)")
 
+# -------------------------------
+# Animation Index Reference Popup
+# -------------------------------
+
+def draw_anim_index_reference_popup(self, context):
+    layout = self.layout
+    col = layout.column(align=False)
+
+    col.label(text="Battlezone Animation Index Reference")
+    col.separator()
+    col.label(text="Indexes are per-classLabel; same index can")
+    col.label(text="mean different things on different units.")
+    col.separator()
+
+    # Recycler
+    col.label(text="Recycler (classLabel = recycler)")
+    col.label(text="  0: Deploy")
+    col.label(text="  1: Undeploy")
+    col.separator()
+
+    # Factory
+    col.label(text="Factory (classLabel = factory)")
+    col.label(text="  0: Deploy")
+    col.label(text="  1: Undeploy")
+    col.label(text="  2: Idle")
+    col.label(text="  3: Deployed Idle")
+    col.label(text="  4: Deployed & Ready Idle")
+    col.separator()
+
+    # Armory
+    col.label(text="Armory (classLabel = armory)")
+    col.label(text="  0: Launch")
+    col.label(text="  1: Launch (Reverse)")
+    col.separator()
+
+    # Construction Rig
+    col.label(text="ConstructionRig (classLabel = constructionrig)")
+    col.label(text="  0: Deploying / Start Construction")
+    col.label(text="  1: Undeploying / Finished Construction")
+    col.label(text="  4: Deployed & Currently Constructing")
+    col.separator()
+
+    # Person
+    col.label(text="Person (classLabel = person)")
+    col.label(text="  0: Stand → Snipe")
+    col.label(text="  1: Snipe → Stand")
+    col.label(text="  2: Standing / Idle")
+    col.label(text="  3: Sniping / Idle")
+    col.label(text="  4: Walk Forwards")
+    col.label(text="  5: Walk Backwards")
+    col.label(text="  6: Strafe Left")
+    col.label(text="  7: Strafe Right")
+    col.label(text="  8: Sniped (death)")
+    col.label(text="  9: idleParachute (falling from sky)")
+    col.label(text="  10: landParachute (as pilot hits ground)")
+    col.label(text="  11: Jump")
+    col.separator()
+
+    # Scavenger
+    col.label(text="Scavenger (classLabel = scavenger)")
+    col.label(text="  0: Deploy")
+    col.label(text="  1: Undeploy")
+    col.label(text="  2: Idle")
+    col.label(text="  3: Deployed Idle")
+    col.label(text="  4: Undeploy (alt)")
+    col.separator()
+
+    # Tug
+    col.label(text="Tug (classLabel = tug)")
+    col.label(text="  0: Deploy")
+    col.label(text="  1: Undeploy")
+    col.separator()
+
+    # Howitzer
+    col.label(text="Howitzer (classLabel = howitzer)")
+    col.label(text="  0: Deploy")
+    col.label(text="  1: Undeploy")
+    col.separator()
+
+    # TurretTank
+    col.label(text="TurretTank (classLabel = turrettank)")
+    col.label(text="  0: Deploy")
+    col.label(text="  1: Undeploy")
+    col.separator()
+
+    # Walker
+    col.label(text="Walker (classLabel = walker)")
+    col.label(text="  0: Vehicle Get Out")
+    col.label(text="  1: Vehicle Get In")
+    col.label(text="  2: Stand / Idle (pilot inside)")
+    col.label(text="  3: No Pilot / Idle")
+    col.label(text="  4: Walk Forwards")
+    col.label(text="  5: Walk Backwards")
+    col.label(text="  6: Strafe Left")
+    col.label(text="  7: Strafe Right")
+
+
+class BZ_OT_ShowAnimIndexReference(bpy.types.Operator):
+    """Show a quick reference for Battlezone animation indices"""
+    bl_idname = "bz.show_anim_index_reference"
+    bl_label = "Animation Index Reference"
+
+    def invoke(self, context, event):
+        context.window_manager.popup_menu(
+            draw_anim_index_reference_popup,
+            title="Animation Index Reference",
+            icon='INFO'
+        )
+        return {'FINISHED'}
+
+
 class BZ_PT_GeoTypeListPopover(bpy.types.Panel):
     bl_idname = "BZ_PT_GeoTypeListPopover"
     bl_label = "GEO Type Reference"
@@ -842,6 +953,16 @@ class AnimationPanel(bpy.types.Panel):
             box.prop(scene.AnimationCollection[scene.CurAnimation], "Length")
             box.prop(scene.AnimationCollection[scene.CurAnimation], "Loop")
             box.prop(scene.AnimationCollection[scene.CurAnimation], "Speed")
+
+        # Animation index reference helper
+        ref_box = layout.box()
+        ref_box.label(text="Animation Index Reference")
+        ref_box.operator(
+            "bz.show_anim_index_reference",
+            text="Show Animation Index Reference",
+            icon='INFO'
+        )
+
 
 '''
 Import/Export MENUs/UIs for GEO/VDF
@@ -1797,6 +1918,7 @@ GUIClasses = [
     BattlezoneSDFVDFProperties,
     BattlezoneMaterialProperties,
     OPCreateNewElement,
+    BZ_OT_ShowAnimIndexReference,
     OPDeleteElement,
     OPGenerateCollision,
     OPGenerateVDFCollisionMeshes,
