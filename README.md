@@ -153,3 +153,15 @@ Everything is handled inside Blender:
 
 Source code and issue tracking:  
 [https://github.com/GrizzlyOne95/bz98tools](https://github.com/GrizzlyOne95/bz98tools)
+
+## License
+
+This project is licensed under the **GNU General Public License v3.0** (GPL-3.0).
+
+Portions of the importer/exporter system are derived from  
+[Kenshi_IO_Continued](https://codeberg.org/Kindrad/Kenshi_IO_Continued),  
+which is also licensed under GPL-3.0. All such portions retain their original
+copyright notices.
+
+See the [LICENSE](LICENSE) file for full terms.
+
