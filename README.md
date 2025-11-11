@@ -116,20 +116,6 @@ Everything is handled inside Blender:
 
 ---
 
-### [0.9.4] — 2025-11-07  
-**Initial Blender 4.5.1 Compatibility Pass**
-
-#### Highlights
-- Added `safe_decode_ascii()` for non-ASCII resilience  
-- Extended GEO type registry (0–81)  
-- Fixed invalid material index handling  
-- Implemented quaternion rotation export/import  
-- Corrected scaling logic on GEOs  
-- Updated SDF struct layouts  
-- Fixed GEOFlags overflow on registration  
-
----
-
 ## Summary of Improvements Since 0.9.4
 
 | Category | Update |
