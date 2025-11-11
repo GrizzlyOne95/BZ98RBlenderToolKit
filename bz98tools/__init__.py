@@ -293,6 +293,33 @@ insertgeotypedata(77, "DUST_EMITTER")
 
 insertgeotypedata(81, "PARKING_LOT (Hangar / supply pad center of effect)")
 
+class BZ_PT_GeoTypeListPopover(bpy.types.Panel):
+    bl_idname = "BZ_PT_GeoTypeListPopover"
+    bl_label = "GEO Type Reference"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_ui_units_x = 220  # width of popover, tweak as you like
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=False)
+
+        obj = context.object
+        current = -1
+        if obj is not None and hasattr(obj, "GEOPropertyGroup"):
+            current = getattr(obj.GEOPropertyGroup, "GEOType", -1)
+
+        col.label(text="ID – Description")
+        col.separator()
+
+        # geotypes is the global list populated by insertgeotypedata
+        for idx, label, _ in geotypes:
+            row = col.row()
+            # Highlight the currently selected GEOType a bit
+            icon = 'RADIOBUT_ON' if idx == current else 'BLANK1'
+            row.label(text=label, icon=icon)
+
     
 class GEOPropertyGroup(bpy.types.PropertyGroup):
     GenerateCollision: bpy.props.BoolProperty(
@@ -476,7 +503,6 @@ class BattlezoneSDFVDFProperties(bpy.types.Panel):
         )
 
 
-
 class BattlezoneGEOProperties(bpy.types.Panel):
     bl_idname = "OBJECT_PT_BZ_GEO"
     bl_label = "Battlezone GEO Properties"
@@ -486,37 +512,55 @@ class BattlezoneGEOProperties(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        object = context.object
-        GEOPropertyGroup = object.GEOPropertyGroup
-        
+        obj = context.object
+
+        geo = getattr(obj, "GEOPropertyGroup", None)
+        if geo is None:
+            layout.label(text="No GEO data on active object.")
+            return
+
+        # --- GEO settings box ---
         box = layout.box()
         box.label(text="SDF/VDF GEO Settings")
-        box.prop( GEOPropertyGroup, "GEOType")
-        box.prop( GEOPropertyGroup, "GEOFlags")
-        
-        box = layout.box()
-        box.label(text="GEO Collision Settings")
-        box.prop( GEOPropertyGroup, "GenerateCollision")
-        box.label(text="GEO Center X/Y/Z")
-        split = box.split()
-        split.prop( GEOPropertyGroup, "GeoCenterX")
-        split.prop( GEOPropertyGroup, "GeoCenterY")
-        split.prop( GEOPropertyGroup, "GeoCenterZ")
-        box.label(text="GEO Projectile Collision Box X/Y/Z")
-        split = box.split()
-        split.prop( GEOPropertyGroup, "BoxHalfHeightX")
-        split.prop( GEOPropertyGroup, "BoxHalfHeightY")
-        split.prop( GEOPropertyGroup, "BoxHalfHeightZ")
-        box.prop( GEOPropertyGroup, "SphereRadius")
-        box.operator('bz.generatecollision', text="Generate Collisions", text_ctxt="", translate=True, icon='NONE', emboss=True, depress=False, icon_value=0)
-        
+        box.prop(geo, "GEOType")
+        box.prop(geo, "GEOFlags")
+
+        row = box.row()
+        row.popover(
+            panel="BZ_PT_GeoTypeListPopover",
+            text="Show GEO Types",
+            icon="INFO",
+        )
+
+        # --- Collision settings box ---
+        col_box = layout.box()
+        col_box.label(text="GEO Collision Settings")
+        col_box.prop(geo, "GenerateCollision")
+
+        col_box.label(text="GEO Center X/Y/Z")
+        split = col_box.split()
+        split.prop(geo, "GeoCenterX")
+        split.prop(geo, "GeoCenterY")
+        split.prop(geo, "GeoCenterZ")
+
+        col_box.label(text="Projectile Collision Box X/Y/Z")
+        split = col_box.split()
+        split.prop(geo, "BoxHalfHeightX")
+        split.prop(geo, "BoxHalfHeightY")
+        split.prop(geo, "BoxHalfHeightZ")
+
+        col_box.prop(geo, "SphereRadius")
+        col_box.operator('bz.generatecollision', text="Generate Collision Settings")
+
+        # --- SDF-specific settings ---
         box = layout.box()
         box.label(text="SDF Specific GEO Settings")
-        box.prop( GEOPropertyGroup, "SDFDDR")
-        box.prop( GEOPropertyGroup, "SDFX")
-        box.prop( GEOPropertyGroup, "SDFY")
-        box.prop( GEOPropertyGroup, "SDFZ")
-        box.prop( GEOPropertyGroup, "SDFTime")
+        box.prop(geo, "SDFDDR")
+        box.prop(geo, "SDFX")
+        box.prop(geo, "SDFY")
+        box.prop(geo, "SDFZ")
+        box.prop(geo, "SDFTime")
+
         
 class BattlezoneMaterialProperties(bpy.types.Panel):
     bl_idname = "MATERIAL_PT_BZ_GEO"
@@ -1749,6 +1793,7 @@ Properties = [
 
 GUIClasses = [
     BattlezoneGEOProperties,
+    BZ_PT_GeoTypeListPopover,
     BattlezoneSDFVDFProperties,
     BattlezoneMaterialProperties,
     OPCreateNewElement,
