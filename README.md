@@ -1,142 +1,155 @@
-# Changelog
-All notable changes to this project are documented in this file.
+# Battlezone Blender Toolkit  
+### Full Import/Export Suite for Battlezone 1998 Redux / The Red Odyssey  
+**Version 0.9.5 — November 11, 2025**
 
-# Quick Updates Recap
-- Blender 4.5.1 Support
-- GeoFlags are read and written properly
-- The Red Odyssey VDF's import without crashing
-- If Battlezone Material Name is blank, it auto generates a safe file name on export based on Blender material name
-- Any matching detected .MAP files are decoded into .PNG and loaded into Blender as a material node for previewing
-- Invalid material indices are automatically fixed on export
-- Exporter no longer ignores Quaternion animation keyframes and auto converts
-- GEO Scaling is no longer ignored and will be written/read as they can change behavior in game
-- Option on exports to auto port the result to Ogre mesh/skeleton/material (Redux format)
-- Import/Export Redux format meshes/skeletons
-- If Geos have no UV maps, it auto unwraps them so they wont be "blank"
-- If a VDF has invalid COL, it will safely import them as empty instead of crashing
+---
 
-# Workflow Comparison
-## Previously before this tool, the best ways to manage Battlezone model files was using a combination of multiple tools. These were:
-- Kenshi Ogre Mesh Importer/Exporter for managing BZ meshes/skeletons
-- Ogre Mesh CLI Tools, for upgrading meshes exported from Kenshi Addon
-- Standalone Python Tool by DivisionByZero for porting VDF/SDF/Geo to Mesh, as well as porting the .MAP texture file to .DDS. However it required external python libraries you had to manually install.
-- VDF/SDF Blender Addon from Commando950 for managing the legacy model files
-- Normal fixing script if you wanted correct mesh normals
+## Overview
+The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`).  
+It combines multiple legacy tools into one streamlined workflow — no external scripts or converters required.
 
-  So you'd need to make your unit's VDF, export it, run it through the porting python script, then fix the normals (or leave it if you didnt care)
-  Editing existing BZ meshes required using Kenshi's addon, exporting, then manually running the mesh through Ogre tools to upgrade it otherwise materials wouldn't work
+Version **0.9.5** adds full **Blender 4.5.1** support, **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
 
-  ## Now You can do ALL THIS in this one Blender addon!
-  - No external files or dependencies required.
-  - Ports .MAP textures seamleslly without external pallet files.
+---
 
+## Quick Feature Summary
 
-## [0.9.4] – 2025-11-07
-### Blender 4.5.1 compatibility & major robustness pass
+- ✅ Full **Blender 4.5.1** compatibility  
+- ✅ **Auto Ogre Mesh/Skeleton/Material export** (Redux-ready)  
+- ✅ **Quaternion animation** import/export  
+- ✅ **Automatic `.MAP` → `.PNG` conversion** for textures  
+- ✅ **Safe material name auto-generation**  
+- ✅ **Auto UV unwrap** when missing  
+- ✅ **Accurate GEO scaling and GEOFlags**  
+- ✅ **TRO/Red Odyssey VDF support**  
+- ✅ **COLP collision import safety checks**  
+- ✅ No external dependencies required  
+
+---
+
+## Workflow Comparison
+
+### Previously
+Before this toolkit, modders relied on several separate tools:
+
+- **Kenshi Ogre Add-on** – handled Redux `.mesh` I/O  
+- **Ogre CLI Tools** – required upgrading exported meshes  
+- **DivisionByZero’s Python script** – converted `.VDF`/`.SDF`/`.GEO` files  
+- **Commando950’s VDF/SDF Add-on** – Blender editor for legacy formats  
+- **Manual normal-fix scripts** – for correcting mesh lighting  
+
+This process required multiple exports, conversions, and CLI tools.
+
+### Now
+Everything is handled inside Blender:
+
+- Import or export `.GEO`, `.VDF`, and `.SDF` directly  
+- Auto-convert `.MAP` textures to `.PNG`  
+- Export Redux `.mesh`, `.skeleton`, and `.material` automatically  
+- Correct scaling, collisions, and flags preserved  
+- No CLI tools or Python installs needed  
+
+---
+
+## Changelog
+
+### [0.9.5] — 2025-11-11  
+**Blender 4.5.1 Compatibility, Ogre Auto-Port Integration, and Major Pipeline Updates**
 
 #### Added
 - **Blender 4.5.1 support**
-  - Updated `bl_info` to target Blender 4.5.1 and version 0.9.4 of the addon.
-- **Extended GEO class IDs & UI descriptions**
-  - Added a unified `geotypes` list covering CLASS_IDs 0–81
-- **GEO flags UI**
-  - New `GEOFlags` `IntProperty` (32-bit bitfield) exposed in the GEO panel to toggle engine behaviors per-geo. This data is written and read correctly now.
+  - Updated `bl_info`, registration, and UI functions for new API.
+- **Automatic Ogre export integration**
+  - Option to automatically run the Ogre exporter after saving a `.VDF`, `.SDF`, or `.GEO`.
+  - Outputs `.mesh`, `.skeleton`, and `.material` directly.
+- **Unified serializer framework**
+  - Standardized binary read/write across `baseserializer.py`, `bz_baseserializer.py`, and `ogre_baseserializer.py`.
+  - Added `AbruptEOFError` for safer handling of truncated files.
+- **Expanded GEO class IDs**
+  - Full set of 82 types (0-81) with descriptive labels shown in the UI.
+- **GEOFlags**
+  - 32-bit flag field implemented across all formats; editable in Blender properties.
+- **Material and texture handling**
+  - Generates a safe `.map` name if blank.
+  - Converts `.map` to `.png` automatically and links it in materials.
+- **Automatic UV layer creation**
+  - GEO export ensures at least one UV set exists.
 
 #### Changed
-- **More robust string handling for all file classes**
-  - Introduced `safe_decode_ascii` helper and wired it through GEO, VDF and SDF headers, names, and section tags to ignore stray non-ASCII bytes instead of crashing. This fixes the issue with importing TRO VDF's. 
-- **Import/Export panels streamlined**
-  - GEO/VDF/SDF properties organized into clearer sections (VDF Settings, SDF Settings, LOD Settings, GEO Collision Settings, SDF Specific GEO Settings, etc.)
+- **Quaternion animation support**
+  - Automatically detects and converts quaternion F-curves to Euler, and back to quaternions on export.
+- **Scale handling**
+  - GEO export multiplies rotation × scale to preserve proper transforms.
+- **Encoding safety**
+  - All string reads use `safe_decode_ascii()` to prevent crashes.
+- **SDF GEO structures**
+  - Corrected `GEOData`, `SGEO`, and `ANIMHeader` packing.
+
+#### Fixed
+- **TRO/Red Odyssey imports**
+  - Handles non-ASCII bytes safely without crashing.
+- **Invalid material indices**
+  - Invalid or missing material slots reset to index 0 on export.
+- **GEO scaling**
+  - Fixed round-trip scale loss on re-imported objects.
+- **Parent/child hierarchy**
+  - Preserved during import of nested GEOs and LODs.
+- **Overflow on GEOFlags**
+  - Explicit 32-bit min/max range prevents Blender registration errors.
+
+#### User Interface
+- Fixed property registration and UI refresh issues  
+
+#### Internal
+- Integrated `bzportmodels.py` and `ogre_autoport.py` for automatic Ogre conversion  
+- Added future-ready `.map` → `.dds` conversion stub  
+- Hardened `import_vdf.py`/`export_vdf.py` for incomplete ANIM/COLP blocks  
 
 ---
 
-### GEO pipeline
+### [0.9.4] — 2025-11-07  
+**Initial Blender 4.5.1 Compatibility Pass**
 
-#### Added / Changed
-- **Automatic map name population on GEO export**
-  - If a material’s “Battlezone Texture” name is blank, it now auto-derives a `.map` name from the Blender material name (trims to 8 chars, replaces spaces, forces lowercase) and writes it back to the custom property so the UI auto-fills next time.
-- **UV safety & creation**
-  - GEO export guarantees there is an active UV layer and writes UVs for each face loop, generating one if none exists.
-- **StringHeader / MapName normalization**
-  - GEO faces now normalize `StringHeader` and `MapName` through `safe_decode_ascii`, avoiding garbage strings from bad data.
-- **Automatic .MAP texture conversion**
-  - .map textures found (referenced by the GEOs) are converted to .PNG in the same directory and loaded into Blender materials for preview.
-
-#### Fixed
-- **Invalid material indices on export**
-  - GEO export now scans polygons for invalid `material_index` values (negative or ≥ material count) and resets them to 0, preventing crashes and malformed GEOs.
-- **GEO import face/material mismatch**
-  - GEO import now:
-    - Skips duplicate/invalid faces with a `try: bm.faces.new(...)` guard.
-    - Tracks a `used_faces` list so that face indices always align with `mesh.polygons`.
-    - Falls back to `(0.0, 0.0)` UVs if any vertex lacks UV data.
-  - This fixes earlier `IndexError` issues when assigning materials after import.
+#### Highlights
+- Added `safe_decode_ascii()` for non-ASCII resilience  
+- Extended GEO type registry (0–81)  
+- Fixed invalid material index handling  
+- Implemented quaternion rotation export/import  
+- Corrected scaling logic on GEOs  
+- Updated SDF struct layouts  
+- Fixed GEOFlags overflow on registration  
 
 ---
 
-### VDF pipeline
+## Summary of Improvements Since 0.9.4
 
-#### Added / Changed
-- **Safer GEO + ANIM + COLP parsing**
-  - VDF importer now:
-    - Reads all 28 LOD bands × `geocount`, including NULLs.
-    - Treats ANIM, EXIT and COLP as optional; if sections are missing or truncated, it falls back to a default empty collision box instead of crashing.
-    - COLP reading is hardened with length checks and returns default data when fewer than 56 bytes remain.
-- **Inner/outer collision reconstruction**
-  - VDF import reconstructs inner and outer collision boxes as actual Blender meshes (`inner_col`, `outer_col`) from COLP values, making collision volumes visible and editable in Blender.
-- **Transform import now preserves baked scale**
-  - On import, GEO 3×3 matrices are decomposed into scale and pure rotation: column lengths become object scale, normalized columns become the rotation, and translation is remapped to Blender axes. This is done for both root objects and children. 
-- **Quaternion animation import**
-  - VDF importer reconstructs rotations from stored quaternions, converts them to Euler, and inserts keyframes for both rotation and location, setting scene frame range automatically.
-- **Animation header layout cleanup**
-  - VDF `ANIMHeader`, `ANIMElement`, and `ANIM*` blocks have been corrected and centralized, with `safe_decode_ascii` on names and consistent packing for write.
-
-#### Fixed
-- **Invalid material indices on VDF export**
-  - VDF export now performs the same polygon material index sanity check as GEO export before writing GEOs, preventing invalid indices from propagating into exported files.
-- **Scale not round-tripping**
-  - GEO matrix writing now explicitly bakes object scale into the matrix: rotation matrix × diagonal scale matrix, instead of relying on deprecated `resize_3x3()`. This fixes cases where scaled GEOs re-imported with scale 1.0 and didn't export properly with scales.
-- **Quaternion vs Euler animation mismatch on export**
-  - Exporter now:
-    - Detects if an object is in `QUATERNION` rotation mode and prefers quaternion F-curves, converting them to Euler.
-    - Falls back to Euler curves if no usable quaternions exist.
-    - Stores resulting Eulers into `rotanim` and converts them back to quaternions in Battlezone’s YZX convention when writing ANIM.
+| Category | Update |
+|-----------|---------|
+| Compatibility | Full Blender 4.5.1 compliance |
+| File I/O | Safe ASCII decoding, EOF handling |
+| Materials | `.MAP → .PNG` conversion and name auto-fill |
+| Geometry | Scale, collision, and UV safety |
+| Animation | Quaternion/Euler auto-conversion |
+| VDF | Robust ANIM/COLP parsing, visible collision boxes |
+| SDF | Correct GEOFlags/DDR fields, fixed struct layouts |
+| Export | Auto-port to Ogre mesh/skeleton/material |
+| UI | Organized panels and GEOFlags range fix |
+| Stability | Major crash and data-corruption fixes |
 
 ---
 
-### SDF pipeline
+## Credits
 
-#### Added / Changed
-- **SDF header & struct correctness**
-  - `SDFHeader`, `SDFCHeader`, `SGEOHeader`, and SDF `GEOData` structs updated to match the real layout, including:
-    - 32-bit `geoflags` field.
-    - Extra DDR/X/Y/Z/Time fields for structure GEO behavior.
-- **SDF GEO metadata wiring**
-  - SDF import populates `GEOPropertyGroup` with type, flags, collision box, DDR, XYZ, and Time values so they can be edited and re-exported.
-- **SDF transform handling**
-  - Like VDF, SDF import reconstructs rotation and position from GEO matrices and applies them with the same YZX axis remap.
-- **Quaternion-aware SDF export**
-  - SDF export reads either Euler or quaternion animation curves:
-    - If object is in QUATERNION mode, it collects `rotation_quaternion` F-curves and converts them to Euler before packing ANIM.
-    - Else, it uses the original Euler-only behavior.
-
-#### Fixed
-- **SGEO / GEOData layout mismatches**
-  - Corrected SDF `GEOData` packing and unpacking so that type, flags, DDR, and timing fields align with the actual file format, preventing corrupted SDF GEO blocks.
-- **Animation header inconsistencies**
-  - Reimplemented `ANIMHeader.Write` for SDF with proper counts, reserved fields, and a sane default configuration so SDF ANIM sections are valid even for minimal animations.
+| Contributor | Role |
+|--------------|------|
+| **DivisionByZero** | Original Python Ogre mesh port script |
+| **Commando950** | Original SDF/VDF/GEO Blender plugin |
+| **Kindrad** | Ogre import/export base code (Kenshi add-on) |
+| **GrizzlyOne95** | Blender 4.5.1 update, Ogre integration, quaternion/scaling/UI modernization, multiple bug fixes |
 
 ---
 
-### UI, registration & misc
+## Repository
 
-#### Fixed
-- **GEOFlags registration overflow**
-  - Replaced the problematic `IntProperty` definition that caused an overflow on registration with explicit 32-bit range (`min=-2147483648`, `max=2147483647`), resolving the “Python int too large to convert to C long” error when enabling the addon. 
-- **Centralized registration**
-  - PropertyGroups, panels, operators, and import/export classes are now registered from lists (`Properties`, `GUIClasses`, `ImportExportClasses`), simplifying future additions and ensuring all pieces unregister cleanly.
-
-### CREDITS
-- DivisionByZero for original stand alone python Ogre Mesh port script
-- Commando950 for original SDF/VDF/Geo Blender Editor Plugin
-- Kindrad for Ogre Import/Export code for the Kenshi Plugin
+Source code and issue tracking:  
+[https://github.com/GrizzlyOne95/bz98tools](https://github.com/GrizzlyOne95/bz98tools)
