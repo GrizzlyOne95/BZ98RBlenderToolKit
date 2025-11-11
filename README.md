@@ -12,6 +12,10 @@ Version **0.9.5** adds full **Blender 4.5.1** support, **quaternion animation**,
 
 ---
 
+## Installation
+-- Download the .zip from Releases
+-- In Blender, go to Edit > Preferences > Addons > Install From Disk
+
 ## Quick Feature Summary
 
 - ✅ Full **Blender 4.5.1** compatibility  
