@@ -75,6 +75,7 @@ Everything is handled inside Blender:
   - Converts `.map` to `.png` automatically and links it in materials.
 - **Automatic UV layer creation**
   - GEO export ensures at least one UV set exists.
+- **Automatic VDF COL box generation under Scene Settings**
 
 #### Changed
 - **Quaternion animation support**
