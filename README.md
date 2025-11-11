@@ -15,6 +15,21 @@ All notable changes to this project are documented in this file.
 - If Geos have no UV maps, it auto unwraps them so they wont be "blank"
 - If a VDF has invalid COL, it will safely import them as empty instead of crashing
 
+# Workflow Comparison
+## Previously before this tool, the best ways to manage Battlezone model files was using a combination of multiple tools. These were:
+- Kenshi Ogre Mesh Importer/Exporter for managing BZ meshes/skeletons
+- Ogre Mesh CLI Tools, for upgrading meshes exported from Kenshi Addon
+- Standalone Python Tool by DivisionByZero for porting VDF/SDF/Geo to Mesh, as well as porting the .MAP texture file to .DDS. However it required external python libraries you had to manually install.
+- VDF/SDF Blender Addon from Commando950 for managing the legacy model files
+- Normal fixing script if you wanted correct mesh normals
+
+  So you'd need to make your unit's VDF, export it, run it through the porting python script, then fix the normals (or leave it if you didnt care)
+  Editing existing BZ meshes required using Kenshi's addon, exporting, then manually running the mesh through Ogre tools to upgrade it otherwise materials wouldn't work
+
+  ## Now You can do ALL THIS in this one Blender addon!
+  - No external files or dependencies required.
+  - Ports .MAP textures seamleslly without external pallet files.
+
 
 ## [0.9.4] – 2025-11-07
 ### Blender 4.5.1 compatibility & major robustness pass
