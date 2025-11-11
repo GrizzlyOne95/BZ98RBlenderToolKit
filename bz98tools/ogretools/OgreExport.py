@@ -330,36 +330,75 @@ def MZP(value):#make zero positive
 def bCollectAnimationData(meshData):
     if 'skeleton' not in meshData:
         return
+
     armature = meshData['skeleton'].armature
     animdata = armature.animation_data
 
-    if animdata:
-        # Export them all
-        scene = bpy.context.scene
-        currentFrame = scene.frame_current
-        currentAction = animdata.action
-        fps = scene.render.fps
-        frame_step = scene.frame_step
-        meshData['animations'] = []
+    if not animdata:
+        return
 
-        for track in animdata.nla_tracks.values():
-            for strip in track.strips.values():
-                if strip.action:
-                    print('Action', strip.action.name)
-                    action = strip.action
-                    animdata.action = action
+    scene = bpy.context.scene
+    currentFrame = scene.frame_current
+    currentAction = animdata.action
+    fps = scene.render.fps
+    frame_step = scene.frame_step
 
-                    animation = {}
-                    animation['keyframes'] = collectAnimationData(
-                        armature, action.frame_range, fps, frame_step)
-                    animation['name'] = action.name
-                    animation['length'] = (
-                        action.frame_range[1] - action.frame_range[0]) / fps
-                    meshData['animations'].append(animation)
+    animations = []
+    collected_names = set()
 
-        # Restore original action and frame
-        animdata.action = currentAction
-        scene.frame_set(currentFrame)
+    def add_action(action):
+        """Export a single Blender Action into meshData['animations']."""
+        if not action:
+            return
+        if action.name in collected_names:
+            return
+
+        print("Exporting action:", action.name)
+        animdata.action = action
+
+        anim = {}
+        anim['keyframes'] = collectAnimationData(
+            armature,
+            action.frame_range,
+            fps,
+            frame_step
+        )
+        anim['name'] = action.name
+        anim['length'] = (
+            action.frame_range[1] - action.frame_range[0]
+        ) / fps
+
+        animations.append(anim)
+        collected_names.add(action.name)
+
+    # 1) NLA tracks (if used)
+    try:
+        for track in animdata.nla_tracks:
+            for strip in track.strips:
+                add_action(strip.action)
+    except Exception as e:
+        # Don’t kill export if something is weird in NLA
+        print("Warning: error reading NLA tracks for animation export:", e)
+
+    # 2) Active action on the armature
+    add_action(currentAction)
+
+    # 3) Fallback: all actions that animate pose bones
+    #    (covers actions not pushed to NLA, imported actions, etc.)
+    for action in bpy.data.actions:
+        if action.name in collected_names:
+            continue
+        # Heuristic: only actions that drive pose bones
+        if any(fc.data_path.startswith('pose.bones["') for fc in action.fcurves):
+            add_action(action)
+
+    if animations:
+        meshData['animations'] = animations
+
+    # Restore original state
+    animdata.action = currentAction
+    scene.frame_set(currentFrame)
+
 
 
 def collectAnimationData(armature, frame_range, fps, step=1):
@@ -809,6 +848,7 @@ def xSaveMeshData(meshData, filepath, export_skeleton):
 
 
 def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
+    """Write Battlezone-style .material using BZBase templates."""
     if 'materials' not in meshData:
         return
     allMatData = meshData['materials']
@@ -822,38 +862,74 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
     print("material file: %s" % matFile)
     isMaterial = os.path.isfile(matFile)
 
-    # if is no material file, or we are forced to overwrite it, write the material file
-    if isMaterial == False or overwriteMaterialFlag == True:
-        # write material
-        fileWr = open(matFile, 'w')
-        for matName, matInfo in allMatData.items():
-            fileWr.write("material %s\n" % matName)
-            fileWr.write("{\n")
-            fileWr.write(indent(1) + "technique\n" + indent(1) + "{\n")
-            fileWr.write(indent(2) + "pass\n" + indent(2) + "{\n")
+    # Small helpers
+    def guess_bz_base_template(mat_name: str) -> str:
+        name_l = mat_name.lower()
+        # Heuristic: cockpit-ish names get cockpit base
+        if "cockpit" in name_l or name_l.endswith("2"):
+            return "BZBaseCockpit"
+        return "BZBase"
 
-            # write material content here
-            fileWr.write(indent(3) + "ambient %f %f %f\n" %
-                         (matInfo['ambient'][0], matInfo['ambient'][1], matInfo['ambient'][2]))
-            fileWr.write(indent(3) + "diffuse %f %f %f\n" %
-                         (matInfo['diffuse'][0], matInfo['diffuse'][1], matInfo['diffuse'][2]))
-            fileWr.write(indent(3) + "specular %f %f %f 0\n" %
-                         (matInfo['specular'][0], matInfo['specular'][1], matInfo['specular'][2]))
-            fileWr.write(indent(3) + "emissive %f %f %f\n" %
-                         (matInfo['emissive'][0], matInfo['emissive'][1], matInfo['emissive'][2]))
+    def derive_map_names(mat_name: str, tex_name: str):
+        # Use texture name if available, else fall back to material name
+        import os
+        base_src = tex_name or mat_name
+        base = os.path.splitext(os.path.basename(base_src))[0]
 
-            if 'texture' in matInfo:
-                fileWr.write(indent(3) + "texture_unit\n" + indent(3) + "{\n")
-                fileWr.write(indent(4) + "texture %s\n" % matInfo['texture'])
-                fileWr.write(indent(3) + "}\n")  # texture unit
+        base_l = base.lower()
+        # Strip common diffuse suffix to get a clean root
+        if base_l.endswith("_d") or base_l.endswith("_diffuse"):
+            root = base.rsplit("_", 1)[0]
+        else:
+            root = base
 
-            fileWr.write(indent(2) + "}\n")  # pass
-            fileWr.write(indent(1) + "}\n")  # technique
-            fileWr.write("}\n")
+        diffuse = root + "_d.dds"
+        normal = root + "_n.dds"
+        spec   = root + "_S.dds"
+        emiss  = root + "_e.dds"
+        return diffuse, normal, spec, emiss
 
-        fileWr.close()
+    def fmt_rgb(rgb):
+        # rgb is a 3-tuple of floats 0..1
+        return f"{rgb[0]:.3g} {rgb[1]:.3g} {rgb[2]:.3g}"
 
-    # try to copy material textures to destination
+    # If there is no material file, or we are forced to overwrite it, write the material file
+    if not isMaterial or overwriteMaterialFlag:
+        with open(matFile, 'w', encoding="utf-8") as fileWr:
+            # Header
+            fileWr.write('import * from "BZBase.material"\n\n')
+
+            for matName, matInfo in allMatData.items():
+                base_template = guess_bz_base_template(matName)
+
+                # Colors (fall back to sane defaults if missing)
+                amb = matInfo.get('ambient',  [1.0, 1.0, 1.0])
+                dif = matInfo.get('diffuse',  [1.0, 1.0, 1.0])
+                spe = matInfo.get('specular', [0.7, 0.7, 0.7])  # BZ sample uses ~0.7
+                # emissive is usually controlled by the emissive map, so not used here
+
+                tex_name = matInfo.get('texture', None)
+                diffuse_tex, normal_tex, spec_tex, emiss_tex = derive_map_names(matName, tex_name)
+
+                fileWr.write(f"material {matName} : {base_template}\n")
+                fileWr.write("{\n")
+                fileWr.write(f"\tset_texture_alias DiffuseMap {diffuse_tex}\n")
+                fileWr.write(f"\tset_texture_alias NormalMap {normal_tex}\n")
+                fileWr.write(f"\tset_texture_alias SpecularMap {spec_tex}\n")
+
+                # If you want "black.dds" by default when there is no real emissive,
+                # you can special-case it here. For now we just use derived name:
+                # emiss_tex = 'black.dds' if tex_name is None else emiss_tex
+                fileWr.write(f"\tset_texture_alias EmissiveMap {emiss_tex}\n")
+                fileWr.write("\n")
+
+                fileWr.write(f'\tset $diffuse "{fmt_rgb(dif)}"\n')
+                fileWr.write(f'\tset $ambient "{fmt_rgb(amb)}"\n')
+                fileWr.write(f'\tset $specular "{fmt_rgb(spe)}"\n')
+                fileWr.write('\tset $shininess "127"\n')
+                fileWr.write("}\n\n")
+
+    # try to copy material textures to destination (kept exactly as before)
     if copyTextures:
         for matName, matInfo in allMatData.items():
             if 'texture' in matInfo:
@@ -877,6 +953,7 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
                     else:
                         print(
                             "Can't copy texture \"%s\" because file does not exists!" % srcTextureFile)
+
 
 
 def getVertexIndex(vertexInfo, vertexList):
