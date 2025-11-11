@@ -20,8 +20,8 @@ This plugin adds full **Blender 4.5.1** support, **quaternion animation**, **aut
 - ✅ Full **Blender 4.5.1** compatibility  
 - ✅ **Auto Ogre Mesh/Skeleton/Material export** (Redux-ready)  
 - ✅ **Quaternion animation** import/export  
-- ✅ **Automatic `.MAP` → `.PNG` conversion** for textures
-- ✅ **Automatic `.PNG` or `.MAP` → `.DDS` conversion** for textures  
+- ✅ **Automatic `.MAP` → `.PNG` conversion** for textures on import
+- ✅ **Automatic `.PNG` or `.MAP` → `.DDS` conversion** for textures on export
 - ✅ **Safe material name auto-generation**  
 - ✅ **Auto UV unwrap** when missing  
 - ✅ **Accurate GEO scaling and GEOFlags**  
