@@ -1095,7 +1095,7 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
 
     # Ogre auto-port toggle
     auto_port_ogre: BoolProperty(
-        name="Convert export to BZ98R Mesh/Skeleton/Material",
+        name="Create Redux Files",
         description=(
             "After writing the GEO, run the Battlezone model porter to create "
             "OGRE .mesh/.skeleton/.material/.dds in the same directory"
@@ -1232,7 +1232,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
 
     # NEW: Ogre auto-port checkbox
     auto_port_ogre: BoolProperty(
-        name="Convert export to BZ98R Mesh/Skeleton/Material",
+        name="Create BZR Files",
         description=(
             "After writing the VDF, run the Battlezone model porter to create "
             "OGRE .mesh/.skeleton/.material/.dds in the same directory"
@@ -1500,7 +1500,7 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
 
     # NEW: Ogre auto-port toggle
     auto_port_ogre: BoolProperty(
-        name="Convert export to BZ98R Mesh/Skeleton/Material",
+        name="Create BZR Files",
         description=(
             "After writing the SDF, run the Battlezone model porter to create "
             "OGRE .mesh/.skeleton/.material/.dds in the same directory"
