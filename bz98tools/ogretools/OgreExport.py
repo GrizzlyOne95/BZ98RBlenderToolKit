@@ -18,6 +18,11 @@
 
 # <pep8-80 compliant>
 
+# Modified for Battlezone 98R Blender ToolKit
+# Portions © 2023 Kindrad and contributors (Kenshi_IO_Continued)
+# Licensed under GPL-3.0; see <https://www.gnu.org/licenses/>.
+
+
 """
 Name: 'OGRE for Kenshi (*.MESH)'
 Blender: 3.6
