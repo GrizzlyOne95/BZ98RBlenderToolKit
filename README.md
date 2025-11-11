@@ -165,3 +165,11 @@ copyright notices.
 
 See the [LICENSE](LICENSE) file for full terms.
 
+### Third-Party Components
+
+**OGRE (Object-Oriented Graphics Rendering Engine)**  
+© 2000–2023 Torus Knot Software Ltd and other contributors  
+Licensed under the MIT License. See `third_party/OGRE_LICENSE.txt`.  
+Used for conversion utilities such as `OgreXMLConverter.exe`.
+
+
