@@ -241,83 +241,118 @@ class BoundingBoxScaleFactors:
 	
 	
 class SettingsController:
-	def __init__(self,
-		name="model",
-		suffix="",
-		headlights=False,   # Boolean
-		person=None,        # TERNARY_OPTIONS
-		turret=None,        # TERNARY_OPTIONS
-		cockpit=None,       # TERNARY_OPTIONS
-		skeletalanims=None, # TERNARY_OPTIONS
-		scope=None,         # ScopeSettings
-		no_pov_rots=False,  # Boolean
-		flat_colors=False,  # Boolean
-		boundingbox_scale_factors=None,
-		nowrite=False,      # Boolean
-		verbose=False,      # Boolean
-	):
-		self.name = name
-		self.suffix = suffix
-		self.headlights = headlights
-		self.person = person
-		self.turret = turret
-		self.cockpit = cockpit
-		self.skeletalanims = skeletalanims
-		self.scope = scope or ScopeSettings()
-		self.no_pov_rots = no_pov_rots
-		self.flat_colors = flat_colors
-		self.boundingbox_scale_factors = boundingbox_scale_factors
-		self.nowrite = nowrite
-		self.verbose = verbose
-	
-	def get_model_name(self):
-		return self.name
-	
-	def get_material_suffix(self):
-		return self.suffix
-	
-	def headlights_enabled(self):
-		return self.headlights
-	
-	def separate_cockpit_enabled(self):
-		return self.cockpit is True
-	def separate_cockpit_disabled(self):
-		return self.cockpit is False
-	def separate_cockpit_auto(self):
-		return self.cockpit is None
-	
-	def person_enabled(self):
-		return self.person is True
-	def person_disabled(self):
-		return self.person is False
-	def person_auto(self):
-		return self.person is None
-	
-	def turret_enabled(self):
-		return self.turret is True
-	def turret_disabled(self):
-		return self.turret is False
-	def turret_auto(self):
-		return self.turret is None
-	
-	def person_anims_enabled(self):
-		return self.skeletalanims is True
-	def person_anims_disabled(self):
-		return self.skeletalanims is False
-	def person_anims_auto(self):
-		return self.skeletalanims is None
-	
-	def pov_movement_anim_rotations_disabled(self):
-		return self.no_pov_rots
-	
-	def only_flat_colors_enabled(self):
-		return self.flat_colors
-	
-	def suppress_write(self): 
-		return self.nowrite
-	
-	def verbose_log(self):
-		return self.verbose
+    def __init__(
+        self,
+        name="model",
+        suffix="",
+        headlights=False,   # Boolean
+        person=None,        # TERNARY_OPTIONS
+        turret=None,        # TERNARY_OPTIONS
+        cockpit=None,       # TERNARY_OPTIONS
+        skeletalanims=None, # TERNARY_OPTIONS
+        scope=None,         # ScopeSettings
+        no_pov_rots=False,  # Boolean
+        flat_colors=False,  # Boolean
+        boundingbox_scale_factors=None,
+        nowrite=False,      # Boolean
+        verbose=False,      # Boolean
+    ):
+        self.name = name
+        self.suffix = suffix
+        self.headlights = headlights
+        self.person = person
+        self.turret = turret
+        self.cockpit = cockpit
+        self.skeletalanims = skeletalanims
+        self.scope = scope or ScopeSettings()
+        self.no_pov_rots = no_pov_rots
+        self.flat_colors = flat_colors
+
+        # Normalize boundingbox_scale_factors so callers can pass None,
+        # a BoundingBoxScaleFactors instance, or a (x, y, z) tuple/list.
+        if boundingbox_scale_factors is None:
+            self.boundingbox_scale_factors = BoundingBoxScaleFactors(1.0, 1.0, 1.0)
+        elif isinstance(boundingbox_scale_factors, BoundingBoxScaleFactors):
+            self.boundingbox_scale_factors = boundingbox_scale_factors
+        else:
+            # Accept tuple/list/any iterable of length 3
+            try:
+                x, y, z = boundingbox_scale_factors
+            except Exception as e:
+                raise TypeError(
+                    "boundingbox_scale_factors must be None, "
+                    "BoundingBoxScaleFactors, or a length-3 iterable"
+                ) from e
+            self.boundingbox_scale_factors = BoundingBoxScaleFactors(x, y, z)
+
+        self.nowrite = nowrite
+        self.verbose = verbose
+
+    # ------------------------------------------------------------------
+    # Accessors and flag helpers
+    # ------------------------------------------------------------------
+    def get_model_name(self):
+        return self.name
+
+    def get_material_suffix(self):
+        return self.suffix
+
+    def headlights_enabled(self):
+        return self.headlights
+
+    # Cockpit options
+    def separate_cockpit_enabled(self):
+        return self.cockpit is True
+
+    def separate_cockpit_disabled(self):
+        return self.cockpit is False
+
+    def separate_cockpit_auto(self):
+        return self.cockpit is None
+
+    # Person options
+    def person_enabled(self):
+        return self.person is True
+
+    def person_disabled(self):
+        return self.person is False
+
+    def person_auto(self):
+        return self.person is None
+
+    # Turret options
+    def turret_enabled(self):
+        return self.turret is True
+
+    def turret_disabled(self):
+        return self.turret is False
+
+    def turret_auto(self):
+        return self.turret is None
+
+    # Skeletal animation options
+    def person_anims_enabled(self):
+        return self.skeletalanims is True
+
+    def person_anims_disabled(self):
+        return self.skeletalanims is False
+
+    def person_anims_auto(self):
+        return self.skeletalanims is None
+
+    # POV/flat/verbosity flags
+    def pov_movement_anim_rotations_disabled(self):
+        return self.no_pov_rots
+
+    def only_flat_colors_enabled(self):
+        return self.flat_colors
+
+    def suppress_write(self):
+        return self.nowrite
+
+    def verbose_log(self):
+        return self.verbose
+
 	
 def parse_args():
 	ternary_choices = ['Auto', 'True', 'False']
