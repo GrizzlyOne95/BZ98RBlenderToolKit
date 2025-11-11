@@ -1,6 +1,6 @@
 # Battlezone Blender Toolkit  
 ### Full Import/Export Suite for Battlezone 1998 Redux / The Red Odyssey  
-**Version 0.9.5 — November 11, 2025**
+**Version 1.0.1 — November 11, 2025**
 
 ---
 
