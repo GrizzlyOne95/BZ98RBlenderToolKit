@@ -5,7 +5,7 @@
 ---
 
 ## Overview
-The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with both classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`) and Battlezone Redux model formats ('.MESH', '.SKELETON', '.MATERIAL').  
+The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with both classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`) and Battlezone Redux model formats (`.MESH`, `.SKELETON`, `.MATERIAL`).  
 It combines multiple tools into one streamlined workflow — no external scripts or converters required.
 
 Version **1.0.1** adds full **Blender 4.5.1** support, **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
