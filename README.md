@@ -29,6 +29,7 @@ Version **0.9.5** adds full **Blender 4.5.1** support, **quaternion animation**,
 - ✅ **COLP collision import safety checks**  
 - ✅ No external dependencies required
 - ✅ Automatic VDF COL box generation
+- ✅ Includes all known documented GEO types and Animation Indexes as Info Boxes
 
 ---
 
