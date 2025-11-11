@@ -1,3 +1,10 @@
+# Battlezone 98R Blender ToolKit
+# Copyright (C) 2024–2025 “GrizzlyOne95” and contributors
+# 
+# This file is part of BZ98R Blender ToolKit, which is distributed
+# under the terms of the GNU General Public License v3.0.
+# See the LICENSE file or <https://www.gnu.org/licenses/>.
+
 import bpy
 
 from bpy.props import (
@@ -459,6 +466,16 @@ class BattlezoneSDFVDFProperties(bpy.types.Panel):
         box.prop( SDFVDFPropertyGroup, "LOD3")
         box.prop( SDFVDFPropertyGroup, "LOD4")
         box.prop( SDFVDFPropertyGroup, "LOD5")
+        
+        box = layout.box()
+        box.label(text="VDF Collision Helpers (not used for SDF)")
+        box.label(text="Uses active mesh bounds to build VDF COL boxes")
+        box.operator(
+            "bz.generate_vdf_collision_meshes",
+            text="Generate inner_col / outer_col",
+        )
+
+
 
 class BattlezoneGEOProperties(bpy.types.Panel):
     bl_idname = "OBJECT_PT_BZ_GEO"
@@ -550,6 +567,143 @@ Operators
 Used for doing actions.
 In this case used for creating a new animation element and removing one.
 '''
+class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
+    """Generate VDF-style inner_col / outer_col collision cubes from selected mesh bounds"""
+    bl_idname = "bz.generate_vdf_collision_meshes"
+    bl_label = "Generate VDF Collision Meshes"
+    bl_description = (
+        "Create inner_col and outer_col box meshes from the combined bounding box of the "
+        "selected mesh objects for use as VDF collision data "
+        "(SDF collision is calculated differently and does not use these)"
+    )
+
+    inner_scale: bpy.props.FloatProperty(
+        name="Inner Box Scale",
+        description="Scale of inner collision box relative to the visual bounds",
+        default=0.7,
+        min=0.0,
+        max=1.0,
+    )
+
+    outer_margin: bpy.props.FloatProperty(
+        name="Outer Box Margin",
+        description="Extra padding added to the outer collision box (fraction of box size)",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+    )
+
+    def execute(self, context):
+        import mathutils
+        import bmesh
+
+        # -----------------------------------------
+        # Collect source objects
+        # -----------------------------------------
+        selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
+
+        if not selected_meshes:
+            self.report({'ERROR'}, "No mesh objects selected")
+            return {'CANCELLED'}
+
+        # If somehow multiple selected but active is not mesh, we still proceed with selected list
+        # Active is only relevant if you later want to inherit orientation, etc.
+
+        # -----------------------------------------
+        # Build a combined WORLD-space bounding box
+        # -----------------------------------------
+        first = True
+        min_w = max_w = None
+
+        for obj in selected_meshes:
+            if not obj.bound_box:
+                continue
+
+            for corner in obj.bound_box:
+                v_world = obj.matrix_world @ mathutils.Vector(corner)
+
+                if first:
+                    min_w = v_world.copy()
+                    max_w = v_world.copy()
+                    first = False
+                else:
+                    min_w.x = min(min_w.x, v_world.x)
+                    min_w.y = min(min_w.y, v_world.y)
+                    min_w.z = min(min_w.z, v_world.z)
+
+                    max_w.x = max(max_w.x, v_world.x)
+                    max_w.y = max(max_w.y, v_world.y)
+                    max_w.z = max(max_w.z, v_world.z)
+
+        if first or min_w is None or max_w is None:
+            self.report({'ERROR'}, "Unable to compute bounding box from selected meshes")
+            return {'CANCELLED'}
+
+        center_w = (min_w + max_w) * 0.5
+        half = (max_w - min_w) * 0.5
+
+        # Avoid degenerate boxes (flat planes)
+        eps = 0.01
+        for attr in ("x", "y", "z"):
+            if abs(getattr(half, attr)) < eps:
+                setattr(half, attr, eps)
+
+        outer_half = half * (1.0 + self.outer_margin)
+        inner_half = half * self.inner_scale
+
+        def make_box(name: str, half_vec: mathutils.Vector):
+            # Reuse an existing object with that name if it's a mesh, otherwise create new
+            existing = bpy.data.objects.get(name)
+            if existing is not None and existing.type != 'MESH':
+                existing = None
+
+            mesh = bpy.data.meshes.new(name)
+
+            if existing is None:
+                obj_box = bpy.data.objects.new(name, mesh)
+                context.collection.objects.link(obj_box)
+            else:
+                obj_box = existing
+                obj_box.data = mesh
+
+            bm = bmesh.new()
+            # Unit cube from -1..1, centered at origin
+            bmesh.ops.create_cube(bm, size=2.0)
+
+            # Scale to the desired half-extents (still centered at origin)
+            scale_mat = mathutils.Matrix.Diagonal(
+                (half_vec.x, half_vec.y, half_vec.z, 1.0)
+            )
+            bmesh.ops.transform(bm, matrix=scale_mat, verts=bm.verts)
+
+            bm.to_mesh(mesh)
+            bm.free()
+
+            # Place cube at the combined center in WORLD space, axis-aligned
+            obj_box.matrix_world = mathutils.Matrix.Translation(center_w)
+
+            # Helper-ish but exportable:
+            obj_box.display_type = 'WIRE'
+            obj_box.hide_render = True      # fine for export
+            obj_box.hide_viewport = False   # must be visible so user sees them
+
+            # No parenting – keep them in world
+            obj_box.parent = None
+
+            return obj_box
+
+        outer_obj = make_box("outer_col", outer_half)
+        inner_obj = make_box("inner_col", inner_half)
+
+        self.report(
+            {'INFO'},
+            "Generated VDF inner_col and outer_col from selected mesh bounds",
+        )
+        return {'FINISHED'}
+
+
+
+
 class OPGenerateCollision(bpy.types.Operator):
     bl_idname = "bz.generatecollision"
     bl_label = "Generate Collisions"
@@ -1600,6 +1754,7 @@ GUIClasses = [
     OPCreateNewElement,
     OPDeleteElement,
     OPGenerateCollision,
+    OPGenerateVDFCollisionMeshes,
     AnimationUIList,
     AnimationPanel
 ]
