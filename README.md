@@ -1,6 +1,5 @@
 # Battlezone Blender Toolkit  
 ### Full Import/Export Suite for Battlezone 1998 Redux / The Red Odyssey  
-**Version 1.0.1 — November 11, 2025**
 
 ---
 
@@ -8,7 +7,7 @@
 The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with both classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`) and Battlezone Redux model formats (`.MESH`, `.SKELETON`, `.MATERIAL`).  
 It combines multiple tools into one streamlined workflow — no external scripts or converters required.
 
-Version **1.0.1** adds full **Blender 4.5.1** support, **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
+This plugin adds full **Blender 4.5.1** support, **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
 
 ---
 
@@ -21,7 +20,8 @@ Version **1.0.1** adds full **Blender 4.5.1** support, **quaternion animation**,
 - ✅ Full **Blender 4.5.1** compatibility  
 - ✅ **Auto Ogre Mesh/Skeleton/Material export** (Redux-ready)  
 - ✅ **Quaternion animation** import/export  
-- ✅ **Automatic `.MAP` → `.PNG` conversion** for textures  
+- ✅ **Automatic `.MAP` → `.PNG` conversion** for textures
+- ✅ **Automatic `.PNG` or `.MAP` → `.DDS` conversion** for textures  
 - ✅ **Safe material name auto-generation**  
 - ✅ **Auto UV unwrap** when missing  
 - ✅ **Accurate GEO scaling and GEOFlags**  
@@ -60,8 +60,6 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
-
-### [1.0.1] — 2025-11-11  
 **Blender 4.5.1 Compatibility, Ogre Auto-Port Integration, and Major Pipeline Updates**
 
 #### Added
@@ -116,7 +114,7 @@ Everything is handled inside Blender:
 
 ---
 
-## Summary of Improvements Since 0.9.4
+## Summary of Improvements Since 0.9.3 (Commando950's original Blender plugin)
 
 | Category | Update |
 |-----------|---------|
