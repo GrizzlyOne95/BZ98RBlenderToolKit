@@ -12,8 +12,9 @@ This plugin adds full **Blender 4.5.1** support, **quaternion animation**, **aut
 ---
 
 ## Installation
--- Download the .zip from Releases
+-- Download the newest .zip from Releases
 -- In Blender, go to Edit > Preferences > Addons > Install From Disk
+-- Ensure addon is enabled
 
 ## Quick Feature Summary
 
