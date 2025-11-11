@@ -5,10 +5,10 @@
 ---
 
 ## Overview
-The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`).  
-It combines multiple legacy tools into one streamlined workflow — no external scripts or converters required.
+The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with both classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`) and Battlezone Redux model formats (.MESH, .SKELETON, .MATERIAL).  
+It combines multiple tools into one streamlined workflow — no external scripts or converters required.
 
-Version **0.9.5** adds full **Blender 4.5.1** support, **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
+Version **1.0.1** adds full **Blender 4.5.1** support, **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
 
 ---
 
@@ -27,9 +27,9 @@ Version **0.9.5** adds full **Blender 4.5.1** support, **quaternion animation**,
 - ✅ **Accurate GEO scaling and GEOFlags**  
 - ✅ **TRO/Red Odyssey VDF support**  
 - ✅ **COLP collision import safety checks**  
-- ✅ No external dependencies required
-- ✅ Automatic VDF COL box generation
-- ✅ Includes all known documented GEO types and Animation Indexes as Info Boxes
+- ✅ **No external dependencies required**
+- ✅ **Automatic VDF COL box generation**
+- ✅ **Includes all known documented GEO types and Animation Indexes as Info Boxes**
 
 ---
 
@@ -42,16 +42,18 @@ Before this toolkit, modders relied on several separate tools:
 - **Ogre CLI Tools** – required upgrading exported meshes  
 - **DivisionByZero’s Python script** – converted `.VDF`/`.SDF`/`.GEO` files  
 - **Commando950’s VDF/SDF Add-on** – Blender editor for legacy formats  
-- **Manual normal-fix scripts** – for correcting mesh lighting  
+- **Manual normal-fix scripts** – for correcting mesh lighting
 
-This process required multiple exports, conversions, and CLI tools.
+- **OR paid software such as UU3D because there aren't any official free tools that support BZR meshes**
+
+This process required multiple exports, conversions, CLI tools, next to zero documentation and no centralized source for all of the tools.
 
 ### Now
 Everything is handled inside Blender:
 
 - Import or export `.GEO`, `.VDF`, and `.SDF` directly  
 - Auto-convert `.MAP` textures to `.PNG`  
-- Export Redux `.mesh`, `.skeleton`, and `.material` automatically  
+- Export or Import Redux `.mesh`, `.skeleton`, and `.material` automatically, complete with animations
 - Correct scaling, collisions, and flags preserved  
 - No CLI tools or Python installs needed  
 
@@ -59,7 +61,7 @@ Everything is handled inside Blender:
 
 ## Changelog
 
-### [0.9.5] — 2025-11-11  
+### [1.0.1] — 2025-11-11  
 **Blender 4.5.1 Compatibility, Ogre Auto-Port Integration, and Major Pipeline Updates**
 
 #### Added
