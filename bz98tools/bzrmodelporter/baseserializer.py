@@ -1,3 +1,10 @@
+# Battlezone 98R Blender ToolKit
+# Copyright (C) 2024–2025 “GrizzlyOne95” and contributors
+# 
+# This file is part of BZ98R Blender ToolKit, which is distributed
+# under the terms of the GNU General Public License v3.0.
+# See the LICENSE file or <https://www.gnu.org/licenses/>.
+
 # Text encoding/decoding currently uses 'latin-1' (iso-8859-1) encoding.
 #   I'm not sure this is the most appropriate solution.
 
