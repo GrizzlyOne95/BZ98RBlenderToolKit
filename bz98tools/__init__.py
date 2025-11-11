@@ -13,20 +13,21 @@ from bpy_extras.io_utils import (
         ExportHelper,
         )
 
+import os
+
+def get_default_ogre_xml_converter():
+    """Try to find OgreXMLConverter.exe in the bundled ogretools folder."""
+    addon_dir = os.path.dirname(__file__)
+    candidate = os.path.join(addon_dir, "ogretools", "OgreXMLConverter.exe")
+    if os.path.isfile(candidate):
+        return candidate
+    # Fallback: empty string; user can pick it manually
+    return ""
+
+
 if "bpy" in locals():
     import importlib
-    if "import_geo" in locals():
-        importlib.reload(import_geo)
-    if "import_vdf" in locals():
-        importlib.reload(import_vdf)
-    if "import_sdf" in locals():
-        importlib.reload(import_sdf)
-    if "export_geo" in locals():
-        importlib.reload(export_geo)
-    if "export_vdf" in locals():
-        importlib.reload(export_vdf)
-    if "export_sdf" in locals():
-        importlib.reload(export_sdf)
+
 
 # ----------------------------------------------------------
 #  Updated for Blender 4.5.1 compatibility
@@ -46,8 +47,6 @@ TERNARY_ITEMS = [
     ("YES",  "Force Yes",  "Force enabled"),
     ("NO",   "Force No",   "Force disabled"),
 ]
-
-
 
 '''
 PROPERTY GROUP DEFINITION CLASSES
@@ -1299,6 +1298,278 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
 
         return result
 
+class BZ98TOOLS_OT_import_bzr_mesh(bpy.types.Operator, ImportHelper):
+    """Import BZR Mesh (Ogre .mesh)"""
+    bl_idname = "import_scene.bz98_bzr_mesh"
+    bl_label = "Import Battlezone Redux Mesh (.mesh)"
+    bl_options = {'UNDO'}
+
+    filename_ext = ".mesh"
+    filter_glob: StringProperty(
+        default="*.mesh",
+        options={'HIDDEN'},
+    )
+
+    xml_converter: StringProperty(
+        name="OgreXMLConverter",
+        description="Path to OgreXMLConverter.exe",
+        default=get_default_ogre_xml_converter(),
+        subtype='FILE_PATH',
+    )
+
+    keep_xml: BoolProperty(
+        name="Keep XML files",
+        description="Keep intermediate .xml files instead of deleting them",
+        default=False,
+    )
+
+    import_normals: BoolProperty(
+        name="Import Normals",
+        default=True,
+    )
+
+    normal_mode: EnumProperty(
+        name="Normal Import Mode",
+        items=(
+            ('custom', "Custom", "Use custom split normals if possible"),
+            ('auto', "Auto", "Let Blender recompute normals"),
+        ),
+        default='custom',
+    )
+
+    import_shapekeys: BoolProperty(
+        name="Import Shape Keys",
+        default=True,
+    )
+
+    import_animations: BoolProperty(
+        name="Import Animations",
+        default=False,
+    )
+
+    round_frames: BoolProperty(
+        name="Round Animation Frames",
+        description="Round animation frames to whole frames and set scene FPS",
+        default=True,
+    )
+
+    use_selected_skeleton: BoolProperty(
+        name="Use Selected Armature as Skeleton",
+        description="If an armature is selected, map mesh weights to it",
+        default=False,
+    )
+
+    import_materials: BoolProperty(
+        name="Import Materials",
+        default=True,
+    )
+
+    def execute(self, context):
+        # Local import to avoid circular import on addon init
+        from .ogretools import OgreImport
+
+        xml_converter = self.xml_converter or None
+
+        return OgreImport.load(
+            self,
+            context,
+            self.filepath,
+            xml_converter=xml_converter,
+            keep_xml=self.keep_xml,
+            import_normals=self.import_normals,
+            normal_mode=self.normal_mode,
+            import_shapekeys=self.import_shapekeys,
+            import_animations=self.import_animations,
+            round_frames=self.round_frames,
+            use_selected_skeleton=self.use_selected_skeleton,
+            import_materials=self.import_materials,
+        )
+
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "xml_converter")
+        layout.prop(self, "keep_xml")
+        layout.separator()
+        layout.prop(self, "import_normals")
+        layout.prop(self, "normal_mode")
+        layout.prop(self, "import_shapekeys")
+        layout.prop(self, "import_animations")
+        layout.prop(self, "round_frames")
+        layout.prop(self, "use_selected_skeleton")
+        layout.prop(self, "import_materials")
+
+
+class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
+    """Export BZR Mesh (Ogre .mesh + .skeleton)"""
+    bl_idname = "export_scene.bz98_bzr_mesh"
+    bl_label = "Export Battlezone Redux Mesh (.mesh)"
+    bl_options = {'UNDO'}
+
+    filename_ext = ".mesh"
+    filter_glob: StringProperty(
+        default="*.mesh",
+        options={'HIDDEN'},
+    )
+
+    xml_converter: StringProperty(
+        name="OgreXMLConverter",
+        description="Path to OgreXMLConverter.exe",
+        default=get_default_ogre_xml_converter(),
+        subtype='FILE_PATH',
+    )
+
+    keep_xml: BoolProperty(
+        name="Keep XML files",
+        description="Keep intermediate .xml instead of deleting them",
+        default=False,
+    )
+
+    export_tangents: BoolProperty(
+        name="Export Tangents",
+        default=True,
+    )
+
+    export_binormals: BoolProperty(
+        name="Export Binormals",
+        default=True,
+    )
+
+    zero_tangents_binormals: BoolProperty(
+        name="Zero Tangents/Binormals",
+        description="Force tangents/binormals to zero (e.g. for black building meshes)",
+        default=False,
+    )
+
+    export_colour: BoolProperty(
+        name="Export Vertex Colours",
+        default=True,
+    )
+
+    tangent_parity: BoolProperty(
+        name="Export Tangent Parity",
+        default=True,
+    )
+
+    apply_transform: BoolProperty(
+        name="Apply Object Transforms",
+        default=True,
+    )
+
+    apply_modifiers: BoolProperty(
+        name="Apply Modifiers",
+        default=True,
+    )
+
+    export_materials: BoolProperty(
+        name="Export Materials",
+        default=True,
+    )
+
+    overwrite_material: BoolProperty(
+        name="Overwrite Material Files",
+        default=False,
+    )
+
+    copy_textures: BoolProperty(
+        name="Copy Textures Next to .mesh",
+        default=False,
+    )
+
+    export_skeleton: BoolProperty(
+        name="Export Skeleton",
+        default=True,
+    )
+
+    export_poses: BoolProperty(
+        name="Export Shape Keys as Poses",
+        default=True,
+    )
+
+    export_animation: BoolProperty(
+        name="Export Animations",
+        default=False,
+    )
+
+    renormalize_weights: BoolProperty(
+        name="Renormalize Weights",
+        default=True,
+    )
+
+    batch_export: BoolProperty(
+        name="Batch Export Selected Objects",
+        description="Export each selected object as its own .mesh file",
+        default=False,
+    )
+
+    def execute(self, context):
+        # Local import to avoid circular import on addon init
+        from .ogretools import OgreExport
+
+        xml_converter = self.xml_converter or None
+
+        return OgreExport.save(
+            self,
+            context,
+            self.filepath,
+            xml_converter=xml_converter,
+            keep_xml=self.keep_xml,
+            export_tangents=self.export_tangents,
+            export_binormals=self.export_binormals,
+            zero_tangents_binormals=self.zero_tangents_binormals,
+            export_colour=self.export_colour,
+            tangent_parity=self.tangent_parity,
+            apply_transform=self.apply_transform,
+            apply_modifiers=self.apply_modifiers,
+            export_materials=self.export_materials,
+            overwrite_material=self.overwrite_material,
+            copy_textures=self.copy_textures,
+            export_skeleton=self.export_skeleton,
+            export_poses=self.export_poses,
+            export_animation=self.export_animation,
+            renormalize_weights=self.renormalize_weights,
+            batch_export=self.batch_export,
+        )
+
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "xml_converter")
+        layout.prop(self, "keep_xml")
+        layout.separator()
+        col = layout.column()
+        col.label(text="Geometry:")
+        col.prop(self, "apply_transform")
+        col.prop(self, "apply_modifiers")
+        col.prop(self, "batch_export")
+
+        layout.separator()
+        col = layout.column()
+        col.label(text="Tangents / Binormals:")
+        col.prop(self, "export_tangents")
+        col.prop(self, "export_binormals")
+        col.prop(self, "zero_tangents_binormals")
+        col.prop(self, "tangent_parity")
+
+        layout.separator()
+        col = layout.column()
+        col.label(text="Vertex Data:")
+        col.prop(self, "export_colour")
+
+        layout.separator()
+        col = layout.column()
+        col.label(text="Skeleton / Animation:")
+        col.prop(self, "export_skeleton")
+        col.prop(self, "export_poses")
+        col.prop(self, "export_animation")
+        col.prop(self, "renormalize_weights")
+
+        layout.separator()
+        col = layout.column()
+        col.label(text="Materials:")
+        col.prop(self, "export_materials")
+        col.prop(self, "overwrite_material")
+        col.prop(self, "copy_textures")
 
 
 
@@ -1306,11 +1577,14 @@ def menu_func_import(self, context):
     self.layout.operator(ImportGEO.bl_idname, text="Battlezone Geometry (.geo)")
     self.layout.operator(ImportVDF.bl_idname, text="Battlezone Vehicle Definition File (.vdf)")
     self.layout.operator(ImportSDF.bl_idname, text="Battlezone Structure Definition File (.sdf)")
+    self.layout.operator(BZ98TOOLS_OT_import_bzr_mesh.bl_idname, text="Battlezone 98 Redux Mesh (.mesh)")
     
 def menu_func_export(self, context):
     self.layout.operator(ExportGEO.bl_idname, text="Battlezone Geometry (.geo)")
     self.layout.operator(ExportVDF.bl_idname, text="Battlezone Vehicle Definition File (.vdf)")
     self.layout.operator(ExportSDF.bl_idname, text="Battlezone Structure Definition File (.sdf)")
+    self.layout.operator(BZ98TOOLS_OT_export_bzr_mesh.bl_idname, text="Battlezone 98 Redux Mesh (.mesh)")
+
 
 Properties = [
     AnimationPropertyGroup,
@@ -1349,6 +1623,10 @@ def register():
     for registerclass in ImportExportClasses:
         bpy.utils.register_class(registerclass)
         
+    # Register BZR Ogre mesh operators
+    bpy.utils.register_class(BZ98TOOLS_OT_import_bzr_mesh)
+    bpy.utils.register_class(BZ98TOOLS_OT_export_bzr_mesh)    
+        
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
     
@@ -1365,26 +1643,33 @@ def register():
     bpy.types.Scene.SDFVDFPropertyGroup = bpy.props.PointerProperty(type=SDFVDFPropertyGroup)
 
 def unregister():
-    for property in Properties:
-        bpy.utils.unregister_class(property)
-
-    for guiclass in GUIClasses:
-        bpy.utils.unregister_class(guiclass)    
-
-    for registerclass in ImportExportClasses:
-        bpy.utils.unregister_class(registerclass)
-        
+    # Remove menus first so UI won't try to use unregistered classes
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
-    
-        #The animations currently loaded.
+
+    # The animations currently loaded.
     bpy.types.Scene.AnimationCollection = None
-    #The current animation we are viewing.
+    # The current animation we are viewing.
     bpy.types.Scene.CurAnimation = None
-    #Custom property groups.
+    # Custom property groups.
     bpy.types.Material.MaterialPropertyGroup = None
     bpy.types.Object.GEOPropertyGroup = None
     bpy.types.Scene.SDFVDFPropertyGroup = None
+
+    # Unregister BZR Ogre mesh operators
+    bpy.utils.unregister_class(BZ98TOOLS_OT_export_bzr_mesh)
+    bpy.utils.unregister_class(BZ98TOOLS_OT_import_bzr_mesh)
+
+    # Unregister main classes
+    for registerclass in ImportExportClasses:
+        bpy.utils.unregister_class(registerclass)
+
+    for guiclass in GUIClasses:
+        bpy.utils.unregister_class(guiclass)
+
+    for property in Properties:
+        bpy.utils.unregister_class(property)
+
 
 #If being tested in script editor run.
 if __name__ == '__main__':
