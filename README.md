@@ -8,10 +8,12 @@ All notable changes to this project are documented in this file.
 - If Battlezone Material Name is blank, it auto generates a safe file name on export based on Blender material name
 - Any matching detected .MAP files are decoded into .PNG and loaded into Blender as a material node for previewing
 - Invalid material indices are automatically fixed on export
-- Exporter no longer ignogres Quaternion animation keyframes and auto converts
-- GEO Scaling is no longer ignored and will be written/ignored as they can change behavior in game
+- Exporter no longer ignores Quaternion animation keyframes and auto converts
+- GEO Scaling is no longer ignored and will be written/read as they can change behavior in game
 - Option on exports to auto port the result to Ogre mesh/skeleton/material (Redux format)
 - Import/Export Redux format meshes/skeletons
+- If Geos have no UV maps, it auto unwraps them so they wont be "blank"
+- If a VDF has invalid COL, it will safely import them as empty instead of crashing
 
 
 ## [0.9.4] – 2025-11-07
@@ -120,6 +122,6 @@ All notable changes to this project are documented in this file.
   - PropertyGroups, panels, operators, and import/export classes are now registered from lists (`Properties`, `GUIClasses`, `ImportExportClasses`), simplifying future additions and ensuring all pieces unregister cleanly.
 
 ### CREDITS
-- DivisionByZero for bzmap.py, bzmap_serializer.py, and bzact_serializer.py
+- DivisionByZero for original stand alone python Ogre Mesh port script
 - Commando950 for original SDF/VDF/Geo Blender Editor Plugin
-- Kindrad for Ogre Import/Export code
+- Kindrad for Ogre Import/Export code for the Kenshi Plugin
