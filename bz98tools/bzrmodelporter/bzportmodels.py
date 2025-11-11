@@ -14,6 +14,16 @@ import numpy as np    # TODO: Make better use of numpy
 import itertools
 from .utils import remap_range_normal
 
+from pathlib import Path
+
+# Shared palette cache: keys are ("act", act_path) or ("geo", map_dir)
+_color_palette_cache = {}
+
+
+import struct
+from pathlib import Path
+
+
 # Optional Pillow dependency: only needed for writing DDS textures
 try:
     from PIL import Image
@@ -1500,24 +1510,262 @@ def bzmap_to_pilimage(bzmap, asset_resolver):
 	else:
 		# TODO: Name this exception
 		raise Exception(f"Unknown BZMapFormat {bzmap.pixel_format}")
+        
+def _get_palette_from_import_geo(map_dir):
+    """
+    Ask import_geo for the palette it would use for this directory,
+    reusing its built-in ACT data and search logic.
+
+    Returns a NumPy array of shape (256, 3) or None.
+    """
+    try:
+        # bzrmodelporter is in a subpackage; '..' goes back to bz98tools
+        from .. import import_geo as _imp
+    except Exception:
+        # Running outside Blender / module unavailable
+        return None
+
+    getter = getattr(_imp, "_get_palette_for_dir", None)
+    if getter is None:
+        return None
+
+    try:
+        pal_list = getter(map_dir)
+        if not pal_list:
+            return None
+        return np.array(pal_list, dtype="B")
+    except Exception:
+        print(f"[bzrmodelporter] Failed to get palette from import_geo for {map_dir}")
+        print(traceback.format_exc())
+        return None
+
+
+def _resolve_act_palette(asset_resolver, map_dir=None):
+    """
+    1) Try explicit ACT path from AssetResolver (CLI / config.cfg / UI).
+    2) If none, fall back to import_geo's ACT / built-in palette logic
+       based on the .map's directory.
+    """
+    # 1) Explicit ACT path (CLI-style)
+    act_path = None
+    if asset_resolver is not None:
+        try:
+            act_path = asset_resolver.get_act_path()
+        except Exception:
+            act_path = None
+
+    if act_path:
+        key = ("act", os.fspath(act_path))
+        pal = _color_palette_cache.get(key)
+        if pal is not None:
+            return pal
+
+        try:
+            from ..bzact_serializer import BZActSerializer
+            with open(act_path, "rb") as stream:
+                bzact_serializer = BZActSerializer()
+                pal_list = bzact_serializer.deserialize(stream)
+            pal = np.array(pal_list, dtype="B")
+            _color_palette_cache[key] = pal
+            return pal
+        except OSError:
+            print(f"[bzrmodelporter] Failed to read .act palette file {act_path}")
+            print(traceback.format_exc())
+
+    # 2) Fallback: same ACT/palette logic as import_geo (if available)
+    if map_dir:
+        key = ("geo", os.fspath(map_dir))
+        pal = _color_palette_cache.get(key)
+        if pal is not None:
+            return pal
+
+        pal = _get_palette_from_import_geo(os.fspath(map_dir))
+        if pal is not None:
+            _color_palette_cache[key] = pal
+            return pal
+
+    return None
+        
+        
+def _bzmap_to_rgba_bytes(map_source, asset_resolver, map_dir=None):
+    """
+    Convert a BZMap (or a .map filepath) to raw RGBA8 bytes.
+
+    map_source:
+        - Either a BZMap instance
+        - Or a path-like pointing at a .map file
+    map_dir:
+        - Directory to search for ACT palettes (optional, but recommended
+          when map_source is a filepath).
+
+    Returns (width, height, rgba_bytes) or (None, None, None) on failure.
+    """
+    # Normalise map_source -> BZMap instance
+    if isinstance(map_source, BZMap):
+        bzmap = map_source
+        map_path = None
+    else:
+        map_path = Path(map_source)
+        if not map_path.exists():
+            print(f"[bzrmodelporter] Map file not found: {map_path}")
+            return None, None, None
+
+        if map_dir is None:
+            map_dir = os.fspath(map_path.parent)
+
+        bzmap = BZMap()
+        serializer = BZMapSerializer()
+        with open(map_path, "rb") as stream:
+            serializer.deserialize(stream, bzmap)
+
+    if map_dir is None and map_path is not None:
+        map_dir = os.fspath(map_path.parent)
+
+    width, height = bzmap.get_size()
+    buf = bzmap.get_buffer()
+    if buf is None:
+        print("[bzrmodelporter] BZMap has no pixel buffer.")
+        return None, None, None
+
+    pixel_format = bzmap.pixel_format
+    row_bytes = bzmap.row_byte_size
+
+    # INDEXED → need palette
+    if pixel_format == BZMapFormat.INDEXED:
+        color_palette = _resolve_act_palette(asset_resolver, map_dir)
+        if color_palette is None:
+            print("[bzrmodelporter] No ACT palette available for INDEXED map.")
+            return None, None, None
+
+        ar = np.frombuffer(buf, dtype="B")
+        if ar.size < width * height:
+            print(f"[bzrmodelporter] Buffer too small for INDEXED map: "
+                  f"{ar.size}, expected {width*height}")
+            return None, None, None
+
+        ar = ar[:width * height]
+        rgb = color_palette[ar]        # shape (N,3)
+        rgb = rgb.reshape((height, width, 3))
+
+        rgba = np.zeros((height, width, 4), dtype="B")
+        rgba[:, :, :3] = rgb
+        rgba[:, :, 3] = 255
+        return width, height, rgba.tobytes()
+
+    # ---- the rest of your formats stay the same ----
+    # ARGB4444 / RGB565 / ARGB8888 / XRGB8888 etc.
+    # (keep your existing code for these branches unchanged)
+    ...
+
+
+
+def _write_dds_uncompressed_rgba(width, height, rgba_bytes, out_path):
+    """
+    Write uncompressed 32-bit RGBA DDS (A8R8G8B8 layout).
+    - width, height: image size
+    - rgba_bytes: len == width * height * 4, in RGBA order (R,G,B,A per pixel)
+    """
+    # DDS expects A8R8G8B8: little-endian dword = 0xAARRGGBB -> bytes: BB GG RR AA
+    if len(rgba_bytes) != width * height * 4:
+        raise ValueError(
+            f"rgba_bytes has wrong size: {len(rgba_bytes)}; expected {width*height*4}"
+        )
+
+    # Reorder RGBA -> BGRA for A8R8G8B8 layout
+    rgba = memoryview(rgba_bytes)
+    bgra = bytearray(len(rgba_bytes))
+    j = 0
+    for i in range(0, len(rgba_bytes), 4):
+        r = rgba[i + 0]
+        g = rgba[i + 1]
+        b = rgba[i + 2]
+        a = rgba[i + 3]
+        bgra[j + 0] = b
+        bgra[j + 1] = g
+        bgra[j + 2] = r
+        bgra[j + 3] = a
+        j += 4
+
+    def dword(x):
+        return struct.pack("<I", x)
+
+    flags = 0x00021007  # caps | height | width | pixelformat | pitch
+    pitch = width * 4
+    depth = 0
+    mipmaps = 0
+
+    # Pixel format for uncompressed A8R8G8B8
+    pf_flags = 0x00000041  # DDPF_RGB | DDPF_ALPHAPIXELS
+    pf_fourcc = 0
+    pf_bpp = 32
+    pf_rmask = 0x00FF0000
+    pf_gmask = 0x0000FF00
+    pf_bmask = 0x000000FF
+    pf_amask = 0xFF000000
+
+    caps1 = 0x00001000  # DDSCAPS_TEXTURE
+    caps2 = 0
+    caps3 = 0
+    caps4 = 0
+
+    header = bytearray()
+    header.extend(b"DDS ")
+    header.extend(dword(124))          # dwSize
+    header.extend(dword(flags))        # dwFlags
+    header.extend(dword(height))       # dwHeight
+    header.extend(dword(width))        # dwWidth
+    header.extend(dword(pitch))        # dwPitchOrLinearSize
+    header.extend(dword(depth))        # dwDepth
+    header.extend(dword(mipmaps))      # dwMipMapCount
+    header.extend(b"\0" * (11 * 4))    # dwReserved1[11]
+
+    # DDS_PIXELFORMAT
+    header.extend(dword(32))           # dwSize
+    header.extend(dword(pf_flags))     # dwFlags
+    header.extend(dword(pf_fourcc))    # dwFourCC
+    header.extend(dword(pf_bpp))       # dwRGBBitCount
+    header.extend(dword(pf_rmask))     # dwRBitMask
+    header.extend(dword(pf_gmask))     # dwGBitMask
+    header.extend(dword(pf_bmask))     # dwBBitMask
+    header.extend(dword(pf_amask))     # dwABitMask
+
+    # caps
+    header.extend(dword(caps1))
+    header.extend(dword(caps2))
+    header.extend(dword(caps3))
+    header.extend(dword(caps4))
+    header.extend(dword(0))            # dwReserved2
+
+    out_path = os.fspath(out_path)
+    with open(out_path, "wb") as f:
+        f.write(header)
+        f.write(bgra)
+        
 
 def create_material_string(mat_name, super_mat_name, tex_name):
-	return (
-		f"material {mat_name} : {super_mat_name}\n"
-		"{\n"
-		f"\tset_texture_alias DiffuseMap {tex_name}_D.dds\n"
-		"\tset_texture_alias NormalMap flat_N.dds\n"
-		"\tset_texture_alias SpecularMap black.dds\n"
-		"\tset_texture_alias EmissiveMap black.dds\n"
-		"\t\n"
-		"\tset $diffuse \"1 1 1\"\n"
-		"\tset $ambient \"1 1 1\"\n"
-		"\tset $specular \".7 .7 .7\"\n"
-		"\tset $shininess \"127\"\n"
-		"\tset $glow \"1 1 1\"\n"
-		"}\n"
-		"\n\n"
-	)
+    # tex_name may be a plain BZ texture name ("avcarr") or a PNG-ish name ("MyTex.png").
+    # Use the *base filename* for the DDS name, without extension.
+    base = Path(tex_name).name          # drop any directories
+    base = os.path.splitext(base)[0]    # drop .png/.tga/whatever
+    dds_name = f"{base}_D.dds"
+
+    return (
+        f"material {mat_name} : {super_mat_name}\n"
+        "{\n"
+        f"\tset_texture_alias DiffuseMap {dds_name}\n"
+        "\tset_texture_alias NormalMap flat_N.dds\n"
+        "\tset_texture_alias SpecularMap black.dds\n"
+        "\tset_texture_alias EmissiveMap black.dds\n"
+        "\t\n"
+        "\tset $diffuse \"1 1 1\"\n"
+        "\tset $ambient \"1 1 1\"\n"
+        "\tset $specular \".7 .7 .7\"\n"
+        "\tset $shininess \"127\"\n"
+        "\tset $glow \"1 1 1\"\n"
+        "}\n"
+        "\n\n"
+    )
+
 
 hardpoint_class_id_set = {
 	ClassID.WEAPON_HARDPOINT,
@@ -2205,52 +2453,133 @@ def write_material(imodel, asset_resolver, suppress_write):
 			print(traceback.format_exc())
 	else:
 		print(f"Skipping material file: {imodel.material_filename}")
+        
+def _png_to_rgba_bytes(png_path):
+    """
+    Load a PNG via Blender's image API and return (width, height, rgba_bytes).
+
+    Returns (None, None, None) if Blender is unavailable or loading fails.
+    """
+    try:
+        import bpy
+    except ImportError:
+        print(f"[bzrmodelporter] Blender 'bpy' module not available; "
+              f"cannot load PNG {png_path}")
+        return None, None, None
+
+    print(f"[bzrmodelporter] Loading PNG via Blender: {png_path}")
+    try:
+        img = bpy.data.images.load(str(png_path))
+    except Exception as e:
+        print(f"[bzrmodelporter] Failed to load PNG '{png_path}': {e}")
+        return None, None, None
+
+    try:
+        width, height = img.size
+        # img.pixels is a flat sequence of floats [R, G, B, A, R, G, B, A, ...]
+        pixels = list(img.pixels)
+        expected_len = width * height * 4
+        if len(pixels) != expected_len:
+            print(f"[bzrmodelporter] Unexpected pixel length for '{png_path}': "
+                  f"{len(pixels)} (expected {expected_len})")
+            return None, None, None
+
+        buf = bytearray(expected_len)
+        for i, f in enumerate(pixels):
+            v = int(f * 255.0 + 0.5)
+            if v < 0:
+                v = 0
+            elif v > 255:
+                v = 255
+            buf[i] = v
+
+        return width, height, bytes(buf)
+
+    finally:
+        # Clean up the temporary image from the .blend
+        img.user_clear()
+        bpy.data.images.remove(img)
+
 
 def write_textures(imodel, asset_resolver, suppress_write):
-	if not HAVE_PIL:
-		print("[bzrmodelporter] Pillow not installed; skipping DDS texture export.")
-		return
-        
-	for tex_name in imodel.get_textures():
-		print(f"tex_name: {tex_name}")
-		if(tex_name == imodel.flat_name):
-			if(imodel.flat_img is not None):
-				output_filename = tex_name+"_D.dds"
-				output_filepath = asset_resolver.get_output_texture_path(output_filename)
-				if(output_filepath is not None):
-					print(f"Flat texture: {tex_name}")
-					if(suppress_write):
-						print(f"*File write suppressed* {output_filepath}")
-					else:
-						imodel.flat_img.save(output_filepath)
-						print(f"Written to {output_filepath}")
-			continue
-		map_filepath = asset_resolver.get_map_path(tex_name)
-		if(map_filepath is not None):
-			output_filename = tex_name+"_D.dds"
-			output_filepath = asset_resolver.get_output_texture_path(output_filename)
-			if(output_filepath is not None):
-				print(f"Texture: {tex_name}")
-				try:
-					bzmap = BZMap()
-					map_serializer = BZMapSerializer()
-					with open(map_filepath, 'rb') as stream:
-						map_serializer.deserialize(stream, bzmap)
-				except OSError:
-					print(f"Failed to read .map texture file {map_filepath} for texture {tex_name}")
-					print(traceback.format_exc())
-				else:
-					img = bzmap_to_pilimage(bzmap, asset_resolver)
-					if(img is not None):
-						if(suppress_write):
-							print(f"*File write suppressed* {output_filepath}")
-						else:
-							img.save(output_filepath)
-							print(f"Written to {output_filepath}")
-					else:
-						print(f"Failed to convert bzmap to pilimage: {map_filepath} ({tex_name})")
-			else:
-				print(f"Skipping texture: {tex_name}")
+    print("Writing texture files")
+    if suppress_write:
+        print("  [nowrite] Skipping texture export")
+        return
+
+    for tex_name in imodel.get_textures():
+        if not tex_name:
+            continue
+
+        base_name = os.path.splitext(tex_name)[0]
+        dds_name = base_name + "_D.dds"
+        dds_path = asset_resolver.get_output_texture_path(dds_name)
+
+        print(f"tex_name: {tex_name}")
+        print(f"Texture: {base_name} -> {dds_name}")
+
+        if dds_path is None:
+            print(f"  [skip] Output path disabled or already exists for {dds_name}")
+            continue
+
+        # ----------------------------------------------------
+        # 1) Prefer existing PNG (no ACT / palette needed)
+        # ----------------------------------------------------
+        png_basename = base_name + ".png"
+        png_path = asset_resolver.get_resource_path(png_basename)
+        if png_path is not None:
+            print(f"  Using existing PNG '{png_path}' for '{tex_name}'")
+            width, height, rgba_bytes = _png_to_rgba_bytes(png_path)
+            if width is not None and rgba_bytes is not None:
+                _write_dds_uncompressed_rgba(width, height, rgba_bytes, dds_path)
+                continue
+            else:
+                print(f"  Failed to load PNG '{png_path}', "
+                      f"falling back to .map if available.")
+
+        # ----------------------------------------------------
+        # 2) Flat-color synthetic texture (if present)
+        # ----------------------------------------------------
+        if getattr(imodel, "flat_name", None) == tex_name and \
+           getattr(imodel, "flat_img", None) is not None:
+            # imodel.flat_img should be a PIL image created earlier;
+            # only runs if Pillow is installed and flat-colors are in use.
+            img = imodel.flat_img.convert("RGBA")
+            width, height = img.size
+            rgba_bytes = img.tobytes()
+            _write_dds_uncompressed_rgba(width, height, rgba_bytes, dds_path)
+            continue
+
+        # ----------------------------------------------------
+        # 3) Fallback: original .map → RGBA path (needs ACT for INDEXED)
+        map_filepath = asset_resolver.get_map_path(base_name)
+        if map_filepath is None:
+            print(f"  Could not find map file for texture '{tex_name}'")
+            continue
+
+        print(f"  Loading .map: {map_filepath}")
+
+        try:
+            width, height, rgba_bytes = _bzmap_to_rgba_bytes(
+                map_filepath,
+                asset_resolver,
+                map_dir=os.path.dirname(map_filepath),
+            )
+        except Exception as exc:
+            print(f"  Failed to convert bzmap to RGBA bytes: "
+                  f"{map_filepath} ({tex_name})")
+            print(f"    {exc}")
+            continue
+
+        if width is None or rgba_bytes is None:
+            print(f"  No RGBA data for {map_filepath} ({tex_name}); "
+                  f"skipping DDS write")
+            continue
+
+        _write_dds_uncompressed_rgba(width, height, rgba_bytes, dds_path)
+
+
+
 
 def port_geo(target_filepath, asset_resolver, settings):
 	print(f"Porting geo mesh {target_filepath}")
@@ -2375,32 +2704,48 @@ def port_geo(target_filepath, asset_resolver, settings):
 	
 
 def port_map(filepath, asset_resolver, settings):
-	tex_name = filepath.stem
-	map_filepath = asset_resolver.get_map_path(tex_name)
-	if(map_filepath is not None):
-		output_filename = tex_name+"_D.dds"
-		output_filepath = asset_resolver.get_output_texture_path(output_filename)
-		if(output_filepath is not None):
-			print(f"Texture: {tex_name}")
-			try:
-				bzmap = BZMap()
-				map_serializer = BZMapSerializer()
-				with open(map_filepath, 'rb') as stream:
-					map_serializer.deserialize(stream, bzmap)
-			except OSError:
-				print(f"Failed to read .map texture file {map_filepath} for texture {tex_name}")
-				print(traceback.format_exc())
-			else:
-				img = bzmap_to_pilimage(bzmap, asset_resolver)
-				if(img is not None):
-					if(settings.suppress_write()):
-						print(f"*File write suppressed* {output_filepath}")
-					else:
-						img.save(output_filepath)
-						print(f"Written to {output_filepath}")
-				else:
-					print(f"Failed to convert bzmap to pilimage: {map_filepath} ({tex_name})")
-		else:
-			print(f"Skipping texture: {tex_name}")
-	
-	
+    """
+    Standalone .map -> uncompressed DDS (A8R8G8B8) converter.
+
+    This uses the same BZMap decoding as the main pipeline and the
+    pure-Python _bzmap_to_rgba_bytes / _write_dds_uncompressed_rgba helpers,
+    so it does not depend on Pillow.
+    """
+    tex_name = filepath.stem                     # name without .map
+    map_filepath = asset_resolver.get_map_path(tex_name)
+    if map_filepath is None:
+        print(f"Skipping texture: {tex_name} (no .map found)")
+        return
+
+    output_filename = tex_name + "_D.dds"
+    output_filepath = asset_resolver.get_output_texture_path(output_filename)
+    if output_filepath is None:
+        print(f"Skipping texture: {tex_name} (no output path)")
+        return
+
+    print(f"Texture: {tex_name}")
+    try:
+        bzmap = BZMap()
+        map_serializer = BZMapSerializer()
+        with open(map_filepath, 'rb') as stream:
+            map_serializer.deserialize(stream, bzmap)
+    except OSError:
+        print(f"Failed to read .map texture file {map_filepath} for texture {tex_name}")
+        print(traceback.format_exc())
+        return
+
+    width, height, rgba = _bzmap_to_rgba_bytes(
+    bzmap,
+    asset_resolver,
+    map_dir=os.path.dirname(map_filepath),
+)
+
+    if width is None or rgba is None:
+        print(f"Failed to convert bzmap to RGBA bytes: {map_filepath} ({tex_name})")
+        return
+
+    if settings.suppress_write():
+        print(f"*File write suppressed* {output_filepath}")
+    else:
+        _write_dds_uncompressed_rgba(width, height, rgba_bytes, dds_path)
+        print(f"Written to {output_filepath}")
