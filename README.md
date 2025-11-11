@@ -165,11 +165,14 @@ copyright notices.
 
 See the [LICENSE](LICENSE) file for full terms.
 
+Other portions of code were derived from sources by Commando950's plugin here: https://commando950.neocities.org/downloads/
+And DivisionByZeoro's porting code, never put on any site or repo.
+
 ### Third-Party Components
 
 **OGRE (Object-Oriented Graphics Rendering Engine)**  
 © 2000–2023 Torus Knot Software Ltd and other contributors  
-Licensed under the MIT License. See `third_party/OGRE_LICENSE.txt`.  
+Licensed under the MIT License. See `OGRE_LICENSE.txt`.  
 Used for conversion utilities such as `OgreXMLConverter.exe`.
 
 
