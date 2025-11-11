@@ -1135,14 +1135,14 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
         name="ACT Palette (--act)",
         description="Optional .act palette file for indexed .map textures",
         default="",
-        subtype='FILE_PATH',
+        #subtype='FILE_PATH',
     )
 
     ogre_config_path: StringProperty(
         name="Config File (--config)",
         description="Optional config file that defines default paths for the porter",
         default="",
-        subtype='FILE_PATH',
+        #subtype='FILE_PATH',
     )
 
     ogre_only_once: BoolProperty(
@@ -1161,7 +1161,7 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
         name="Destination Directory (--dest)",
         description="Destination directory to write OGRE files into; leave blank to use export folder",
         default="",
-        subtype='DIR_PATH',
+        #subtype='DIR_PATH',
     )
 
     def execute(self, context):
@@ -1270,14 +1270,14 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         name="ACT Palette (--act)",
         description="Optional .act palette file for indexed .map textures",
         default="",
-        subtype='FILE_PATH',
+        #subtype='FILE_PATH',
     )
 
     ogre_config_path: StringProperty(
         name="Config File (--config)",
         description="Optional config file that defines default paths for the porter",
         default="",
-        subtype='FILE_PATH',
+        #subtype='FILE_PATH',
     )
 
     ogre_only_once: BoolProperty(
@@ -1296,7 +1296,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         name="Destination Directory (--dest)",
         description="Destination directory to write OGRE files into; leave blank to use export folder",
         default="",
-        subtype='DIR_PATH',
+        #subtype='DIR_PATH',
     )
     
         # ---------- VDF-only OGRE options ----------
@@ -1538,14 +1538,14 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         name="ACT Palette (--act)",
         description="Optional .act palette file for indexed .map textures",
         default="",
-        subtype='FILE_PATH',
+        #subtype='FILE_PATH',
     )
 
     ogre_config_path: StringProperty(
         name="Config File (--config)",
         description="Optional config file that defines default paths for the porter",
         default="",
-        subtype='FILE_PATH',
+        #subtype='FILE_PATH',
     )
 
     ogre_only_once: BoolProperty(
@@ -1564,7 +1564,7 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         name="Destination Directory (--dest)",
         description="Destination directory to write OGRE files into; leave blank to use export folder",
         default="",
-        subtype='DIR_PATH',
+        #subtype='DIR_PATH',
     )
 
     def execute(self, context):
@@ -1633,7 +1633,7 @@ class BZ98TOOLS_OT_import_bzr_mesh(bpy.types.Operator, ImportHelper):
         name="OgreXMLConverter",
         description="Path to OgreXMLConverter.exe",
         default=get_default_ogre_xml_converter(),
-        subtype='FILE_PATH',
+        # subtype='FILE_PATH',
     )
 
     keep_xml: BoolProperty(
