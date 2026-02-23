@@ -48,7 +48,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5.1)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "Commando950/DivisionByZero/GrizzlyOne95",
-    "version": (1, 0, 0),
+    "version": (1, 1, 0),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
