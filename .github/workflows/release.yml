@@ -1,0 +1,39 @@
+name: Release Addon
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Zip addon
+        run: zip -r bz98tools.zip bz98tools/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bz98tools.zip
+          name: Release ${{ github.ref_name }}
+          body: |
+            ## Battlezone Blender Toolkit ${{ github.ref_name }}
+            
+            ### Installation
+            1. Download `bz98tools.zip` from this release.
+            2. In Blender, go to **Edit > Preferences > Add-ons**.
+            3. Click **Install...** and select the downloaded `.zip` file.
+            4. Ensure **Battlezone GEO/VDF/SDF Formats** is enabled.
+            
+            See the [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for full documentation and features.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

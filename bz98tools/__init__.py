@@ -5,7 +5,10 @@
 # under the terms of the GNU General Public License v3.0.
 # See the LICENSE file or <https://www.gnu.org/licenses/>.
 
-import bpy
+try:
+    import bpy
+except ImportError:
+    bpy = None
 
 from bpy.props import (
         BoolProperty,
@@ -13,6 +16,8 @@ from bpy.props import (
         StringProperty,
         EnumProperty,
         FloatVectorProperty,
+        CollectionProperty,
+        IntProperty,
         )
 
 from bpy_extras.io_utils import (
@@ -43,7 +48,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5.1)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "Commando950/DivisionByZero/GrizzlyOne95",
-    "version": (0, 9, 5),
+    "version": (1, 0, 0),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -1912,18 +1917,206 @@ Properties = [
     MaterialPropertyGroup,
 ]
 
+class ZFSFileEntry(bpy.types.PropertyGroup):
+    name: bpy.props.StringProperty(name="Name")
+    ext: bpy.props.StringProperty(name="Extension")
+    is_model: bpy.props.BoolProperty(name="Is Model", default=False)
+
+def find_zfs_dependencies(reader, filename, extracted_files, temp_dir):
+    """Recursively find and extract dependencies (GEOs and textures) from ZFS."""
+    if filename.lower() in extracted_files: return
+    
+    path = reader.extract(filename, temp_dir)
+    if not path: return
+    extracted_files.add(filename.lower())
+    
+    ext = os.path.splitext(filename)[1].lower()
+    
+    if ext == '.vdf':
+        from . import vdf_classes
+        try:
+            with open(path, 'rb') as f:
+                content = f.read()
+                pos = 20 # Skip VDFHeader
+                vdfc = vdf_classes.VDFCHeader()
+                pos = vdfc.Read(content, pos)
+                pos += 8 # Skip EXIT
+                vgeo = vdf_classes.VGEOHeader()
+                pos = vgeo.Read(content, pos)
+                for _ in range(vgeo.geocount * 28):
+                    geo = vdf_classes.GEOData()
+                    geo.Read(content, pos)
+                    pos += 100
+                    if geo.name.lower() != 'null':
+                        find_zfs_dependencies(reader, geo.name + ".geo", extracted_files, temp_dir)
+        except: pass
+            
+    elif ext == '.sdf':
+        from . import sdf_classes
+        try:
+            with open(path, 'rb') as f:
+                content = f.read()
+                pos = 20 # Skip SDFHeader
+                sdfc = sdf_classes.SDFCHeader()
+                pos = sdfc.Read(content, pos)
+                sgeo = sdf_classes.SGEOHeader()
+                pos = sgeo.Read(content, pos)
+                for _ in range(sgeo.geocount):
+                    geo = sdf_classes.GEOData()
+                    geo.Read(content, pos)
+                    pos += 120
+                    if geo.name.lower() != 'null':
+                        find_zfs_dependencies(reader, geo.name + ".geo", extracted_files, temp_dir)
+        except: pass
+
+    elif ext == '.geo':
+        # Scan for textures
+        try:
+            with open(path, 'rb') as f:
+                header_data = struct.unpack('<4si16sIII', f.read(36))
+                faces_count = header_data[4]
+                f.seek(36 + header_data[3] * 12 + faces_count * 12) # Skip header + verts + normals
+                # Actually, parsing GEO is complex, but textures are usually 16-byte strings in GEOFace
+                # Let's use a robust scan for common texture extensions
+                f.seek(0)
+                content = f.read()
+                import re
+                # Find .map, .pic, .tga references
+                tex_matches = re.findall(b'([a-zA-Z0-9_.-]+)\.(map|pic|tga|dds|png|bmp)', content, re.IGNORECASE)
+                for tex_name, tex_ext in tex_matches:
+                    full_tex = tex_name.decode('ascii', errors='ignore') + "." + tex_ext.decode('ascii', errors='ignore')
+                    find_zfs_dependencies(reader, full_tex, extracted_files, temp_dir)
+        except: pass
+
+class BZ98TOOLS_OT_open_zfs(bpy.types.Operator, ImportHelper):
+    """Open a Battlezone ZFS archive to browse its contents"""
+    bl_idname = "bz.open_zfs"
+    bl_label = "Open ZFS Archive"
+    filename_ext = ".zfs"
+    filter_glob: bpy.props.StringProperty(default="*.zfs", options={'HIDDEN'})
+
+    def execute(self, context):
+        from .zfs_reader import ZFSReader
+        context.scene.active_zfs_path = self.filepath
+        reader = ZFSReader(self.filepath)
+        try:
+            reader.open()
+            context.scene.zfs_files.clear()
+            for name in reader.list_files():
+                item = context.scene.zfs_files.add()
+                item.name = name
+                item.ext = os.path.splitext(name)[1].lower()
+                item.is_model = item.ext in {'.vdf', '.sdf', '.geo'}
+            reader.close()
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to open ZFS: {e}")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+class BZ98TOOLS_OT_import_from_zfs(bpy.types.Operator):
+    """Extract and import the selected model from ZFS"""
+    bl_idname = "bz.import_from_zfs"
+    bl_label = "Import from ZFS"
+    
+    filename: bpy.props.StringProperty()
+
+    def execute(self, context):
+        from .zfs_reader import ZFSReader
+        zfs_path = context.scene.active_zfs_path
+        if not zfs_path or not os.path.exists(zfs_path):
+            self.report({'ERROR'}, "No active ZFS archive")
+            return {'CANCELLED'}
+
+        import tempfile, shutil
+        temp_dir = tempfile.mkdtemp(prefix="bz98_zfs_")
+        
+        try:
+            reader = ZFSReader(zfs_path)
+            reader.open()
+            
+            extracted_files = set()
+            find_zfs_dependencies(reader, self.filename, extracted_files, temp_dir)
+            
+            reader.close()
+
+            main_path = os.path.join(temp_dir, self.filename)
+            if not os.path.exists(main_path):
+                self.report({'ERROR'}, f"Failed to extract {self.filename}")
+                return {'CANCELLED'}
+
+            ext = os.path.splitext(self.filename)[1].lower()
+            if ext == '.vdf':
+                from . import import_vdf
+                import_vdf.load(context, main_path)
+            elif ext == '.sdf':
+                from . import import_sdf
+                import_sdf.load(context, main_path)
+            elif ext == '.geo':
+                from . import import_geo
+                import_geo.geoload(context, main_path)
+            
+            self.report({'INFO'}, f"Successfully imported {self.filename} and dependencies")
+        except Exception as e:
+            self.report({'ERROR'}, f"Import failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'CANCELLED'}
+        finally:
+            # Note: We keep the temp files FOR NOW if we want Blender to keep links to them 
+            # (especially textures). If we delete them now, textures might go missing if 
+            # they are not packed into the .blend.
+            # Shifting to a more permanent 'cache' folder in the addon dir might be better.
+            # But for now, let's keep them so the user can see the models.
+            pass
+
+        return {'FINISHED'}
+
+class BZ98TOOLS_PT_zfs_explorer(bpy.types.Panel):
+    bl_idname = "SCENE_PT_BZ_ZFS"
+    bl_label = "Battlezone ZFS Explorer"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        
+        layout.operator("bz.open_zfs", icon='FILE_FOLDER')
+        
+        if scene.active_zfs_path:
+            layout.label(text=f"Archive: {os.path.basename(scene.active_zfs_path)}")
+            
+            row = layout.row()
+            row.prop(scene, "zfs_filter", text="Filter", icon='VIEWZOOM')
+            
+            box = layout.box()
+            col = box.column(align=True)
+            
+            filter_str = scene.zfs_filter.lower()
+            count = 0
+            for item in scene.zfs_files:
+                if filter_str and filter_str not in item.name.lower():
+                    continue
+                
+                if item.is_model:
+                    row = col.row(align=True)
+                    row.label(text=item.name, icon='MESH_DATA')
+                    op = row.operator("bz.import_from_zfs", text="Import")
+                    op.filename = item.name
+                    count += 1
+                
+                if count > 30: # Limit display for performance
+                    col.label(text="... (more files hidden, use filter)")
+                    break
+
 GUIClasses = [
-    BattlezoneGEOProperties,
-    BZ_PT_GeoTypeListPopover,
-    BattlezoneSDFVDFProperties,
-    BattlezoneMaterialProperties,
-    OPCreateNewElement,
-    BZ_OT_ShowAnimIndexReference,
-    OPDeleteElement,
-    OPGenerateCollision,
-    OPGenerateVDFCollisionMeshes,
     AnimationUIList,
-    AnimationPanel
+    AnimationPanel,
+    BZ98TOOLS_PT_zfs_explorer,
+    BZ98TOOLS_OT_open_zfs,
+    BZ98TOOLS_OT_import_from_zfs,
+    ZFSFileEntry,
 ]
 
 ImportExportClasses = [
@@ -1964,6 +2157,11 @@ def register():
     bpy.types.Object.GEOPropertyGroup = bpy.props.PointerProperty(type=GEOPropertyGroup)
     bpy.types.Scene.SDFVDFPropertyGroup = bpy.props.PointerProperty(type=SDFVDFPropertyGroup)
 
+    # ZFS Explorer Properties
+    bpy.types.Scene.zfs_files = bpy.props.CollectionProperty(type=ZFSFileEntry)
+    bpy.types.Scene.active_zfs_path = bpy.props.StringProperty(name="Active ZFS")
+    bpy.types.Scene.zfs_filter = bpy.props.StringProperty(name="ZFS Filter")
+
 def unregister():
     # Remove menus first so UI won't try to use unregistered classes
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
@@ -1977,6 +2175,11 @@ def unregister():
     bpy.types.Material.MaterialPropertyGroup = None
     bpy.types.Object.GEOPropertyGroup = None
     bpy.types.Scene.SDFVDFPropertyGroup = None
+
+    # ZFS Explorer Properties
+    bpy.types.Scene.zfs_files.clear()
+    bpy.types.Scene.active_zfs_path = ""
+    bpy.types.Scene.zfs_filter = ""
 
     # Unregister BZR Ogre mesh operators
     bpy.utils.unregister_class(BZ98TOOLS_OT_export_bzr_mesh)

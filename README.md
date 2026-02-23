@@ -18,6 +18,7 @@ This plugin adds full **Blender 4.5.1** support, **quaternion animation**, **aut
 
 ## Quick Feature Summary
 
+- ✅ **Import models directly from ZFS archives** (Auto-extracts dependencies)
 - ✅ Full **Blender 4.5.1** compatibility  
 - ✅ **Auto Ogre Mesh/Skeleton/Material export** (Redux-ready)  
 - ✅ **Quaternion animation** import/export  
@@ -52,6 +53,7 @@ This process required multiple exports, conversions, CLI tools, next to zero doc
 ### Now
 Everything is handled inside Blender:
 
+- **Import models directly from `.ZFS` archives** (Explorer in Scene tab)
 - Import or export `.GEO`, `.VDF`, and `.SDF` directly  
 - Auto-convert `.MAP` textures to `.PNG`  
 - Export or Import Redux `.mesh`, `.skeleton`, and `.material` automatically, complete with animations
@@ -61,9 +63,14 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
-**Blender 4.5.1 Compatibility, Ogre Auto-Port Integration, and Major Pipeline Updates**
+**Import from ZFS, Blender 4.5.1 Compatibility, Ogre Auto-Port Integration, and Major Pipeline Updates**
 
 #### Added
+- **Import from ZFS**
+  - New **ZFS Explorer** panel in the Scene properties tab.
+  - Browse `.ZFS` archives and import models directly.
+  - **Recursive Dependency Extraction**: Automatically finds and extracts all required `.GEO` and texture files from the archive upon import.
+  - Bundled Lzo decompression library for full Redux archive support.
 - **Blender 4.5.1 support**
   - Updated `bl_info`, registration, and UI functions for new API.
 - **Automatic Ogre export integration**
@@ -119,6 +126,7 @@ Everything is handled inside Blender:
 
 | Category | Update |
 |-----------|---------|
+| **ZFS** | **Directly browse and import from .ZFS archives** |
 | Compatibility | Full Blender 4.5.1 compliance |
 | File I/O | Safe ASCII decoding, EOF handling |
 | Materials | `.MAP → .PNG` conversion and name auto-fill |
