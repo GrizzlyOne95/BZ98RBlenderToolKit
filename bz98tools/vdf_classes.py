@@ -152,6 +152,17 @@ class ANIMHeader:
     def __init__(self):
         self.binstring = '=4si16s5ii6i'
         self.binlength = 72
+        self.headername = 'ANIM'
+        self.sectionlength = self.binlength
+        self.name = "."
+        self.elementscount = 0
+        self.orientationscount = 0
+        self.rotationcount = 0
+        self.translation2count = 0
+        self.positioncount = 0
+        self.null2 = 0
+        self.unknown2 = 0
+        self._reserved = [0, 0, 0, 0, 0]
 
     def Read(self, fileContent, position):
         array = struct.unpack(self.binstring, fileContent[position:position + self.binlength])
@@ -165,23 +176,29 @@ class ANIMHeader:
         self.positioncount = array[7]
         self.null2 = array[8]
         self.unknown2 = array[9]
+        self._reserved = [array[10], array[11], array[12], array[13], array[14]]
         return position + self.binlength
 
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
+        r = list(self._reserved) if isinstance(self._reserved, (list, tuple)) else [0, 0, 0, 0, 0]
+        while len(r) < 5:
+            r.append(0)
         struct.pack_into(
             self.binstring,
             buffer,
             0,
             b'ANIM',
             self.sectionlength,
-            b'.',
+            bytes((self.name or "."), 'ascii', errors='ignore'),
             self.elementscount,
             self.orientationscount,
             self.rotationcount,
             self.translation2count,
             self.positioncount,
-            0, 0, 0, 0, 0, 0, 0
+            int(self.null2),
+            int(self.unknown2),
+            int(r[0]), int(r[1]), int(r[2]), int(r[3]), int(r[4]),
         )
         fileHandle.write(buffer)
         return position + self.binlength
@@ -195,7 +212,7 @@ class ANIMElement:
     def Read(self, fileContent, position):
         array = struct.unpack(self.binstring, fileContent[position:position + self.binlength])
         self.index = array[0]
-        self.unknowngeoflag = array[1:32]
+        self.unknowngeoflag = list(array[1:33])
         self.start = array[33]
         self.length = array[34]
         self.loop = array[35]
@@ -204,12 +221,16 @@ class ANIMElement:
 
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
+        mask = list(self.unknowngeoflag) if isinstance(self.unknowngeoflag, (list, tuple)) else []
+        while len(mask) < 32:
+            mask.append(0)
+        mask = [int(v) for v in mask[:32]]
         struct.pack_into(
             self.binstring,
             buffer,
             0,
             self.index,
-            *self.unknowngeoflag,
+            *mask,
             self.start,
             self.length,
             self.loop,
@@ -361,6 +382,9 @@ class SCPSSection:
     def __init__(self):
         self.binstring = '=4s4i'
         self.binlength = 20
+        self.headername = 'SCPS'
+        self.sectionlength = self.binlength
+        self.data = [0, 0, 0]
 
     def Read(self, fileContent, position):
         array = struct.unpack(self.binstring, fileContent[position:position + self.binlength])
@@ -371,7 +395,10 @@ class SCPSSection:
 
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, b'SCPS', 20, 0, 0, 0)
+        d = list(self.data) if isinstance(self.data, (list, tuple)) else [0, 0, 0]
+        while len(d) < 3:
+            d.append(0)
+        struct.pack_into(self.binstring, buffer, 0, b'SCPS', self.binlength, int(d[0]), int(d[1]), int(d[2]))
         fileHandle.write(buffer)
         return position + self.binlength
 

@@ -880,6 +880,9 @@ def geoload(context, geofilepath, *, name=None, flip=True,
         bpy.context.collection.objects.link(obj)
         obj.select_set(True)
         bpy.context.view_layer.objects.active = obj
+        if hasattr(obj, "GEOPropertyGroup"):
+            obj.GEOPropertyGroup['GEOHeaderUnknown'] = int(header.Unknown)
+            obj.GEOPropertyGroup['GEOHeaderUnknown2'] = int(header.Unknown2)
 
         import bmesh
         bm = bmesh.new()
@@ -919,9 +922,27 @@ def geoload(context, geofilepath, *, name=None, flip=True,
                     uv_layer[loop_index].uv = (0.0, 0.0)
 
         Slots = {}
+        face_unknown_attr = mesh.attributes.new(name="bz_face_unknown_raw", type='INT', domain='FACE')
+        face_shade_attr = mesh.attributes.new(name="bz_face_shade_type", type='INT', domain='FACE')
+        face_texture_attr = mesh.attributes.new(name="bz_face_texture_type", type='INT', domain='FACE')
+        face_xluscent_attr = mesh.attributes.new(name="bz_face_xluscent_type", type='INT', domain='FACE')
+        face_parent_attr = mesh.attributes.new(name="bz_face_parent", type='INT', domain='FACE')
+        face_node_attr = mesh.attributes.new(name="bz_face_node", type='INT', domain='FACE')
+
         for i, face in enumerate(used_faces):
             if i >= len(mesh.polygons):
                 break
+
+            sh_raw = getattr(face, "StringHeaderRaw", b"\x00\x00\x00")
+            shade = sh_raw[0] if len(sh_raw) > 0 else 0
+            texture = sh_raw[1] if len(sh_raw) > 1 else 0
+            xluscent = sh_raw[2] if len(sh_raw) > 2 else 0
+            face_unknown_attr.data[i].value = int(face.unknown)
+            face_shade_attr.data[i].value = int(shade)
+            face_texture_attr.data[i].value = int(texture)
+            face_xluscent_attr.data[i].value = int(xluscent)
+            face_parent_attr.data[i].value = int(face.Parent)
+            face_node_attr.data[i].value = int(face.Node)
 
             if len(face.MapName) > 0:
                 if PreserveFaceColors:

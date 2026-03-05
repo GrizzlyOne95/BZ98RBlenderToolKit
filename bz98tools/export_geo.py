@@ -21,6 +21,18 @@ def geoexport(context, filepath, obj):
     bpy.ops.object.mode_set(mode='OBJECT')
     mesh = obj.data
 
+    def _get_face_attr_int(attr_name, face_index, default_value=0):
+        attrs = getattr(mesh, "attributes", None)
+        if attrs is None:
+            return int(default_value)
+        attr = attrs.get(attr_name)
+        if attr is None or attr.domain != 'FACE':
+            return int(default_value)
+        try:
+            return int(attr.data[face_index].value)
+        except Exception:
+            return int(default_value)
+
     # ------------------------------------------------------------------
     # Failsafe: fix any invalid material indices on polygons
     # (Sometimes Blender can end up with garbage indices like 24264.)
@@ -93,6 +105,22 @@ def geoexport(context, filepath, obj):
         b = int(facecolor[2] * 255)
 
         # Create a new face object to be added in the GEO we are exporting.
+        geo_pg = getattr(obj, "GEOPropertyGroup", None)
+        default_unknown = getattr(geo_pg, "GEOFaceUnknownDefault", 0) if geo_pg else 0
+        default_parent = getattr(geo_pg, "GEOFaceParentDefault", 0) if geo_pg else 0
+        default_node = getattr(geo_pg, "GEOFaceNodeDefault", 0) if geo_pg else 0
+        default_shade = getattr(geo_pg, "GEOFaceShadeTypeDefault", 4) if geo_pg else 4
+        default_texture = getattr(geo_pg, "GEOFaceTextureTypeDefault", 0) if geo_pg else 0
+        default_xluscent = getattr(geo_pg, "GEOFaceXluscentTypeDefault", 0) if geo_pg else 0
+
+        face_unknown = _get_face_attr_int("bz_face_unknown_raw", face.index, default_unknown)
+        face_parent = _get_face_attr_int("bz_face_parent", face.index, default_parent)
+        face_node = _get_face_attr_int("bz_face_node", face.index, default_node)
+        shade_type = _get_face_attr_int("bz_face_shade_type", face.index, default_shade) & 0xFF
+        texture_type = _get_face_attr_int("bz_face_texture_type", face.index, default_texture) & 0xFF
+        xluscent_type = _get_face_attr_int("bz_face_xluscent_type", face.index, default_xluscent) & 0xFF
+        string_header_bytes = bytes([shade_type, texture_type, xluscent_type])
+
         NewFace = geo_classes.GEOFace(
             [
                 face.index,              # Index
@@ -102,11 +130,11 @@ def geoexport(context, filepath, obj):
                 face.center.y,           # y
                 face.center.z,           # z
                 1.0,                     # d
-                0,                       # unknown
-                b'\x04\x00\x00',         # StringHeader (raw bytes; becomes "\x04")
+                face_unknown,            # unknown/raw int
+                string_header_bytes,     # StringHeader (shade/texture/xluscent bytes)
                 facematerial,            # MapName (texture name)
-                0,                       # Parent
-                0,                       # Node
+                face_parent,             # Parent
+                face_node,               # Node
                 '',                      # Extra entry (ignored by GEOFace)
             ]
         )
@@ -141,8 +169,11 @@ def geoexport(context, filepath, obj):
     import struct
 
     with open(filepath, mode='wb') as file:  # b is important -> binary
+        geo_pg = getattr(obj, "GEOPropertyGroup", None)
+        header_unknown = int(getattr(geo_pg, "GEOHeaderUnknown", 69)) if geo_pg else 69
+        header_unknown2 = int(getattr(geo_pg, "GEOHeaderUnknown2", 0)) if geo_pg else 0
         NewHeader = geo_classes.GEOHeader(
-            ['OEG.', 69, obj.name, len(Vertices), len(Faces), 0]
+            ['OEG.', header_unknown, obj.name, len(Vertices), len(Faces), header_unknown2]
         )
         buffer = bytearray(36)
         struct.pack_into('=4si16siii', buffer, 0, *NewHeader.Read())

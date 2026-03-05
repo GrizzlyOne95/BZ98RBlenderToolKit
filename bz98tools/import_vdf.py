@@ -32,6 +32,7 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
     ANIMtranslations2 = []
     ANIMpositions = []
     COLP = vdf_classes.COLPSection()
+    SCPS = vdf_classes.SCPSSection()
 
     if not os.path.exists(filepath):
         raise Exception(filepath + ' was not found!')
@@ -79,7 +80,11 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
 
         import struct
 
-        # Safely handle optional ANIM / EXIT / COLP sections.
+        anim_found = False
+        scps_found = False
+        scps_data = [0, 0, 0]
+
+        # Safely handle optional ANIM / EXIT / COLP / SCPS sections.
         # If there are no bytes left after GEOs, there is nothing else to read.
         if position + 4 > len(fileContent):
             # No ANIM / EXIT / COLP – fall back to empty collision data.
@@ -89,6 +94,7 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
 
             # Optional ANIM block (may or may not be present)
             if sectionname[0] == b'ANIM':
+                anim_found = True
                 position = ANIM.Read(fileContent, position)
                 for i in range(ANIM.elementscount):
                     Element = vdf_classes.ANIMElement()
@@ -124,12 +130,42 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                 colp_header = struct.unpack('4s', fileContent[position:position + 4])[0]
                 if colp_header == b'COLP' and position + COLP.binlength <= len(fileContent):
                     position = COLP.Read(fileContent, position)
+                    if position + EXIT.binlength <= len(fileContent):
+                        next_header = struct.unpack('4s', fileContent[position:position + 4])[0]
+                        if next_header == b'EXIT':
+                            position = EXIT.Read(fileContent, position)
+
+                    if position + SCPS.binlength <= len(fileContent):
+                        scps_header = struct.unpack('4s', fileContent[position:position + 4])[0]
+                        if scps_header == b'SCPS':
+                            position = SCPS.Read(fileContent, position)
+                            scps_data = [int(v) for v in SCPS.data]
+                            scps_found = True
                 else:
                     # No valid COLP – use an empty collision box.
                     COLP.data = [0.0] * 12
             else:
                 # Not enough bytes even for a COLP header.
                 COLP.data = [0.0] * 12
+
+        if anim_found:
+            bpy.context.scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = True
+            bpy.context.scene.SDFVDFPropertyGroup.AnimNull2 = int(ANIM.null2)
+            bpy.context.scene.SDFVDFPropertyGroup.AnimUnknown2 = int(ANIM.unknown2)
+            try:
+                bpy.context.scene.SDFVDFPropertyGroup.AnimReserved = tuple(int(v) for v in ANIM._reserved[:5])
+            except Exception:
+                bpy.context.scene.SDFVDFPropertyGroup.AnimReserved = (0, 0, 0, 0, 0)
+            bpy.context.scene.SDFVDFPropertyGroup.UseTranslation2Track = bool(ANIM.translation2count > 0)
+        else:
+            bpy.context.scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = False
+            bpy.context.scene.SDFVDFPropertyGroup.UseTranslation2Track = False
+
+        bpy.context.scene.SDFVDFPropertyGroup.UseCustomSCPS = bool(scps_found)
+        if scps_found:
+            bpy.context.scene.SDFVDFPropertyGroup.SCPSData = tuple(scps_data[:3])
+        else:
+            bpy.context.scene.SDFVDFPropertyGroup.SCPSData = (0, 0, 0)
 
         # ------------------------------------------------------------------
         # Recreate the inner/outer collision boxes from COLP
@@ -197,14 +233,27 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                                     geofilename = os.path.join(os.path.dirname(geofilename), afile.lower())
                                     break
 
-                    # Load the GEO.
-                    newobj = import_geo.geoload(
-                        context,
-                        geofilename,
-                        PreserveFaceColors=PreserveFaceColors,
-                        ImportMapTextures=ImportMapTextures,
-                        map_base_dir=os.path.dirname(filepath),
-                    )
+                    newobj = None
+
+                    # Load mesh GEO if file exists.
+                    if os.path.exists(geofilename):
+                        try:
+                            newobj = import_geo.geoload(
+                                context,
+                                geofilename,
+                                PreserveFaceColors=PreserveFaceColors,
+                                ImportMapTextures=ImportMapTextures,
+                                map_base_dir=os.path.dirname(filepath),
+                            )
+                        except Exception as e:
+                            print(f"[BZ VDF Import] Failed to load GEO '{GEO.name}': {e}")
+
+                    # Spinner helpers often have no .geo file by design.
+                    if newobj is None and GEO.type == 15:
+                        newobj = bpy.data.objects.new(GEO.name, None)
+                        newobj.empty_display_type = 'ARROWS'
+                        newobj.empty_display_size = 0.25
+                        bpy.context.collection.objects.link(newobj)
 
                     if newobj is not None:
                         geolod = currentlod
@@ -226,6 +275,29 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                         newobj.GEOPropertyGroup['BoxHalfHeightX'] = GEO.boxhalfheight[0]
                         newobj.GEOPropertyGroup['BoxHalfHeightY'] = GEO.boxhalfheight[1]
                         newobj.GEOPropertyGroup['BoxHalfHeightZ'] = GEO.boxhalfheight[2]
+                        try:
+                            newobj.GEOPropertyGroup.RawVDFMatrix = tuple(float(v) for v in GEO.matrix)
+                        except Exception:
+                            pass
+
+                        if GEO.type == 15:
+                            x, y, z = GEO.matrix[0], GEO.matrix[1], GEO.matrix[2]
+                            magnitude = (x * x + y * y + z * z) ** 0.5
+                            if magnitude > 1e-8:
+                                axis = (x / magnitude, y / magnitude, z / magnitude)
+                                speed = magnitude
+                            else:
+                                axis = (1.0, 0.0, 0.0)
+                                speed = 0.0
+
+                            newobj.GEOPropertyGroup.IsSpinnerHelper = True
+                            newobj.GEOPropertyGroup.SpinnerAxis = axis
+                            newobj.GEOPropertyGroup.SpinnerSpeed = speed
+                            newobj.GEOPropertyGroup.GenerateCollision = False
+
+                            if GEO.parent.lower() != 'world':
+                                newobj.GEOPropertyGroup.SpinnerTarget = GEO.parent.lower()
+
                         blenobj = vdf_classes.BlenderObject(newobj, GEO)
                         blenobj.obj_index = currentgeo
                         blenobj.obj_lod = geolod
@@ -340,6 +412,11 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                 item.Length = element.length
                 item.Loop = element.loop
                 item.Speed = element.speed
+                item.UseCustomUnknownGeoMask = True
+                try:
+                    item.UnknownGeoMask = tuple(int(v) for v in element.unknowngeoflag)
+                except Exception:
+                    item.UnknownGeoMask = (0,) * 32
 
             EndFrame = 0
             for Model in OBJList.values():
@@ -374,6 +451,19 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                                                          frame=ANIMpositions[index].frame)
                             if ANIMpositions[index].frame > EndFrame:
                                 EndFrame = ANIMpositions[index].frame
+
+                    if modelanim.translation2count > 0:
+                        for index in range(modelanim.translation2index,
+                                           modelanim.translation2index + modelanim.translation2count):
+                            Model.object.location = (
+                                ANIMtranslations2[index].translate[0],
+                                ANIMtranslations2[index].translate[2],
+                                ANIMtranslations2[index].translate[1]
+                            )
+                            Model.object.keyframe_insert(data_path="location",
+                                                         frame=ANIMtranslations2[index].frame)
+                            if ANIMtranslations2[index].frame > EndFrame:
+                                EndFrame = ANIMtranslations2[index].frame
 
             bpy.context.scene.frame_set(0)
             bpy.context.scene.frame_start = 0

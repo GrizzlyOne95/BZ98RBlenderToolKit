@@ -98,9 +98,12 @@ class GEOFace:
 
         # StringHeader
         if not isinstance(array[10], str):
-            self.StringHeader = safe_decode_ascii(array[10])
+            raw = bytes(array[10])
+            self.StringHeaderRaw = raw[:3].ljust(3, b'\0')
+            self.StringHeader = safe_decode_ascii(self.StringHeaderRaw)
         else:
             self.StringHeader = array[10]
+            self.StringHeaderRaw = bytes(self.StringHeader, 'ascii', errors='ignore')[:3].ljust(3, b'\0')
 
         # MapName (.map texture name)
         if not isinstance(array[11], str):
@@ -124,7 +127,7 @@ class GEOFace:
             self.z,
             self.d,
             self.unknown,
-            bytes(self.StringHeader, 'ascii', errors='ignore'),
+            getattr(self, "StringHeaderRaw", bytes(self.StringHeader, 'ascii', errors='ignore')[:3].ljust(3, b'\0')),
             bytes(self.MapName, 'ascii', errors='ignore'),
             self.Parent,
             self.Node,

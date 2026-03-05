@@ -73,6 +73,99 @@ def GenerateGEOCollisions(object):
     else:
         obj.GEOPropertyGroup.BoxHalfHeightZ = abs(maxz-obj.GEOPropertyGroup.GeoCenterZ)
 
+
+def _is_null_blender_object(blender_object):
+    if blender_object is None:
+        return True
+    if getattr(blender_object, "object", None) is None:
+        return True
+    geo = getattr(blender_object, "geo", None)
+    if geo is None:
+        return True
+    return str(getattr(geo, "name", "")).lower() == "null"
+
+
+def _normalize_target_name(target_name):
+    if not target_name:
+        return None
+    name = str(target_name).strip()
+    if len(name) >= 5:
+        try:
+            return fixgeoname(name, 1).lower()
+        except Exception:
+            pass
+    return name[:8].lower()
+
+
+def _enforce_spinner_helper_order(objects):
+    """
+    Ensure spinner helpers are written immediately after their target slot in LOD1.
+    This preserves existing slot alignment across LOD1/2/3 by moving whole slot groups.
+    """
+    lod1 = objects[0]
+    lod2 = objects[1]
+    lod3 = objects[2]
+
+    slot_by_name = {}
+    ordered_names = []
+    null_slots = []
+
+    for idx, entry in enumerate(lod1):
+        if _is_null_blender_object(entry):
+            null_slots.append((lod1[idx], lod2[idx], lod3[idx]))
+            continue
+        name = entry.geo.name.lower()
+        slot_by_name[name] = (lod1[idx], lod2[idx], lod3[idx])
+        ordered_names.append(name)
+
+    attached_helpers = {}
+    helper_names = set()
+
+    for name in ordered_names:
+        slot = slot_by_name[name]
+        lod1_obj = slot[0]
+        obj = lod1_obj.object
+        geo = lod1_obj.geo
+        geo_props = getattr(obj, "GEOPropertyGroup", None)
+        if geo_props is None:
+            continue
+        if geo.type != 15 or not getattr(geo_props, "IsSpinnerHelper", False):
+            continue
+
+        raw_target = (getattr(geo_props, "SpinnerTarget", "") or "").strip()
+        if not raw_target and obj.parent is not None:
+            raw_target = obj.parent.name
+
+        target = _normalize_target_name(raw_target)
+        if not target or target == name or target not in slot_by_name:
+            continue
+
+        attached_helpers.setdefault(target, []).append(name)
+        helper_names.add(name)
+
+    final_names = []
+    for name in ordered_names:
+        if name in helper_names:
+            continue
+        final_names.append(name)
+        if name in attached_helpers:
+            final_names.extend(attached_helpers[name])
+
+    # Add any unresolved helper/base entries that were skipped.
+    for name in ordered_names:
+        if name not in final_names:
+            final_names.append(name)
+
+    reordered_slots = [slot_by_name[name] for name in final_names]
+    reordered_slots.extend(null_slots)
+
+    if len(reordered_slots) != len(lod1):
+        return
+
+    objects[0] = [slot[0] for slot in reordered_slots]
+    objects[1] = [slot[1] for slot in reordered_slots]
+    objects[2] = [slot[2] for slot in reordered_slots]
+
 def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
     '''
     We are going to use a bunch of classes to write data and encapsulate it.
@@ -112,9 +205,11 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
     ANIMPositions = []
     #Counters
     rot_index = 0
+    trans2_index = 0
     pos_index = 0
     #What is the amount of geo slots needed per LOD? We'll calculate this later.
     lodcount = 0
+    use_translation2 = bool(getattr(context.scene.SDFVDFPropertyGroup, "UseTranslation2Track", False))
     
     '''
     Create/Load VDFC information.
@@ -140,9 +235,11 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
     Matrix = mathutils.Matrix
     Vector = mathutils.Vector
     for object in bpy.data.objects:
+        is_mesh_object = (getattr(object, "type", None) == 'MESH' and getattr(object, "data", None) is not None)
+
         # --- Failsafe: fix invalid material indices on this object's mesh ---
         mesh = getattr(object, "data", None)
-        if hasattr(mesh, "polygons"):
+        if is_mesh_object and hasattr(mesh, "polygons"):
             mat_count = len(mesh.materials)
             if mat_count > 0:
                 for poly in mesh.polygons:
@@ -198,30 +295,50 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
             else:
                 GEO.parent = 'WORLD'
 
-            # --------------------------------------------------
-            # Transform with SCALE baked in (right/up/front/pos)
-            # --------------------------------------------------
-            euler = mathutils.Euler((0.0, math.radians(45.0),0.0),'YZX')
-            euler[:] = object.rotation_euler.x, object.rotation_euler.z, object.rotation_euler.y
-            rot_matrix = euler.to_matrix()   # 3x3
+            use_raw_matrix = bool(getattr(object.GEOPropertyGroup, "UseRawVDFMatrix", False))
 
-            # Make an explicit 3x3 diagonal scale matrix
-            sx, sy, sz = object.scale
-            scale_mat = mathutils.Matrix((
-                (sx, 0.0, 0.0),
-                (0.0, sy, 0.0),
-                (0.0, 0.0, sz),
-            ))
+            if use_raw_matrix:
+                raw_vals = getattr(object.GEOPropertyGroup, "RawVDFMatrix", None)
+                if raw_vals is not None and len(raw_vals) == 12:
+                    GEO.matrix = [float(v) for v in raw_vals]
+                else:
+                    GEO.matrix = [1.0, 0.0, 0.0,
+                                  0.0, 1.0, 0.0,
+                                  0.0, 0.0, 1.0,
+                                  0.0, 0.0, 0.0]
+            else:
+                # --------------------------------------------------
+                # Transform with SCALE baked in (right/up/front/pos)
+                # --------------------------------------------------
+                euler = mathutils.Euler((0.0, math.radians(45.0),0.0),'YZX')
+                euler[:] = object.rotation_euler.x, object.rotation_euler.z, object.rotation_euler.y
+                rot_matrix = euler.to_matrix()   # 3x3
 
-            thematrix = rot_matrix @ scale_mat
+                # Make an explicit 3x3 diagonal scale matrix
+                sx, sy, sz = object.scale
+                scale_mat = mathutils.Matrix((
+                    (sx, 0.0, 0.0),
+                    (0.0, sy, 0.0),
+                    (0.0, 0.0, sz),
+                ))
 
-            GEO.matrix[0:3] = thematrix[0][0:3]
-            GEO.matrix[3:6] = thematrix[1][0:3]
-            GEO.matrix[6:9] = thematrix[2][0:3]
-            Translation = object.matrix_local.to_translation()
-            GEO.matrix[9:12] = Translation.x, Translation.z, Translation.y
-            
-            if object.GEOPropertyGroup.GenerateCollision:
+                thematrix = rot_matrix @ scale_mat
+
+                GEO.matrix[0:3] = thematrix[0][0:3]
+                GEO.matrix[3:6] = thematrix[1][0:3]
+                GEO.matrix[6:9] = thematrix[2][0:3]
+                Translation = object.matrix_local.to_translation()
+                GEO.matrix[9:12] = Translation.x, Translation.z, Translation.y
+
+            spinner_helper = bool(getattr(object.GEOPropertyGroup, "IsSpinnerHelper", False))
+            if GEO.type == 15 and spinner_helper and not use_raw_matrix:
+                axis = getattr(object.GEOPropertyGroup, "SpinnerAxis", (1.0, 0.0, 0.0))
+                speed = float(getattr(object.GEOPropertyGroup, "SpinnerSpeed", 1.0))
+                GEO.matrix[0] = float(axis[0]) * speed
+                GEO.matrix[1] = float(axis[1]) * speed
+                GEO.matrix[2] = float(axis[2]) * speed
+
+            if object.GEOPropertyGroup.GenerateCollision and is_mesh_object:
                 GenerateGEOCollisions(object)
 
             GEO.geocenter = [object.GEOPropertyGroup.GeoCenterX,object.GEOPropertyGroup.GeoCenterY,object.GEOPropertyGroup.GeoCenterZ]
@@ -234,7 +351,7 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
             #NOTE: Used later to determine the count of geos in VGEO. Which is used to determine the max slots per LOD.
             if GEO.lod == 1:
                 lodcount = lodcount + 1
-            if not ExportVDFOnly:
+            if not ExportVDFOnly and is_mesh_object and not spinner_helper:
                 #Go ahead and write the .geo.
                 export_geo.geoexport(
                     context, 
@@ -299,11 +416,14 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
     #Load animation elements in blender.
     for item in context.scene.AnimationCollection:
         newelement = vdf_classes.ANIMElement()
-        #Set to zero for now for testing.
-        if item.Index in [0,1]:
-            newelement.unknowngeoflag = [1]*32
+        if getattr(item, "UseCustomUnknownGeoMask", False):
+            newelement.unknowngeoflag = [int(v) for v in item.UnknownGeoMask]
         else:
-            newelement.unknowngeoflag = [0]*32
+            # Legacy heuristic.
+            if item.Index in [0,1]:
+                newelement.unknowngeoflag = [1]*32
+            else:
+                newelement.unknowngeoflag = [0]*32
         newelement.index = item.Index
         newelement.start = item.Start
         newelement.length = item.Length
@@ -323,13 +443,17 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
         neworientation.unknown = 0
         neworientation.matrix1 = [1.00,0.0,0.0,1.00,0.0,0.0,1.00,0.0,0.0,1.00,0.0,0.0]
         neworientation.matrix2 = object.geo.matrix
-        if len(object.posanim) > 0:
-            neworientation.positionindex = pos_index
-        else:
+        pos_count = len(object.posanim)
+        if use_translation2:
+            neworientation.translation2index = trans2_index if pos_count > 0 else 0
+            neworientation.translation2count = pos_count
             neworientation.positionindex = 0
-        neworientation.positioncount = len(object.posanim)
-        neworientation.translation2index = 0
-        neworientation.translation2count = 0
+            neworientation.positioncount = 0
+        else:
+            neworientation.positionindex = pos_index if pos_count > 0 else 0
+            neworientation.positioncount = pos_count
+            neworientation.translation2index = 0
+            neworientation.translation2count = 0
         if len(object.rotanim) > 0:
             neworientation.rotationindex = rot_index
         else:
@@ -346,16 +470,26 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
             rot_index = rot_index + 1
             ANIMRotations.append(newrotation)
         for key, array in object.posanim.items():
-            newposition = vdf_classes.ANIMPosition()
-            newposition.frame = key
+            tx, ty, tz = array[0], array[2], array[1]
             if object.object.parent != None:
                 #Get the parent inverse if it exists and add it on to the animation to create an accurate offset for animations.
                 ObjectInverse = object.object.matrix_parent_inverse.to_translation()
-                newposition.translate = ObjectInverse.x+array[0],ObjectInverse.z+array[2],ObjectInverse.y+array[1]
+                tx = ObjectInverse.x + array[0]
+                ty = ObjectInverse.z + array[2]
+                tz = ObjectInverse.y + array[1]
+
+            if use_translation2:
+                newtranslation = vdf_classes.ANIMTranslation2()
+                newtranslation.frame = key
+                newtranslation.translate = tx, ty, tz
+                trans2_index = trans2_index + 1
+                ANIMTranslations.append(newtranslation)
             else:
-                newposition.translate = array[0],array[2],array[1]
-            pos_index = pos_index + 1
-            ANIMPositions.append(newposition)
+                newposition = vdf_classes.ANIMPosition()
+                newposition.frame = key
+                newposition.translate = tx, ty, tz
+                pos_index = pos_index + 1
+                ANIMPositions.append(newposition)
     
     '''
     Reorder objects based on parenting and lods. If they are the wrong order, everything will blow up! 
@@ -403,6 +537,8 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
                     numindex = numindex + 1
         if DoBreak:
             break
+
+    _enforce_spinner_helper_order(objects)
     
     #Ok, lets get to writing the VDF data.
     with open(filepath, mode='wb') as file: # b is important -> binary
@@ -453,8 +589,16 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
             ANIM.elementscount = len(ANIMElements)
             ANIM.orientationscount = len(ANIMOrientations)
             ANIM.rotationcount = len(ANIMRotations)
-            ANIM.translation2count = 0
+            ANIM.translation2count = len(ANIMTranslations)
             ANIM.positioncount = len(ANIMPositions)
+            if getattr(context.scene.SDFVDFPropertyGroup, "UseAdvancedAnimHeader", False):
+                ANIM.null2 = int(context.scene.SDFVDFPropertyGroup.AnimNull2)
+                ANIM.unknown2 = int(context.scene.SDFVDFPropertyGroup.AnimUnknown2)
+                ANIM._reserved = [int(v) for v in context.scene.SDFVDFPropertyGroup.AnimReserved]
+            else:
+                ANIM.null2 = 0
+                ANIM.unknown2 = 0
+                ANIM._reserved = [0, 0, 0, 0, 0]
             ANIM.sectionlength = (
                 ANIM.binlength
                 +
@@ -481,6 +625,10 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
             #Write ANIM rotations. 
             for animrotation in ANIMRotations:
                 position = animrotation.Write(file, position)
+
+            #Write ANIM translation2.
+            for animtranslation in ANIMTranslations:
+                position = animtranslation.Write(file, position)
                 
             #Write ANIM positions. 
             for animposition in ANIMPositions:
@@ -538,6 +686,10 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
         position = COLP.Write(file,position)
         position = EXIT.Write(file, position) #End COLP
         
+        if getattr(context.scene.SDFVDFPropertyGroup, "UseCustomSCPS", False):
+            SCPS.data = [int(v) for v in context.scene.SDFVDFPropertyGroup.SCPSData]
+        else:
+            SCPS.data = [0, 0, 0]
         position = SCPS.Write(file,position)
         position = EXIT.Write(file, position) #END SPCS
 

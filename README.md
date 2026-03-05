@@ -32,6 +32,7 @@ This plugin adds full **Blender 4.5.1** support, **quaternion animation**, **aut
 - ✅ **No external dependencies required**
 - ✅ **Automatic VDF COL box generation**
 - ✅ **Includes all known documented GEO types and Animation Indexes as Info Boxes**
+- ✅ **Experimental binary controls for advanced VDF/SDF/GEO fields** (see `docs/EXPERIMENTAL_BINARY_FIELDS.md`)
 
 ---
 
@@ -155,6 +156,9 @@ Everything is handled inside Blender:
 
 Source code and issue tracking:  
 [https://github.com/GrizzlyOne95/bz98tools](https://github.com/GrizzlyOne95/bz98tools)
+
+Advanced binary field notes:  
+[`docs/EXPERIMENTAL_BINARY_FIELDS.md`](docs/EXPERIMENTAL_BINARY_FIELDS.md)
 
 ## License
 

@@ -115,9 +115,11 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
     ANIMPositions = []
     #Counters
     rot_index = 0
+    trans2_index = 0
     pos_index = 0
     #What is the amount of geo slots needed per LOD? We'll calculate this later.
     lodcount = 0
+    use_translation2 = bool(getattr(context.scene.SDFVDFPropertyGroup, "UseTranslation2Track", False))
     
     '''
     Create/Load SDFC information.
@@ -181,7 +183,7 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
         euler[:] = object.rotation_euler.x, object.rotation_euler.z, object.rotation_euler.y
         thematrix = euler.to_matrix()
         GEO.matrix[0:3] = thematrix[0][0:3]
-        GEO.matrix[3:7] = thematrix[1][0:3]
+        GEO.matrix[3:6] = thematrix[1][0:3]
         GEO.matrix[6:9] = thematrix[2][0:3]
         Translation = object.matrix_local.to_translation()
         GEO.matrix[9:12] = Translation.x, Translation.z, Translation.y
@@ -274,11 +276,14 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
     #Load animation elements in blender.
     for item in context.scene.AnimationCollection:
         newelement = sdf_classes.ANIMElement()
-        #Set to zero for now for testing.
-        if item.Index in [0,1]:
-            newelement.unknowngeoflag = [1]*32
+        if getattr(item, "UseCustomUnknownGeoMask", False):
+            newelement.unknowngeoflag = [int(v) for v in item.UnknownGeoMask]
         else:
-            newelement.unknowngeoflag = [0]*32
+            # Legacy heuristic.
+            if item.Index in [0,1]:
+                newelement.unknowngeoflag = [1]*32
+            else:
+                newelement.unknowngeoflag = [0]*32
         newelement.index = item.Index
         newelement.start = item.Start
         newelement.length = item.Length
@@ -298,13 +303,17 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
         neworientation.unknown = 0
         neworientation.matrix1 = [1.00,0.0,0.0,1.00,0.0,0.0,1.00,0.0,0.0,1.00,0.0,0.0]
         neworientation.matrix2 = object.geo.matrix
-        if len(object.posanim) > 0:
-            neworientation.positionindex = pos_index
-        else:
+        pos_count = len(object.posanim)
+        if use_translation2:
+            neworientation.translation2index = trans2_index if pos_count > 0 else 0
+            neworientation.translation2count = pos_count
             neworientation.positionindex = 0
-        neworientation.positioncount = len(object.posanim)
-        neworientation.translation2index = 0
-        neworientation.translation2count = 0
+            neworientation.positioncount = 0
+        else:
+            neworientation.positionindex = pos_index if pos_count > 0 else 0
+            neworientation.positioncount = pos_count
+            neworientation.translation2index = 0
+            neworientation.translation2count = 0
         if len(object.rotanim) > 0:
             neworientation.rotationindex = rot_index
         else:
@@ -321,16 +330,26 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
             rot_index = rot_index + 1
             ANIMRotations.append(newrotation)
         for key, array in object.posanim.items():
-            newposition = sdf_classes.ANIMPosition()
-            newposition.frame = key
+            tx, ty, tz = array[0], array[2], array[1]
             if object.object.parent != None:
                 #Get the parent inverse if it exists and add it on to the animation to create an accurate offset for animations.
                 ObjectInverse = object.object.matrix_parent_inverse.to_translation()
-                newposition.translate = ObjectInverse.x+array[0],ObjectInverse.z+array[2],ObjectInverse.y+array[1]
+                tx = ObjectInverse.x + array[0]
+                ty = ObjectInverse.z + array[2]
+                tz = ObjectInverse.y + array[1]
+
+            if use_translation2:
+                newtranslation = sdf_classes.ANIMTranslation2()
+                newtranslation.frame = key
+                newtranslation.translate = tx, ty, tz
+                trans2_index = trans2_index + 1
+                ANIMTranslations.append(newtranslation)
             else:
-                newposition.translate = array[0],array[2],array[1]
-            pos_index = pos_index + 1
-            ANIMPositions.append(newposition)
+                newposition = sdf_classes.ANIMPosition()
+                newposition.frame = key
+                newposition.translate = tx, ty, tz
+                pos_index = pos_index + 1
+                ANIMPositions.append(newposition)
     
     '''
     Reorder objects based on parenting and lods. If they are the wrong order, everything will blow up! 
@@ -427,8 +446,16 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
             ANIM.elementscount = len(ANIMElements)
             ANIM.orientationscount = len(ANIMOrientations)
             ANIM.rotationcount = len(ANIMRotations)
-            ANIM.translation2count = 0
+            ANIM.translation2count = len(ANIMTranslations)
             ANIM.positioncount = len(ANIMPositions)
+            if getattr(context.scene.SDFVDFPropertyGroup, "UseAdvancedAnimHeader", False):
+                ANIM.null2 = int(context.scene.SDFVDFPropertyGroup.AnimNull2)
+                ANIM.unknown2 = int(context.scene.SDFVDFPropertyGroup.AnimUnknown2)
+                ANIM._reserved = [int(v) for v in context.scene.SDFVDFPropertyGroup.AnimReserved]
+            else:
+                ANIM.null2 = 0
+                ANIM.unknown2 = 0
+                ANIM._reserved = [0, 0, 0, 0, 0]
             ANIM.sectionlength = (
                 ANIM.binlength
                 +
@@ -455,6 +482,10 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
             #Write ANIM rotations. 
             for animrotation in ANIMRotations:
                 position = animrotation.Write(file, position)
+
+            #Write ANIM translation2.
+            for animtranslation in ANIMTranslations:
+                position = animtranslation.Write(file, position)
                 
             #Write ANIM positions. 
             for animposition in ANIMPositions:

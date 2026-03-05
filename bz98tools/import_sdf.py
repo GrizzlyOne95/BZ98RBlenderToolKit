@@ -31,6 +31,7 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
     ANIMrotations = []
     ANIMtranslations2 = []
     ANIMpositions = []
+    anim_found = False
     #We need to act if we can't find the GEO.
     if not os.path.exists(filepath):
         raise Exception(filepath + ' was not found!')
@@ -62,6 +63,7 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
         import struct
         sectionname = struct.unpack('4s',fileContent[position:position+4])
         if sectionname[0] == b'ANIM':
+            anim_found = True
             position = ANIM.Read(fileContent, position)
             for i in range(ANIM.elementscount):
                 Element = sdf_classes.ANIMElement()
@@ -84,6 +86,19 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                 position = Position.Read(fileContent, position)
                 ANIMpositions.append(Position)
             position = EXIT.Read(fileContent, position)
+
+        if anim_found:
+            bpy.context.scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = True
+            bpy.context.scene.SDFVDFPropertyGroup.AnimNull2 = int(ANIM.null2)
+            bpy.context.scene.SDFVDFPropertyGroup.AnimUnknown2 = int(ANIM.unknown2)
+            try:
+                bpy.context.scene.SDFVDFPropertyGroup.AnimReserved = tuple(int(v) for v in ANIM._reserved[:5])
+            except Exception:
+                bpy.context.scene.SDFVDFPropertyGroup.AnimReserved = (0, 0, 0, 0, 0)
+            bpy.context.scene.SDFVDFPropertyGroup.UseTranslation2Track = bool(ANIM.translation2count > 0)
+        else:
+            bpy.context.scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = False
+            bpy.context.scene.SDFVDFPropertyGroup.UseTranslation2Track = False
         
         #Load all the geos we now know about.
         OBJList = {}
@@ -227,6 +242,11 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                 item.Length = element.length
                 item.Loop = element.loop
                 item.Speed = element.speed
+                item.UseCustomUnknownGeoMask = True
+                try:
+                    item.UnknownGeoMask = tuple(int(v) for v in element.unknowngeoflag)
+                except Exception:
+                    item.UnknownGeoMask = (0,) * 32
             
             EndFrame = 0
             
@@ -252,6 +272,13 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                             Model.object.keyframe_insert(data_path="location", frame=ANIMpositions[index].frame)
                             if ANIMpositions[index].frame > EndFrame:
                                 EndFrame = ANIMpositions[index].frame
+
+                    if modelanim.translation2count > 0:
+                        for index in range(modelanim.translation2index,modelanim.translation2index+modelanim.translation2count):
+                            Model.object.location = ANIMtranslations2[index].translate[0],ANIMtranslations2[index].translate[2],ANIMtranslations2[index].translate[1]
+                            Model.object.keyframe_insert(data_path="location", frame=ANIMtranslations2[index].frame)
+                            if ANIMtranslations2[index].frame > EndFrame:
+                                EndFrame = ANIMtranslations2[index].frame
             
             #Set the animation to the first frame.
             bpy.context.scene.frame_set(0)

@@ -178,13 +178,16 @@ class ANIMHeader:
 
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
+        r = list(self._reserved) if isinstance(self._reserved, (list, tuple)) else [0, 0, 0, 0, 0]
+        while len(r) < 5:
+            r.append(0)
         struct.pack_into(
             self.binstring,
             buffer,
             0,
             b'ANIM',
             int(self.sectionlength),
-            bytes(self.name or "", 'ascii', errors='ignore'),
+            bytes(self.name or ".", 'ascii', errors='ignore'),
             # 5 counts:
             int(self.elementscount),
             int(self.orientationscount),
@@ -195,7 +198,7 @@ class ANIMHeader:
             int(self.null2),
             # unknown2 + 5 reserved:
             int(self.unknown2),
-            0, 0, 0, 0, 0
+            int(r[0]), int(r[1]), int(r[2]), int(r[3]), int(r[4])
         )
         fileHandle.write(buffer)
         return position + self.binlength
@@ -210,7 +213,7 @@ class ANIMElement:
     def Read (self, fileContent, position):
         array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
         self.index = array[0]
-        self.unknowngeoflag = array[1:32]
+        self.unknowngeoflag = list(array[1:33])
         self.start = array[33]
         self.length = array[34]
         self.loop = array[35]
@@ -218,8 +221,21 @@ class ANIMElement:
         return position + self.binlength
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, self.index, self.unknowngeoflag[0], self.unknowngeoflag[1], self.unknowngeoflag[2], self.unknowngeoflag[3], self.unknowngeoflag[4], self.unknowngeoflag[5], self.unknowngeoflag[6], self.unknowngeoflag[7], self.unknowngeoflag[8], self.unknowngeoflag[9], self.unknowngeoflag[10], self.unknowngeoflag[11], self.unknowngeoflag[12], self.unknowngeoflag[13], self.unknowngeoflag[14], self.unknowngeoflag[15], self.unknowngeoflag[16], self.unknowngeoflag[17], self.unknowngeoflag[18], self.unknowngeoflag[19], self.unknowngeoflag[20], self.unknowngeoflag[21], self.unknowngeoflag[22], self.unknowngeoflag[23], self.unknowngeoflag[24], self.unknowngeoflag[25], self.unknowngeoflag[26], self.unknowngeoflag[27], self.unknowngeoflag[28], self.unknowngeoflag[29], self.unknowngeoflag[30], self.unknowngeoflag[31],
-        self.start, self.length, self.loop, self.speed)
+        mask = list(self.unknowngeoflag) if isinstance(self.unknowngeoflag, (list, tuple)) else []
+        while len(mask) < 32:
+            mask.append(0)
+        mask = [int(v) for v in mask[:32]]
+        struct.pack_into(
+            self.binstring,
+            buffer,
+            0,
+            self.index,
+            *mask,
+            self.start,
+            self.length,
+            self.loop,
+            self.speed
+        )
         fileHandle.write(buffer)
         return position + self.binlength
 
@@ -323,6 +339,9 @@ class SCPSSection:
     def __init__(self):
         self.binstring = '=4s4i'
         self.binlength = 20
+        self.headername = 'SCPS'
+        self.sectionlength = self.binlength
+        self.data = [0, 0, 0]
     def Read (self, fileContent, position):
         array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
         self.headername = safe_decode_ascii(array[0])
@@ -331,7 +350,10 @@ class SCPSSection:
         return position + self.binlength
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, b'SCPS', 20, 0, 0, 0)
+        d = list(self.data) if isinstance(self.data, (list, tuple)) else [0, 0, 0]
+        while len(d) < 3:
+            d.append(0)
+        struct.pack_into(self.binstring, buffer, 0, b'SCPS', 20, int(d[0]), int(d[1]), int(d[2]))
         fileHandle.write(buffer)
         return position + self.binlength
 

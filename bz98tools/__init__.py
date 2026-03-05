@@ -26,6 +26,7 @@ from bpy_extras.io_utils import (
         )
 
 import os
+import mathutils
 
 def get_default_ogre_xml_converter():
     """Try to find OgreXMLConverter.exe in the bundled ogretools folder."""
@@ -48,7 +49,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5.1)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "Commando950/DivisionByZero/GrizzlyOne95",
-    "version": (1, 1, 0),
+    "version": (1, 2, 0),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -107,6 +108,19 @@ class AnimationPropertyGroup(bpy.types.PropertyGroup):
         default = 15.0,
         min = -999999.0,
         max = 999999.0
+    )
+
+    UseCustomUnknownGeoMask: bpy.props.BoolProperty(
+        name="Use Custom GEO Mask",
+        description="Use a custom 32-int ANIM element GEO mask instead of automatic defaults",
+        default=False,
+    )
+
+    UnknownGeoMask: bpy.props.IntVectorProperty(
+        name="GEO Mask",
+        description="Raw 32-int ANIM element mask",
+        size=32,
+        default=(0,) * 32,
     )
 
 class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
@@ -229,6 +243,54 @@ class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
         default = 3.40282e+38,
         min = 0.0,
         max = 3.40282e+38
+    )
+
+    UseAdvancedAnimHeader: bpy.props.BoolProperty(
+        name="Use Advanced ANIM Header",
+        description="Use custom ANIM header raw values (null2, unknown2, reserved ints)",
+        default=False,
+    )
+
+    AnimNull2: bpy.props.IntProperty(
+        name="ANIM null2",
+        description="Raw ANIM header int at slot null2",
+        default=0,
+        min=-2147483648,
+        max=2147483647,
+    )
+
+    AnimUnknown2: bpy.props.IntProperty(
+        name="ANIM unknown2",
+        description="Raw ANIM header int at slot unknown2",
+        default=0,
+        min=-2147483648,
+        max=2147483647,
+    )
+
+    AnimReserved: bpy.props.IntVectorProperty(
+        name="ANIM Reserved",
+        description="Five reserved ANIM header ints",
+        size=5,
+        default=(0, 0, 0, 0, 0),
+    )
+
+    UseTranslation2Track: bpy.props.BoolProperty(
+        name="Use Translation2 Track",
+        description="Write object position keys to ANIM Translation2 instead of Position",
+        default=False,
+    )
+
+    UseCustomSCPS: bpy.props.BoolProperty(
+        name="Use Custom SCPS",
+        description="Write custom SCPS raw ints (VDF export)",
+        default=False,
+    )
+
+    SCPSData: bpy.props.IntVectorProperty(
+        name="SCPS Data",
+        description="Three raw SCPS ints",
+        size=3,
+        default=(0, 0, 0),
     )
 
 geotypes = []
@@ -516,6 +578,52 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
         max=2147483647,
     )
 
+    IsSpinnerHelper: bpy.props.BoolProperty(
+        name="Spinner Helper",
+        description="Treat this GEO as a spinner controller helper for VDF export",
+        default=False,
+    )
+
+    SpinnerTarget: bpy.props.StringProperty(
+        name="Spinner Target",
+        description="Object name this spinner helper should be written after in VDF",
+        default="",
+        maxlen=64,
+    )
+
+    SpinnerAxis: bpy.props.FloatVectorProperty(
+        name="Spinner Axis",
+        description="Spinner axis vector in VDF coordinates; direction = axis, magnitude = radians/sec when speed is 1",
+        size=3,
+        default=(1.0, 0.0, 0.0),
+    )
+
+    SpinnerSpeed: bpy.props.FloatProperty(
+        name="Spinner Speed",
+        description="Multiplier applied to Spinner Axis when exporting",
+        default=1.0,
+        min=-100000.0,
+        max=100000.0,
+    )
+
+    UseRawVDFMatrix: bpy.props.BoolProperty(
+        name="Use Raw VDF Matrix",
+        description="Write the raw 12-float VDF transform matrix directly instead of using Blender transform decomposition",
+        default=False,
+    )
+
+    RawVDFMatrix: bpy.props.FloatVectorProperty(
+        name="Raw VDF Matrix",
+        description="12 floats in order: right_x right_y right_z, up_x up_y up_z, front_x front_y front_z, pos_x pos_y pos_z",
+        size=12,
+        default=(
+            1.0, 0.0, 0.0,
+            0.0, 1.0, 0.0,
+            0.0, 0.0, 1.0,
+            0.0, 0.0, 0.0,
+        ),
+    )
+
     
     SDFDDR: bpy.props.IntProperty(
         name = "DDR",
@@ -556,6 +664,70 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
         default = 0.0,
         min = -500000.0,
         max = 500000.0
+    )
+
+    GEOHeaderUnknown: bpy.props.IntProperty(
+        name="GEO Header Unknown1",
+        description="Raw GEO header int (historically 69)",
+        default=69,
+        min=-2147483648,
+        max=2147483647,
+    )
+
+    GEOHeaderUnknown2: bpy.props.IntProperty(
+        name="GEO Header Unknown2",
+        description="Raw GEO header trailing int",
+        default=0,
+        min=-2147483648,
+        max=2147483647,
+    )
+
+    GEOFaceUnknownDefault: bpy.props.IntProperty(
+        name="Face Unknown Raw",
+        description="Default raw face int field used when per-face attributes are missing",
+        default=0,
+        min=-2147483648,
+        max=2147483647,
+    )
+
+    GEOFaceShadeTypeDefault: bpy.props.IntProperty(
+        name="Face Shade Type",
+        description="Default face shade type byte (see GEO editor references)",
+        default=4,
+        min=0,
+        max=255,
+    )
+
+    GEOFaceTextureTypeDefault: bpy.props.IntProperty(
+        name="Face Texture Type",
+        description="Default face texture flags byte",
+        default=0,
+        min=0,
+        max=255,
+    )
+
+    GEOFaceXluscentTypeDefault: bpy.props.IntProperty(
+        name="Face Xluscent Type",
+        description="Default face translucency byte",
+        default=0,
+        min=0,
+        max=255,
+    )
+
+    GEOFaceParentDefault: bpy.props.IntProperty(
+        name="Face Parent",
+        description="Default face parent index when per-face attributes are missing",
+        default=0,
+        min=-2147483648,
+        max=2147483647,
+    )
+
+    GEOFaceNodeDefault: bpy.props.IntProperty(
+        name="Face Node",
+        description="Default face node/tree-branch int when per-face attributes are missing",
+        default=0,
+        min=-2147483648,
+        max=2147483647,
     )
 
 class MaterialPropertyGroup(bpy.types.PropertyGroup):
@@ -609,7 +781,19 @@ class BattlezoneSDFVDFProperties(bpy.types.Panel):
         box.prop( SDFVDFPropertyGroup, "LOD3")
         box.prop( SDFVDFPropertyGroup, "LOD4")
         box.prop( SDFVDFPropertyGroup, "LOD5")
-        
+
+        adv = layout.box()
+        adv.label(text="Experimental Binary (VDF/SDF)")
+        adv.prop(SDFVDFPropertyGroup, "UseAdvancedAnimHeader")
+        if SDFVDFPropertyGroup.UseAdvancedAnimHeader:
+            adv.prop(SDFVDFPropertyGroup, "AnimNull2")
+            adv.prop(SDFVDFPropertyGroup, "AnimUnknown2")
+            adv.prop(SDFVDFPropertyGroup, "AnimReserved")
+        adv.prop(SDFVDFPropertyGroup, "UseTranslation2Track")
+        adv.prop(SDFVDFPropertyGroup, "UseCustomSCPS")
+        if SDFVDFPropertyGroup.UseCustomSCPS:
+            adv.prop(SDFVDFPropertyGroup, "SCPSData")
+
         box = layout.box()
         box.label(text="VDF Collision Helpers (not used for SDF)")
         box.label(text="Uses active mesh bounds to build VDF COL boxes")
@@ -676,6 +860,37 @@ class BattlezoneGEOProperties(bpy.types.Panel):
         box.prop(geo, "SDFY")
         box.prop(geo, "SDFZ")
         box.prop(geo, "SDFTime")
+
+        # --- VDF spinner helper settings ---
+        spin_box = layout.box()
+        spin_box.label(text="VDF Spinner Helper")
+        spin_box.operator("bz.create_spinner_helper", text="Create Spinner Helper")
+        spin_box.prop(geo, "IsSpinnerHelper")
+        if geo.IsSpinnerHelper:
+            spin_box.prop(geo, "SpinnerTarget")
+            spin_box.prop(geo, "SpinnerAxis")
+            spin_box.prop(geo, "SpinnerSpeed")
+            spin_box.label(text="Tip: helper exports as GEO Type 15.")
+
+        raw_box = layout.box()
+        raw_box.label(text="VDF Transform Override")
+        raw_box.prop(geo, "UseRawVDFMatrix")
+        raw_box.operator("bz.capture_raw_vdf_matrix", text="Capture From Current Transform")
+        if geo.UseRawVDFMatrix:
+            raw_box.label(text="Order: right, up, front, position")
+            raw_box.prop(geo, "RawVDFMatrix")
+
+        face_box = layout.box()
+        face_box.label(text="Experimental GEO Header/Face Raw")
+        face_box.prop(geo, "GEOHeaderUnknown")
+        face_box.prop(geo, "GEOHeaderUnknown2")
+        face_box.prop(geo, "GEOFaceUnknownDefault")
+        face_box.prop(geo, "GEOFaceShadeTypeDefault")
+        face_box.prop(geo, "GEOFaceTextureTypeDefault")
+        face_box.prop(geo, "GEOFaceXluscentTypeDefault")
+        face_box.prop(geo, "GEOFaceParentDefault")
+        face_box.prop(geo, "GEOFaceNodeDefault")
+        face_box.label(text="Per-face attrs: bz_face_* (Spreadsheet).")
 
         
 class BattlezoneMaterialProperties(bpy.types.Panel):
@@ -913,6 +1128,111 @@ class OPGenerateCollision(bpy.types.Operator):
         else:
             obj.GEOPropertyGroup.BoxHalfHeightZ = abs(maxz-obj.GEOPropertyGroup.GeoCenterZ)
         return {'FINISHED'}
+
+
+class OPCreateSpinnerHelper(bpy.types.Operator):
+    bl_idname = "bz.create_spinner_helper"
+    bl_label = "Create Spinner Helper"
+    bl_description = "Create a spinner helper object linked to the active GEO for VDF spinner export"
+
+    def execute(self, context):
+        src = context.view_layer.objects.active
+        if src is None:
+            self.report({'ERROR'}, "No active object selected")
+            return {'CANCELLED'}
+
+        if len(src.name) < 5:
+            self.report({'ERROR'}, "Active object name must be at least 5 characters")
+            return {'CANCELLED'}
+
+        src_name = src.name.lower()
+        lod_char = src_name[3] if len(src_name) >= 4 else '1'
+        lod = 1 if lod_char not in ['1', '2', '3'] else int(lod_char)
+        fixed_src_name = fixgeoname(src.name, lod).lower()
+
+        helper_base = (fixed_src_name[:7] + "t")[:8]
+        helper_name = helper_base
+        if bpy.data.objects.get(helper_name) is not None:
+            for i in range(10):
+                candidate = (helper_base[:7] + str(i))[:8]
+                if bpy.data.objects.get(candidate) is None:
+                    helper_name = candidate
+                    break
+            else:
+                self.report({'ERROR'}, "Unable to find a unique spinner helper name")
+                return {'CANCELLED'}
+
+        helper = bpy.data.objects.new(helper_name, None)
+        helper.empty_display_type = 'ARROWS'
+        helper.empty_display_size = 0.25
+        context.collection.objects.link(helper)
+
+        helper.parent = src
+        helper.matrix_parent_inverse = src.matrix_world.inverted()
+        helper.location = (0.0, 0.0, 0.0)
+        helper.rotation_euler = (0.0, 0.0, 0.0)
+        helper.scale = (1.0, 1.0, 1.0)
+
+        geo = helper.GEOPropertyGroup
+        geo.GEOType = 15
+        geo.IsSpinnerHelper = True
+        geo.SpinnerTarget = fixed_src_name
+        geo.SpinnerAxis = (1.0, 0.0, 0.0)
+        geo.SpinnerSpeed = 1.0
+        geo.GenerateCollision = False
+
+        helper.hide_render = True
+
+        for obj in context.selected_objects:
+            obj.select_set(False)
+        helper.select_set(True)
+        context.view_layer.objects.active = helper
+
+        self.report({'INFO'}, f"Created spinner helper '{helper.name}' for '{fixed_src_name}'")
+        return {'FINISHED'}
+
+
+class OPCaptureRawVDFMatrix(bpy.types.Operator):
+    bl_idname = "bz.capture_raw_vdf_matrix"
+    bl_label = "Capture Raw VDF Matrix"
+    bl_description = "Capture the active object's current transform into Raw VDF Matrix using export axis conventions"
+
+    def execute(self, context):
+        obj = context.view_layer.objects.active
+        if obj is None:
+            self.report({'ERROR'}, "No active object selected")
+            return {'CANCELLED'}
+
+        geo = getattr(obj, "GEOPropertyGroup", None)
+        if geo is None:
+            self.report({'ERROR'}, "Active object has no GEO properties")
+            return {'CANCELLED'}
+
+        euler = mathutils.Euler((0.0, math.radians(45.0), 0.0), 'YZX')
+        euler[:] = obj.rotation_euler.x, obj.rotation_euler.z, obj.rotation_euler.y
+        rot_matrix = euler.to_matrix()
+
+        sx, sy, sz = obj.scale
+        scale_mat = mathutils.Matrix((
+            (sx, 0.0, 0.0),
+            (0.0, sy, 0.0),
+            (0.0, 0.0, sz),
+        ))
+        thematrix = rot_matrix @ scale_mat
+
+        translation = obj.matrix_local.to_translation()
+        raw = (
+            thematrix[0][0], thematrix[0][1], thematrix[0][2],
+            thematrix[1][0], thematrix[1][1], thematrix[1][2],
+            thematrix[2][0], thematrix[2][1], thematrix[2][2],
+            translation.x, translation.z, translation.y,
+        )
+
+        geo.RawVDFMatrix = raw
+        geo.UseRawVDFMatrix = True
+
+        self.report({'INFO'}, "Captured current transform into Raw VDF Matrix")
+        return {'FINISHED'}
         
 '''
 Animation UIList - Used to make a list of all the animation elements, allowing you to click them to select them.
@@ -953,11 +1273,24 @@ class AnimationPanel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Element Editor")
         if len(scene.AnimationCollection) > 0:
-            box.prop(scene.AnimationCollection[scene.CurAnimation], "Index")
-            box.prop(scene.AnimationCollection[scene.CurAnimation], "Start")
-            box.prop(scene.AnimationCollection[scene.CurAnimation], "Length")
-            box.prop(scene.AnimationCollection[scene.CurAnimation], "Loop")
-            box.prop(scene.AnimationCollection[scene.CurAnimation], "Speed")
+            item = scene.AnimationCollection[scene.CurAnimation]
+            box.prop(item, "Index")
+            box.prop(item, "Start")
+            box.prop(item, "Length")
+            box.prop(item, "Loop")
+            box.prop(item, "Speed")
+            box.prop(item, "UseCustomUnknownGeoMask")
+            if item.UseCustomUnknownGeoMask:
+                for i in range(0, 32, 8):
+                    row = box.row(align=True)
+                    row.prop(item, "UnknownGeoMask", index=i+0, text=str(i+0))
+                    row.prop(item, "UnknownGeoMask", index=i+1, text=str(i+1))
+                    row.prop(item, "UnknownGeoMask", index=i+2, text=str(i+2))
+                    row.prop(item, "UnknownGeoMask", index=i+3, text=str(i+3))
+                    row.prop(item, "UnknownGeoMask", index=i+4, text=str(i+4))
+                    row.prop(item, "UnknownGeoMask", index=i+5, text=str(i+5))
+                    row.prop(item, "UnknownGeoMask", index=i+6, text=str(i+6))
+                    row.prop(item, "UnknownGeoMask", index=i+7, text=str(i+7))
 
         # Animation index reference helper
         ref_box = layout.box()
@@ -2111,6 +2444,17 @@ class BZ98TOOLS_PT_zfs_explorer(bpy.types.Panel):
                     break
 
 GUIClasses = [
+    BZ_OT_ShowAnimIndexReference,
+    BZ_PT_GeoTypeListPopover,
+    BattlezoneSDFVDFProperties,
+    BattlezoneGEOProperties,
+    BattlezoneMaterialProperties,
+    OPCreateNewElement,
+    OPDeleteElement,
+    OPGenerateVDFCollisionMeshes,
+    OPGenerateCollision,
+    OPCreateSpinnerHelper,
+    OPCaptureRawVDFMatrix,
     AnimationUIList,
     AnimationPanel,
     BZ98TOOLS_PT_zfs_explorer,
