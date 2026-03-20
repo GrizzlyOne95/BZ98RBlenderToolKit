@@ -73,6 +73,14 @@ def GenerateGEOCollisions(object):
     else:
         obj.GEOPropertyGroup.BoxHalfHeightZ = abs(maxz-obj.GEOPropertyGroup.GeoCenterZ)
 
+
+def _iter_export_objects(context):
+    scene = getattr(context, "scene", None)
+    if scene is None:
+        return list(bpy.data.objects)
+    return list(scene.objects)
+
+
 def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
     '''
     We are going to use a bunch of classes to write data and encapsulate it.
@@ -143,7 +151,7 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
     '''
     Matrix = mathutils.Matrix
     Vector = mathutils.Vector
-    for object in bpy.data.objects:
+    for object in _iter_export_objects(context):
         GEO = sdf_classes.GEOData()
         
         #Assume GEO lod is for first lod level. Until we find out otherwise.

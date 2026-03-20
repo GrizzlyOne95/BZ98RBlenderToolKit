@@ -18,6 +18,7 @@ from . import import_geo
 importlib.reload(sdf_classes)
 importlib.reload(import_geo)
 
+
 def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
          ImportMapTextures=False):
     EXIT = sdf_classes.EXITSection() #We going to be using this class to read through exit sections.
@@ -42,6 +43,7 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
         #Read the file we opened.
         fileContent = file.read()
         position = 0
+        scene = context.scene
         
         #Read the VDF header information.
         position = SDFHeader.Read(fileContent, position)
@@ -88,17 +90,17 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
             position = EXIT.Read(fileContent, position)
 
         if anim_found:
-            bpy.context.scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = True
-            bpy.context.scene.SDFVDFPropertyGroup.AnimNull2 = int(ANIM.null2)
-            bpy.context.scene.SDFVDFPropertyGroup.AnimUnknown2 = int(ANIM.unknown2)
+            scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = True
+            scene.SDFVDFPropertyGroup.AnimNull2 = int(ANIM.null2)
+            scene.SDFVDFPropertyGroup.AnimUnknown2 = int(ANIM.unknown2)
             try:
-                bpy.context.scene.SDFVDFPropertyGroup.AnimReserved = tuple(int(v) for v in ANIM._reserved[:5])
+                scene.SDFVDFPropertyGroup.AnimReserved = tuple(int(v) for v in ANIM._reserved[:5])
             except Exception:
-                bpy.context.scene.SDFVDFPropertyGroup.AnimReserved = (0, 0, 0, 0, 0)
-            bpy.context.scene.SDFVDFPropertyGroup.UseTranslation2Track = bool(ANIM.translation2count > 0)
+                scene.SDFVDFPropertyGroup.AnimReserved = (0, 0, 0, 0, 0)
+            scene.SDFVDFPropertyGroup.UseTranslation2Track = bool(ANIM.translation2count > 0)
         else:
-            bpy.context.scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = False
-            bpy.context.scene.SDFVDFPropertyGroup.UseTranslation2Track = False
+            scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = False
+            scene.SDFVDFPropertyGroup.UseTranslation2Track = False
         
         #Load all the geos we now know about.
         OBJList = {}
@@ -220,23 +222,23 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                 object.location = Vector((geo.matrix[9],geo.matrix[11],geo.matrix[10]))
                 
         #Take our VDF information and load it into the scene.
-        bpy.context.scene.SDFVDFPropertyGroup['Name'] = SDFC.name
-        bpy.context.scene.SDFVDFPropertyGroup['StructureType'] = SDFC.structuretype
-        bpy.context.scene.SDFVDFPropertyGroup['LOD1'] = SDFC.lod1dist
-        bpy.context.scene.SDFVDFPropertyGroup['LOD2'] = SDFC.lod2dist
-        bpy.context.scene.SDFVDFPropertyGroup['LOD3'] = SDFC.lod3dist
-        bpy.context.scene.SDFVDFPropertyGroup['LOD4'] = SDFC.lod4dist
-        bpy.context.scene.SDFVDFPropertyGroup['LOD5'] = SDFC.lod5dist
-        bpy.context.scene.SDFVDFPropertyGroup['Defensive'] = SDFC.defensive
-        bpy.context.scene.SDFVDFPropertyGroup['DeathExplosion'] = SDFC.explosioneffect
-        bpy.context.scene.SDFVDFPropertyGroup['DeathSound'] = SDFC.explosionsound
+        scene.SDFVDFPropertyGroup['Name'] = SDFC.name
+        scene.SDFVDFPropertyGroup['StructureType'] = SDFC.structuretype
+        scene.SDFVDFPropertyGroup['LOD1'] = SDFC.lod1dist
+        scene.SDFVDFPropertyGroup['LOD2'] = SDFC.lod2dist
+        scene.SDFVDFPropertyGroup['LOD3'] = SDFC.lod3dist
+        scene.SDFVDFPropertyGroup['LOD4'] = SDFC.lod4dist
+        scene.SDFVDFPropertyGroup['LOD5'] = SDFC.lod5dist
+        scene.SDFVDFPropertyGroup['Defensive'] = SDFC.defensive
+        scene.SDFVDFPropertyGroup['DeathExplosion'] = SDFC.explosioneffect
+        scene.SDFVDFPropertyGroup['DeathSound'] = SDFC.explosionsound
         
         #Clear old animation elements if they exist.
-        bpy.context.scene.AnimationCollection.clear()
+        scene.AnimationCollection.clear()
         if ImportAnimations:
             #Take our animation elements and load them into the scene.
             for element in ANIMelements:
-                item = bpy.context.scene.AnimationCollection.add()
+                item = scene.AnimationCollection.add()
                 item.Index = element.index
                 item.Start = element.start
                 item.Length = element.length
@@ -281,11 +283,11 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                                 EndFrame = ANIMtranslations2[index].frame
             
             #Set the animation to the first frame.
-            bpy.context.scene.frame_set(0)
+            scene.frame_set(0)
             #Start at 0 of course.
-            bpy.context.scene.frame_start = 0
+            scene.frame_start = 0
             #End at the last frame of the animation.
-            bpy.context.scene.frame_end = EndFrame
+            scene.frame_end = EndFrame
             
     return {'FINISHED'}
 

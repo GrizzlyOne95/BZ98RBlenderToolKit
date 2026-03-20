@@ -18,6 +18,18 @@ importlib.reload(vdf_classes)
 importlib.reload(import_geo)
 
 
+def _get_target_collection(context):
+    collection = getattr(context, "collection", None)
+    if collection is not None:
+        return collection
+
+    scene = getattr(context, "scene", None)
+    if scene is not None:
+        return scene.collection
+
+    return bpy.context.collection
+
+
 def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
          PreserveFaceColors=True, ImportMapTextures=False):
     EXIT = vdf_classes.EXITSection()  # We are going to be using this class to read through exit sections.
@@ -43,6 +55,8 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         # Read the file we opened.
         fileContent = file.read()
         position = 0
+        scene = context.scene
+        target_collection = _get_target_collection(context)
 
         # Read the VDF header information.
         position = VDFHeader.Read(fileContent, position)
@@ -55,17 +69,17 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         position = EXIT.Read(fileContent, position)
 
         # Take our VDF information and load it into the scene.
-        bpy.context.scene.SDFVDFPropertyGroup['Name'] = VDFC.name
-        bpy.context.scene.SDFVDFPropertyGroup['VehicleSize'] = VDFC.vehiclesize
-        bpy.context.scene.SDFVDFPropertyGroup['VehicleType'] = VDFC.vehicletype
-        bpy.context.scene.SDFVDFPropertyGroup['LOD1'] = VDFC.lod1dist
-        bpy.context.scene.SDFVDFPropertyGroup['LOD2'] = VDFC.lod2dist
-        bpy.context.scene.SDFVDFPropertyGroup['LOD3'] = VDFC.lod3dist
-        bpy.context.scene.SDFVDFPropertyGroup['LOD4'] = VDFC.lod4dist
-        bpy.context.scene.SDFVDFPropertyGroup['LOD5'] = VDFC.lod5dist
-        bpy.context.scene.SDFVDFPropertyGroup['Mass'] = VDFC.mass
-        bpy.context.scene.SDFVDFPropertyGroup['CollMult'] = VDFC.multiplyer
-        bpy.context.scene.SDFVDFPropertyGroup['DragCoefficient'] = VDFC.drag
+        scene.SDFVDFPropertyGroup['Name'] = VDFC.name
+        scene.SDFVDFPropertyGroup['VehicleSize'] = VDFC.vehiclesize
+        scene.SDFVDFPropertyGroup['VehicleType'] = VDFC.vehicletype
+        scene.SDFVDFPropertyGroup['LOD1'] = VDFC.lod1dist
+        scene.SDFVDFPropertyGroup['LOD2'] = VDFC.lod2dist
+        scene.SDFVDFPropertyGroup['LOD3'] = VDFC.lod3dist
+        scene.SDFVDFPropertyGroup['LOD4'] = VDFC.lod4dist
+        scene.SDFVDFPropertyGroup['LOD5'] = VDFC.lod5dist
+        scene.SDFVDFPropertyGroup['Mass'] = VDFC.mass
+        scene.SDFVDFPropertyGroup['CollMult'] = VDFC.multiplyer
+        scene.SDFVDFPropertyGroup['DragCoefficient'] = VDFC.drag
 
         # Read VGEO header.
         position = VGEO.Read(fileContent, position)
@@ -149,23 +163,23 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                 COLP.data = [0.0] * 12
 
         if anim_found:
-            bpy.context.scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = True
-            bpy.context.scene.SDFVDFPropertyGroup.AnimNull2 = int(ANIM.null2)
-            bpy.context.scene.SDFVDFPropertyGroup.AnimUnknown2 = int(ANIM.unknown2)
+            scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = True
+            scene.SDFVDFPropertyGroup.AnimNull2 = int(ANIM.null2)
+            scene.SDFVDFPropertyGroup.AnimUnknown2 = int(ANIM.unknown2)
             try:
-                bpy.context.scene.SDFVDFPropertyGroup.AnimReserved = tuple(int(v) for v in ANIM._reserved[:5])
+                scene.SDFVDFPropertyGroup.AnimReserved = tuple(int(v) for v in ANIM._reserved[:5])
             except Exception:
-                bpy.context.scene.SDFVDFPropertyGroup.AnimReserved = (0, 0, 0, 0, 0)
-            bpy.context.scene.SDFVDFPropertyGroup.UseTranslation2Track = bool(ANIM.translation2count > 0)
+                scene.SDFVDFPropertyGroup.AnimReserved = (0, 0, 0, 0, 0)
+            scene.SDFVDFPropertyGroup.UseTranslation2Track = bool(ANIM.translation2count > 0)
         else:
-            bpy.context.scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = False
-            bpy.context.scene.SDFVDFPropertyGroup.UseTranslation2Track = False
+            scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = False
+            scene.SDFVDFPropertyGroup.UseTranslation2Track = False
 
-        bpy.context.scene.SDFVDFPropertyGroup.UseCustomSCPS = bool(scps_found)
+        scene.SDFVDFPropertyGroup.UseCustomSCPS = bool(scps_found)
         if scps_found:
-            bpy.context.scene.SDFVDFPropertyGroup.SCPSData = tuple(scps_data[:3])
+            scene.SDFVDFPropertyGroup.SCPSData = tuple(scps_data[:3])
         else:
-            bpy.context.scene.SDFVDFPropertyGroup.SCPSData = (0, 0, 0)
+            scene.SDFVDFPropertyGroup.SCPSData = (0, 0, 0)
 
         # ------------------------------------------------------------------
         # Recreate the inner/outer collision boxes from COLP
@@ -176,8 +190,8 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         outerobj = bpy.data.objects.new('outer_col', outermesh)
         YMaxOut, YMaxIn, YMinIn, YMinOut, XMaxOut, XMaxIn, XMinIn, XMinOut, ZMaxOut, ZMaxIn, ZMinIn, ZMinOut = COLP.data
 
-        bpy.context.collection.objects.link(innerobj)
-        bpy.context.collection.objects.link(outerobj)
+        target_collection.objects.link(innerobj)
+        target_collection.objects.link(outerobj)
 
         # Create mesh for inner box.
         bminner = bmesh.new()
@@ -194,7 +208,7 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
             bminner.verts.new(vert)
 
         bminner.to_mesh(innermesh)
-        bminner.free
+        bminner.free()
 
         # Create mesh for outer box.
         bmouter = bmesh.new()
@@ -211,7 +225,7 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
             bmouter.verts.new(vert)
 
         bmouter.to_mesh(outermesh)
-        bmouter.free
+        bmouter.free()
 
         # ------------------------------------------------------------------
         # Load GEOs and recreate Blender objects
@@ -253,7 +267,7 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                         newobj = bpy.data.objects.new(GEO.name, None)
                         newobj.empty_display_type = 'ARROWS'
                         newobj.empty_display_size = 0.25
-                        bpy.context.collection.objects.link(newobj)
+                        target_collection.objects.link(newobj)
 
                     if newobj is not None:
                         geolod = currentlod
@@ -403,10 +417,10 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         # ------------------------------------------------------------------
         # Load animation into the scene (if present and requested)
         # ------------------------------------------------------------------
-        bpy.context.scene.AnimationCollection.clear()
+        scene.AnimationCollection.clear()
         if ImportGEOs and ImportAnimations:
             for element in ANIMelements:
-                item = bpy.context.scene.AnimationCollection.add()
+                item = scene.AnimationCollection.add()
                 item.Index = element.index
                 item.Start = element.start
                 item.Length = element.length
@@ -465,8 +479,8 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                             if ANIMtranslations2[index].frame > EndFrame:
                                 EndFrame = ANIMtranslations2[index].frame
 
-            bpy.context.scene.frame_set(0)
-            bpy.context.scene.frame_start = 0
-            bpy.context.scene.frame_end = EndFrame
+            scene.frame_set(0)
+            scene.frame_start = 0
+            scene.frame_end = EndFrame
 
     return {'FINISHED'}

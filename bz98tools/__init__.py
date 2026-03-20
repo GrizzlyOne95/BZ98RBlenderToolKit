@@ -27,6 +27,7 @@ from bpy_extras.io_utils import (
 
 import os
 import mathutils
+import struct
 
 def get_default_ogre_xml_converter():
     """Try to find OgreXMLConverter.exe in the bundled ogretools folder."""
@@ -43,13 +44,13 @@ if "bpy" in locals():
 
 
 # ----------------------------------------------------------
-#  Updated for Blender 4.5.1 compatibility
+#  Updated for Blender 4.5 LTS compatibility
 # ----------------------------------------------------------
 bl_info = {
-    "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5.1)",
+    "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "Commando950/DivisionByZero/GrizzlyOne95",
-    "version": (1, 2, 0),
+    "version": (1, 3, 0),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -1338,7 +1339,7 @@ class ImportGEO(bpy.types.Operator, ImportHelper):
                                             "split_mode",
                                             ))
         
-        return import_geo.load(bpy.context, **keywords)
+        return import_geo.load(context, **keywords)
         
 class ImportVDF(bpy.types.Operator, ImportHelper):
     bl_idname = "import_scene.vdf"
@@ -1377,7 +1378,7 @@ class ImportVDF(bpy.types.Operator, ImportHelper):
                                             "filter_glob",
                                             "split_mode",
                                             ))
-        return import_vdf.load(bpy.context, **keywords)
+        return import_vdf.load(context, **keywords)
         
 class ImportSDF(bpy.types.Operator, ImportHelper):
     bl_idname = "import_scene.sdf"
@@ -1416,7 +1417,7 @@ class ImportSDF(bpy.types.Operator, ImportHelper):
                                             "filter_glob",
                                             "split_mode",
                                             ))
-        return import_sdf.load(bpy.context, **keywords)
+        return import_sdf.load(context, **keywords)
         
 class ExportGEO(bpy.types.Operator, ExportHelper):
     bl_idname = "export_scene.geo"
@@ -2024,13 +2025,15 @@ class BZ98TOOLS_OT_import_bzr_mesh(bpy.types.Operator, ImportHelper):
     def execute(self, context):
         # Local import to avoid circular import on addon init
         from .ogretools import OgreImport
+        from .ogrefast import backend as ogre_backend
 
         xml_converter = self.xml_converter or None
 
-        return OgreImport.load(
+        return ogre_backend.import_mesh(
             self,
             context,
             self.filepath,
+            legacy_handler=OgreImport.load,
             xml_converter=xml_converter,
             keep_xml=self.keep_xml,
             import_normals=self.import_normals,
@@ -2162,13 +2165,15 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
     def execute(self, context):
         # Local import to avoid circular import on addon init
         from .ogretools import OgreExport
+        from .ogrefast import backend as ogre_backend
 
         xml_converter = self.xml_converter or None
 
-        return OgreExport.save(
+        return ogre_backend.export_mesh(
             self,
             context,
             self.filepath,
+            legacy_handler=OgreExport.save,
             xml_converter=xml_converter,
             keep_xml=self.keep_xml,
             export_tangents=self.export_tangents,
@@ -2257,14 +2262,17 @@ class ZFSFileEntry(bpy.types.PropertyGroup):
 
 def find_zfs_dependencies(reader, filename, extracted_files, temp_dir):
     """Recursively find and extract dependencies (GEOs and textures) from ZFS."""
-    if filename.lower() in extracted_files: return
-    
+    if filename.lower() in extracted_files:
+        return
+
     path = reader.extract(filename, temp_dir)
-    if not path: return
+    if not path:
+        print(f"[BZ ZFS] Missing dependency '{filename}' in archive.")
+        return
     extracted_files.add(filename.lower())
-    
+
     ext = os.path.splitext(filename)[1].lower()
-    
+
     if ext == '.vdf':
         from . import vdf_classes
         try:
@@ -2282,8 +2290,9 @@ def find_zfs_dependencies(reader, filename, extracted_files, temp_dir):
                     pos += 100
                     if geo.name.lower() != 'null':
                         find_zfs_dependencies(reader, geo.name + ".geo", extracted_files, temp_dir)
-        except: pass
-            
+        except Exception as exc:
+            print(f"[BZ ZFS] Failed to scan VDF dependencies for '{filename}': {exc}")
+
     elif ext == '.sdf':
         from . import sdf_classes
         try:
@@ -2300,7 +2309,8 @@ def find_zfs_dependencies(reader, filename, extracted_files, temp_dir):
                     pos += 120
                     if geo.name.lower() != 'null':
                         find_zfs_dependencies(reader, geo.name + ".geo", extracted_files, temp_dir)
-        except: pass
+        except Exception as exc:
+            print(f"[BZ ZFS] Failed to scan SDF dependencies for '{filename}': {exc}")
 
     elif ext == '.geo':
         # Scan for textures
@@ -2315,11 +2325,12 @@ def find_zfs_dependencies(reader, filename, extracted_files, temp_dir):
                 content = f.read()
                 import re
                 # Find .map, .pic, .tga references
-                tex_matches = re.findall(b'([a-zA-Z0-9_.-]+)\.(map|pic|tga|dds|png|bmp)', content, re.IGNORECASE)
+                tex_matches = re.findall(br'([a-zA-Z0-9_.-]+)\.(map|pic|tga|dds|png|bmp)', content, re.IGNORECASE)
                 for tex_name, tex_ext in tex_matches:
                     full_tex = tex_name.decode('ascii', errors='ignore') + "." + tex_ext.decode('ascii', errors='ignore')
                     find_zfs_dependencies(reader, full_tex, extracted_files, temp_dir)
-        except: pass
+        except Exception as exc:
+            print(f"[BZ ZFS] Failed to scan GEO dependencies for '{filename}': {exc}")
 
 class BZ98TOOLS_OT_open_zfs(bpy.types.Operator, ImportHelper):
     """Open a Battlezone ZFS archive to browse its contents"""
@@ -2511,19 +2522,19 @@ def unregister():
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
 
-    # The animations currently loaded.
-    bpy.types.Scene.AnimationCollection = None
-    # The current animation we are viewing.
-    bpy.types.Scene.CurAnimation = None
-    # Custom property groups.
-    bpy.types.Material.MaterialPropertyGroup = None
-    bpy.types.Object.GEOPropertyGroup = None
-    bpy.types.Scene.SDFVDFPropertyGroup = None
-
-    # ZFS Explorer Properties
-    bpy.types.Scene.zfs_files.clear()
-    bpy.types.Scene.active_zfs_path = ""
-    bpy.types.Scene.zfs_filter = ""
+    # Remove dynamically registered Blender properties.
+    for owner, prop_name in (
+        (bpy.types.Scene, "AnimationCollection"),
+        (bpy.types.Scene, "CurAnimation"),
+        (bpy.types.Material, "MaterialPropertyGroup"),
+        (bpy.types.Object, "GEOPropertyGroup"),
+        (bpy.types.Scene, "SDFVDFPropertyGroup"),
+        (bpy.types.Scene, "zfs_files"),
+        (bpy.types.Scene, "active_zfs_path"),
+        (bpy.types.Scene, "zfs_filter"),
+    ):
+        if hasattr(owner, prop_name):
+            delattr(owner, prop_name)
 
     # Unregister BZR Ogre mesh operators
     bpy.utils.unregister_class(BZ98TOOLS_OT_export_bzr_mesh)

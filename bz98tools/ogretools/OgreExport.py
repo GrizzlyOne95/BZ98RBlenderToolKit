@@ -136,6 +136,14 @@ blender_version = 259
 
 rounding_epsilon = 1e-4
 
+
+def _run_converter(args):
+    try:
+        result = subprocess.run(args, check=False)
+        return result.returncode == 0
+    except Exception:
+        return False
+
 def hash_combine(x, y):
     return x ^ y + 0x9e3779b9 + (x << 6) + (x >> 2)
 
@@ -804,10 +812,8 @@ def xSaveSkeletonData(blenderMeshData, filepath):
         #xmlfile = os.path.join(filepath, '%s.skeleton.xml' %name )
         nameOnly = os.path.splitext(filepath)[0]  # removing .mesh
         xmlfile = nameOnly + ".skeleton.xml"
-        data = xDoc.toprettyxml(indent='    ')
-        f = open(xmlfile, 'wb')
-        f.write(bytes(data, 'utf-8'))
-        f.close()
+        with open(xmlfile, 'wb') as f:
+            f.write(xDoc.toxml(encoding='utf-8'))
 
 
 def xSaveMeshData(meshData, filepath, export_skeleton):
@@ -847,9 +853,8 @@ def xSaveMeshData(meshData, filepath, export_skeleton):
         xMesh.appendChild(xSkeletonlink)
 
     # Print our newly created XML
-    fileWr = open(filepath + ".xml", 'w')
-    fileWr.write(xDoc.toprettyxml(indent="    "))  # 4 spaces
-    fileWr.close()
+    with open(filepath + ".xml", 'wb') as fileWr:
+        fileWr.write(xDoc.toxml(encoding='utf-8'))
 
 
 def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
@@ -1384,7 +1389,8 @@ def XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
     # use Ogre XML converter  xml -> binary mesh
     try:
         xmlFilepath = filepath + ".xml"
-        subprocess.call([ogreXMLconverter, xmlFilepath])
+        if not _run_converter([ogreXMLconverter, xmlFilepath]):
+            return False
         # remove XML file if successfully converted
         if keep_xml is False and os.path.isfile(xmlFilepath):
             os.unlink("%s" % xmlFilepath)
@@ -1399,7 +1405,8 @@ def XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
             skelFile = os.path.splitext(filepath)[0]  # removing .mesh
             skelFile = skelFile + ".skeleton"
             xmlFilepath = skelFile + ".xml"
-            subprocess.call([ogreXMLconverter, xmlFilepath])
+            if not _run_converter([ogreXMLconverter, xmlFilepath]):
+                return False
             # remove XML file
             if keep_xml is False and os.path.isfile(xmlFilepath):
                 os.unlink("%s" % xmlFilepath)

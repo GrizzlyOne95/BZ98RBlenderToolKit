@@ -7,7 +7,7 @@
 The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with both classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`) and Battlezone Redux model formats (`.MESH`, `.SKELETON`, `.MATERIAL`).  
 It combines multiple tools into one streamlined workflow — no external scripts or converters required.
 
-This plugin adds full **Blender 4.5.1** support, **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
+This plugin targets the **Blender 4.5 LTS** line, with **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
 
 ---
 
@@ -19,8 +19,9 @@ This plugin adds full **Blender 4.5.1** support, **quaternion animation**, **aut
 ## Quick Feature Summary
 
 - ✅ **Import models directly from ZFS archives** (Auto-extracts dependencies)
-- ✅ Full **Blender 4.5.1** compatibility  
+- ✅ Full **Blender 4.5 LTS** compatibility  
 - ✅ **Auto Ogre Mesh/Skeleton/Material export** (Redux-ready)  
+- ✅ **Optional native Ogre mesh/skeleton fast path** on Windows Blender 4.5.x
 - ✅ **Quaternion animation** import/export  
 - ✅ **Automatic `.MAP` → `.PNG` conversion** for textures on import
 - ✅ **Automatic `.PNG` or `.MAP` → `.DDS` conversion** for textures on export
@@ -64,7 +65,7 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
-**Import from ZFS, Blender 4.5.1 Compatibility, Ogre Auto-Port Integration, and Major Pipeline Updates**
+**Import from ZFS, Blender 4.5 LTS Compatibility, Ogre Auto-Port Integration, and Major Pipeline Updates**
 
 #### Added
 - **Import from ZFS**
@@ -72,11 +73,14 @@ Everything is handled inside Blender:
   - Browse `.ZFS` archives and import models directly.
   - **Recursive Dependency Extraction**: Automatically finds and extracts all required `.GEO` and texture files from the archive upon import.
   - Bundled Lzo decompression library for full Redux archive support.
-- **Blender 4.5.1 support**
+- **Blender 4.5 LTS support**
   - Updated `bl_info`, registration, and UI functions for new API.
 - **Automatic Ogre export integration**
   - Option to automatically run the Ogre exporter after saving a `.VDF`, `.SDF`, or `.GEO`.
   - Outputs `.mesh`, `.skeleton`, and `.material` directly.
+- **Optional native Ogre backend**
+  - Added a bundled `kenshi_blender_tool` fast path for `.mesh` import/export on Windows Blender 4.5.x.
+  - Falls back to the legacy Ogre XML converter path automatically when the native runtime is unavailable.
 - **Unified serializer framework**
   - Standardized binary read/write across `baseserializer.py`, `bz_baseserializer.py`, and `ogre_baseserializer.py`.
   - Added `AbruptEOFError` for safer handling of truncated files.
@@ -128,7 +132,7 @@ Everything is handled inside Blender:
 | Category | Update |
 |-----------|---------|
 | **ZFS** | **Directly browse and import from .ZFS archives** |
-| Compatibility | Full Blender 4.5.1 compliance |
+| Compatibility | Full Blender 4.5 LTS compliance |
 | File I/O | Safe ASCII decoding, EOF handling |
 | Materials | `.MAP → .PNG` conversion and name auto-fill |
 | Geometry | Scale, collision, and UV safety |
@@ -148,7 +152,7 @@ Everything is handled inside Blender:
 | **DivisionByZero** | Original Python Ogre mesh port script |
 | **Commando950** | Original SDF/VDF/GEO Blender plugin |
 | **Kindrad** | Ogre import/export base code (Kenshi add-on) |
-| **GrizzlyOne95** | Blender 4.5.1 update, Ogre integration, quaternion/scaling/UI modernization, multiple bug fixes |
+| **GrizzlyOne95** | Blender 4.5 LTS update, Ogre integration, quaternion/scaling/UI modernization, multiple bug fixes |
 
 ---
 

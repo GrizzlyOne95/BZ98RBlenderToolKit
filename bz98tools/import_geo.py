@@ -290,6 +290,18 @@ BUILTIN_ACT_PALETTES = {
 _palette_cache = {}
 
 
+def _get_target_collection(context):
+    collection = getattr(context, "collection", None)
+    if collection is not None:
+        return collection
+
+    scene = getattr(context, "scene", None)
+    if scene is not None:
+        return scene.collection
+
+    return bpy.context.collection
+
+
 # ---------------------------------------------------------------------------
 # File / palette helpers
 # ---------------------------------------------------------------------------
@@ -877,9 +889,12 @@ def geoload(context, geofilepath, *, name=None, flip=True,
 
         mesh = bpy.data.meshes.new("mesh")
         obj = bpy.data.objects.new(OBJName, mesh)
-        bpy.context.collection.objects.link(obj)
+        target_collection = _get_target_collection(context)
+        target_collection.objects.link(obj)
         obj.select_set(True)
-        bpy.context.view_layer.objects.active = obj
+        view_layer = getattr(context, "view_layer", None)
+        if view_layer is not None:
+            view_layer.objects.active = obj
         if hasattr(obj, "GEOPropertyGroup"):
             obj.GEOPropertyGroup['GEOHeaderUnknown'] = int(header.Unknown)
             obj.GEOPropertyGroup['GEOHeaderUnknown2'] = int(header.Unknown2)

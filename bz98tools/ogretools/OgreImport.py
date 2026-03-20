@@ -177,6 +177,14 @@ blender_version = 259
 rounding_epsilon = 1e-4
 
 
+def _run_converter(args):
+    try:
+        result = subprocess.run(args, check=False)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 def GetValidBlenderName(name):
 
     global blender_version
@@ -1419,8 +1427,7 @@ def convertXML(convertor, filename, use_existing=True):
     else:
         print("Execute: ", convertor, filename)
         try:
-            subprocess.call([convertor, filename])
-            return os.path.isfile(filename + '.xml')
+            return _run_converter([convertor, filename]) and os.path.isfile(filename + '.xml')
         except:
             print("Error: Could not run", convertor)
             return False

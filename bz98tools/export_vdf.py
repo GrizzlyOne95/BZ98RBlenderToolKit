@@ -166,6 +166,14 @@ def _enforce_spinner_helper_order(objects):
     objects[1] = [slot[1] for slot in reordered_slots]
     objects[2] = [slot[2] for slot in reordered_slots]
 
+
+def _iter_export_objects(context):
+    scene = getattr(context, "scene", None)
+    if scene is None:
+        return list(bpy.data.objects)
+    return list(scene.objects)
+
+
 def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
     '''
     We are going to use a bunch of classes to write data and encapsulate it.
@@ -234,7 +242,7 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
     '''
     Matrix = mathutils.Matrix
     Vector = mathutils.Vector
-    for object in bpy.data.objects:
+    for object in _iter_export_objects(context):
         is_mesh_object = (getattr(object, "type", None) == 'MESH' and getattr(object, "data", None) is not None)
 
         # --- Failsafe: fix invalid material indices on this object's mesh ---
@@ -330,6 +338,9 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
                 Translation = object.matrix_local.to_translation()
                 GEO.matrix[9:12] = Translation.x, Translation.z, Translation.y
 
+            GEO.type = object.GEOPropertyGroup.GEOType
+            GEO.geoflags = object.GEOPropertyGroup.GEOFlags
+
             spinner_helper = bool(getattr(object.GEOPropertyGroup, "IsSpinnerHelper", False))
             if GEO.type == 15 and spinner_helper and not use_raw_matrix:
                 axis = getattr(object.GEOPropertyGroup, "SpinnerAxis", (1.0, 0.0, 0.0))
@@ -344,9 +355,7 @@ def export(context, *, filepath, ExportAnimations=True, ExportVDFOnly=False):
             GEO.geocenter = [object.GEOPropertyGroup.GeoCenterX,object.GEOPropertyGroup.GeoCenterY,object.GEOPropertyGroup.GeoCenterZ]
             GEO.sphereradius = object.GEOPropertyGroup.SphereRadius
             GEO.boxhalfheight = [object.GEOPropertyGroup.BoxHalfHeightX,object.GEOPropertyGroup.BoxHalfHeightY,object.GEOPropertyGroup.BoxHalfHeightZ]
-            
-            GEO.type = object.GEOPropertyGroup.GEOType
-            GEO.geoflags = object.GEOPropertyGroup.GEOFlags
+
             #Increase the counter on how many objects are in the current LOD.
             #NOTE: Used later to determine the count of geos in VGEO. Which is used to determine the max slots per LOD.
             if GEO.lod == 1:
