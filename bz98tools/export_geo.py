@@ -7,6 +7,7 @@
 
 import bpy
 import importlib
+import os
 
 from . import geo_classes
 # Reload it just in case something changed!
@@ -26,6 +27,32 @@ def _prepare_export_object(context, obj):
         bpy.ops.object.mode_set(mode='OBJECT')
 
     return view_layer, previous_active
+
+
+def _derive_legacy_texture_name(name):
+    base_name = os.path.splitext((name or "").strip())[0]
+    base_name = base_name.replace(" ", "_").lower()
+    return base_name[:8]
+
+
+def _get_image_derived_texture_name(material):
+    node_tree = getattr(material, "node_tree", None)
+    if node_tree is None:
+        return ""
+
+    image_nodes = [
+        node for node in getattr(node_tree, "nodes", [])
+        if getattr(node, "type", "") == 'TEX_IMAGE' and getattr(node, "image", None) is not None
+    ]
+    if not image_nodes:
+        return ""
+
+    active_node = next((node for node in image_nodes if getattr(node, "select", False)), None)
+    if active_node is None:
+        active_node = image_nodes[0]
+
+    image = active_node.image
+    return _derive_legacy_texture_name(getattr(image, "name", "") or getattr(image, "filepath", ""))
 
 
 def geoexport(context, filepath, obj):
@@ -103,15 +130,11 @@ def geoexport(context, filepath, obj):
                     tex_name = (raw or "").strip()
 
                     if not tex_name:
-                        # Derive from material name, clamp to 8 chars
-                        # (Battlezone .map name limit)
-                        derived = (mat.name or "").strip()
-                        # Replace spaces just to avoid weird names; feel free to tweak
-                        derived = derived.replace(" ", "_")
-                        tex_name = derived[:8]
-                        # Optional: Battlezone usually uses lowercase map names
-                        tex_name = tex_name.lower()
+                        tex_name = _get_image_derived_texture_name(mat)
+                    if not tex_name:
+                        tex_name = _derive_legacy_texture_name(mat.name)
 
+                    if tex_name:
                         # Write back so the UI box auto-fills after export
                         mat.MaterialPropertyGroup.MapTexture = tex_name
 

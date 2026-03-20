@@ -26,8 +26,15 @@ from bpy_extras.io_utils import (
         )
 
 import os
+import math
+import hashlib
+import json
 import mathutils
 import struct
+
+from . import validation as bz_validation
+
+ZFS_TEXTURE_EXTENSIONS = {'.map', '.pic', '.tga', '.dds', '.png', '.bmp', '.jpg', '.jpeg'}
 
 def get_default_ogre_xml_converter():
     """Try to find OgreXMLConverter.exe in the bundled ogretools folder."""
@@ -37,6 +44,25 @@ def get_default_ogre_xml_converter():
         return candidate
     # Fallback: empty string; user can pick it manually
     return ""
+
+
+def get_default_zfs_cache_dir():
+    addon_dir = os.path.dirname(__file__)
+    return os.path.join(addon_dir, "_cache", "zfs")
+
+
+def get_export_preset_dir(export_kind):
+    addon_dir = os.path.dirname(__file__)
+    return os.path.join(addon_dir, "_presets", export_kind.lower())
+
+
+def get_zfs_archive_cache_dir(zfs_path, cache_root=None):
+    if not zfs_path:
+        return ""
+    cache_root = os.path.abspath(cache_root or get_default_zfs_cache_dir())
+    archive_name = os.path.splitext(os.path.basename(zfs_path))[0]
+    archive_hash = hashlib.sha1(zfs_path.encode('utf-8')).hexdigest()[:8]
+    return os.path.join(cache_root, f"{archive_name}_{archive_hash}")
 
 
 if "bpy" in locals():
@@ -50,7 +76,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "Commando950/DivisionByZero/GrizzlyOne95",
-    "version": (1, 3, 0),
+    "version": (1, 4, 0),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -61,6 +87,203 @@ TERNARY_ITEMS = [
     ("YES",  "Force Yes",  "Force enabled"),
     ("NO",   "Force No",   "Force disabled"),
 ]
+
+ANIMATION_PRESET_ITEMS = (
+    ('DEPLOY_PAIR', "Deploy Pair", "Add slots 0 and 1 for common deploy/undeploy workflows"),
+    ('TURRET_PAIR', "Turret Pair", "Add slots 0 and 1 for common turret motion workflows"),
+    ('WALKER_CORE', "Walker Core", "Add slots 2 through 7 for a typical walker idle and movement set"),
+    ('PERSON_CORE', "Person Core", "Add slots 0 through 11 for a broad person animation starter set"),
+)
+
+ANIMATION_PRESET_SLOTS = {
+    'DEPLOY_PAIR': [0, 1],
+    'TURRET_PAIR': [0, 1],
+    'WALKER_CORE': [2, 3, 4, 5, 6, 7],
+    'PERSON_CORE': list(range(0, 12)),
+}
+
+EXPORT_KIND_IDNAMES = {
+    "GEO": "export_scene.geo",
+    "VDF": "export_scene.vdf",
+    "SDF": "export_scene.sdf",
+}
+
+EXPORT_PRESET_PROPERTY_NAMES = {
+    "GEO": (
+        "auto_port_ogre",
+        "ogre_name",
+        "ogre_suffix",
+        "ogre_flat_colors",
+        "ogre_bounds_mult",
+        "ogre_act_path",
+        "ogre_config_path",
+        "ogre_only_once",
+        "ogre_nowrite",
+        "ogre_dest_dir",
+    ),
+    "VDF": (
+        "ExportAnimations",
+        "ExportVDFOnly",
+        "auto_port_ogre",
+        "ogre_name",
+        "ogre_suffix",
+        "ogre_flat_colors",
+        "ogre_bounds_mult",
+        "ogre_act_path",
+        "ogre_config_path",
+        "ogre_only_once",
+        "ogre_nowrite",
+        "ogre_dest_dir",
+        "ogre_headlights",
+        "ogre_person_mode",
+        "ogre_turret_mode",
+        "ogre_cockpit_mode",
+        "ogre_skeletalanims_mode",
+        "ogre_scope_mode",
+        "ogre_scope_type",
+        "ogre_scope_nation",
+        "ogre_scope_screen",
+        "ogre_scope_gun",
+        "ogre_scope_transform",
+        "ogre_scope_texture",
+        "ogre_no_pov_rots",
+    ),
+    "SDF": (
+        "ExportAnimations",
+        "ExportSDFOnly",
+        "auto_port_ogre",
+        "ogre_name",
+        "ogre_suffix",
+        "ogre_flat_colors",
+        "ogre_bounds_mult",
+        "ogre_act_path",
+        "ogre_config_path",
+        "ogre_only_once",
+        "ogre_nowrite",
+        "ogre_dest_dir",
+    ),
+}
+
+BUILTIN_EXPORT_PRESETS = {
+    "GEO": (
+        ("classic_geo", "Classic GEO", {
+            "auto_port_ogre": False,
+            "ogre_name": "",
+            "ogre_suffix": "_port",
+            "ogre_flat_colors": False,
+            "ogre_bounds_mult": [1.0, 1.0, 1.0],
+            "ogre_act_path": "",
+            "ogre_config_path": "",
+            "ogre_only_once": False,
+            "ogre_nowrite": False,
+            "ogre_dest_dir": "",
+        }),
+        ("geo_port", "GEO + Redux Port", {
+            "auto_port_ogre": True,
+            "ogre_name": "",
+            "ogre_suffix": "_port",
+            "ogre_flat_colors": False,
+            "ogre_bounds_mult": [1.0, 1.0, 1.0],
+            "ogre_act_path": "",
+            "ogre_config_path": "",
+            "ogre_only_once": False,
+            "ogre_nowrite": False,
+            "ogre_dest_dir": "",
+        }),
+    ),
+    "VDF": (
+        ("vehicle_vdf", "Vehicle VDF", {
+            "ExportAnimations": True,
+            "ExportVDFOnly": False,
+            "auto_port_ogre": False,
+            "ogre_name": "",
+            "ogre_suffix": "_port",
+            "ogre_flat_colors": False,
+            "ogre_bounds_mult": [1.0, 1.0, 1.0],
+            "ogre_act_path": "",
+            "ogre_config_path": "",
+            "ogre_only_once": False,
+            "ogre_nowrite": False,
+            "ogre_dest_dir": "",
+            "ogre_headlights": False,
+            "ogre_person_mode": "AUTO",
+            "ogre_turret_mode": "AUTO",
+            "ogre_cockpit_mode": "AUTO",
+            "ogre_skeletalanims_mode": "AUTO",
+            "ogre_scope_mode": "AUTO",
+            "ogre_scope_type": "AUTO",
+            "ogre_scope_nation": "",
+            "ogre_scope_screen": [0.0, 0.0, 0.0, 1.0, 0.0],
+            "ogre_scope_gun": "",
+            "ogre_scope_transform": [1.0, 0.0, 0.0,
+                                     0.0, 1.0, 0.0,
+                                     0.0, 0.0, 1.0,
+                                     0.0, 0.0, 0.0],
+            "ogre_scope_texture": "__scope",
+            "ogre_no_pov_rots": False,
+        }),
+        ("vehicle_vdf_port", "Vehicle VDF + Redux Port", {
+            "ExportAnimations": True,
+            "ExportVDFOnly": False,
+            "auto_port_ogre": True,
+            "ogre_name": "",
+            "ogre_suffix": "_port",
+            "ogre_flat_colors": False,
+            "ogre_bounds_mult": [1.0, 1.0, 1.0],
+            "ogre_act_path": "",
+            "ogre_config_path": "",
+            "ogre_only_once": False,
+            "ogre_nowrite": False,
+            "ogre_dest_dir": "",
+            "ogre_headlights": False,
+            "ogre_person_mode": "AUTO",
+            "ogre_turret_mode": "AUTO",
+            "ogre_cockpit_mode": "AUTO",
+            "ogre_skeletalanims_mode": "AUTO",
+            "ogre_scope_mode": "AUTO",
+            "ogre_scope_type": "AUTO",
+            "ogre_scope_nation": "",
+            "ogre_scope_screen": [0.0, 0.0, 0.0, 1.0, 0.0],
+            "ogre_scope_gun": "",
+            "ogre_scope_transform": [1.0, 0.0, 0.0,
+                                     0.0, 1.0, 0.0,
+                                     0.0, 0.0, 1.0,
+                                     0.0, 0.0, 0.0],
+            "ogre_scope_texture": "__scope",
+            "ogre_no_pov_rots": False,
+        }),
+    ),
+    "SDF": (
+        ("structure_sdf", "Structure SDF", {
+            "ExportAnimations": True,
+            "ExportSDFOnly": False,
+            "auto_port_ogre": False,
+            "ogre_name": "",
+            "ogre_suffix": "_port",
+            "ogre_flat_colors": False,
+            "ogre_bounds_mult": [1.0, 1.0, 1.0],
+            "ogre_act_path": "",
+            "ogre_config_path": "",
+            "ogre_only_once": False,
+            "ogre_nowrite": False,
+            "ogre_dest_dir": "",
+        }),
+        ("structure_sdf_port", "Structure SDF + Redux Port", {
+            "ExportAnimations": True,
+            "ExportSDFOnly": False,
+            "auto_port_ogre": True,
+            "ogre_name": "",
+            "ogre_suffix": "_port",
+            "ogre_flat_colors": False,
+            "ogre_bounds_mult": [1.0, 1.0, 1.0],
+            "ogre_act_path": "",
+            "ogre_config_path": "",
+            "ogre_only_once": False,
+            "ogre_nowrite": False,
+            "ogre_dest_dir": "",
+        }),
+    ),
+}
 
 '''
 PROPERTY GROUP DEFINITION CLASSES
@@ -295,8 +518,8 @@ class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
     )
 
 geotypes = []
-# Build default "Unknown" entries up through at least the highest known ID (81)
-for i in range(0, 82):
+# Build default "Unknown" entries up through the supported property range.
+for i in range(0, 101):
     geotypes.append((i, f"{i} - Unknown", ""))
 
 
@@ -360,6 +583,63 @@ insertgeotypedata(76, "SMOKE_EMITTER")
 insertgeotypedata(77, "DUST_EMITTER")
 
 insertgeotypedata(81, "PARKING_LOT (Hangar / supply pad center of effect)")
+
+GEO_TYPE_ENUM_ITEMS = [
+    (f"GEO_{idx}", label, label, idx)
+    for idx, label, _ in geotypes
+]
+
+GEO_TYPE_UI_HINTS = {
+    1: ("ERROR", "Type 1 is known to crash as a VDF/SDF GEO. Avoid using it in legacy vehicle/structure exports."),
+    3: ("ERROR", "Type 3 is known to crash as a VDF/SDF GEO. Avoid using it in legacy vehicle/structure exports."),
+    15: ("INFO", "Type 15 is used for spinner behavior. Spinner helpers normally export with this role."),
+    38: ("INFO", "Type 38 is typically used as a Redux headlight mask helper."),
+    40: ("INFO", "Type 40 is commonly used for POV / eyepoint placement."),
+    70: ("INFO", "Type 70 marks a weapon hardpoint or production smoke emitter."),
+    71: ("INFO", "Type 71 marks a cannon hardpoint."),
+    72: ("INFO", "Type 72 marks a rocket hardpoint."),
+    73: ("INFO", "Type 73 marks a mortar hardpoint."),
+    74: ("INFO", "Type 74 marks a special hardpoint."),
+    75: ("WARNING", "Type 75 acts as a flame emitter and usually makes the GEO geometry itself invisible."),
+    76: ("INFO", "Type 76 marks a smoke emitter."),
+    77: ("INFO", "Type 77 marks a dust emitter."),
+}
+
+
+def _get_geotype_label(geo_type_value):
+    for idx, label, _ in geotypes:
+        if idx == int(geo_type_value):
+            return label
+    return f"{int(geo_type_value)} - Unknown"
+
+
+def _get_geotype_enum_value(self):
+    value = int(getattr(self, "GEOType", 60))
+    if value < 0:
+        return 0
+    if value > 100:
+        return 100
+    return value
+
+
+def _set_geotype_enum_value(self, value):
+    self["GEOType"] = int(value)
+
+
+def _draw_geotype_hint(layout, geo_type_value):
+    hint = GEO_TYPE_UI_HINTS.get(int(geo_type_value))
+    if hint is None:
+        return
+
+    severity, message = hint
+    box = layout.box()
+    if severity == "ERROR":
+        icon = 'ERROR'
+    elif severity == "WARNING":
+        icon = 'WARNING'
+    else:
+        icon = 'INFO'
+    box.label(text=message, icon=icon)
 
 # -------------------------------
 # Animation Index Reference Popup
@@ -570,6 +850,14 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
         min = 0,
         max = 100
     )
+
+    GEOTypeEnum: bpy.props.EnumProperty(
+        name="GEO Type",
+        description="Named GEO type selector for common Battlezone roles",
+        items=GEO_TYPE_ENUM_ITEMS,
+        get=_get_geotype_enum_value,
+        set=_set_geotype_enum_value,
+    )
     
     GEOFlags: bpy.props.IntProperty(
         name="GEO Flags",
@@ -739,6 +1027,357 @@ class MaterialPropertyGroup(bpy.types.PropertyGroup):
         maxlen=8
     )
 
+
+class ValidationIssuePropertyGroup(bpy.types.PropertyGroup):
+    severity: bpy.props.StringProperty(name="Severity")
+    scope: bpy.props.StringProperty(name="Scope")
+    target: bpy.props.StringProperty(name="Target")
+    message: bpy.props.StringProperty(name="Message")
+    export_modes: bpy.props.StringProperty(name="Export Modes")
+    object_name: bpy.props.StringProperty(name="Object Name")
+    action: bpy.props.StringProperty(name="Action")
+
+
+def _store_validation_results(scene, issues):
+    scene.bz_validation_issues.clear()
+    for issue in issues:
+        item = scene.bz_validation_issues.add()
+        item.severity = issue["severity"]
+        item.scope = issue.get("scope", "")
+        item.target = issue.get("target", "")
+        item.message = issue["message"]
+        item.export_modes = ",".join(sorted(issue.get("export_modes", {"ALL"})))
+        item.object_name = issue.get("object_name", "")
+        item.action = issue.get("action", "")
+    scene.bz_validation_signature = _compute_validation_signature(scene)
+
+
+def _compute_validation_signature(scene):
+    digest = hashlib.sha1()
+    objects = sorted(getattr(scene, "objects", []), key=lambda obj: obj.name.lower())
+
+    for obj in objects:
+        parent_name = getattr(getattr(obj, "parent", None), "name", "")
+        geo_props = getattr(obj, "GEOPropertyGroup", None)
+        digest.update(
+            (
+                f"OBJ|{obj.name}|{getattr(obj, 'type', '')}|{parent_name}|"
+                f"{int(getattr(geo_props, 'GEOType', 0))}|"
+                f"{int(bool(getattr(geo_props, 'IsSpinnerHelper', False)))}|"
+                f"{len(getattr(getattr(obj, 'data', None), 'vertices', []))}\n"
+            ).encode("utf-8", errors="ignore")
+        )
+
+        mesh = getattr(obj, "data", None)
+        materials = getattr(mesh, "materials", None) or []
+        for slot_index, material in enumerate(materials):
+            if material is None:
+                digest.update(f"MAT|{obj.name}|{slot_index}|<empty>\n".encode("utf-8"))
+                continue
+
+            mat_props = getattr(material, "MaterialPropertyGroup", None)
+            texture_name = (getattr(mat_props, "MapTexture", "") or "").strip() if mat_props else ""
+            digest.update(
+                (
+                    f"MAT|{obj.name}|{slot_index}|{material.name}|{texture_name}|"
+                    f"{getattr(material, 'diffuse_color', ())}\n"
+                ).encode("utf-8", errors="ignore")
+            )
+
+    return digest.hexdigest()
+
+
+def _validation_results_are_stale(scene):
+    stored_signature = getattr(scene, "bz_validation_signature", "") or ""
+    if not stored_signature:
+        return len(getattr(scene, "bz_validation_issues", [])) > 0
+    return stored_signature != _compute_validation_signature(scene)
+
+
+def _get_validation_counts(scene, export_mode="ALL"):
+    counts = {"ERROR": 0, "WARNING": 0, "INFO": 0}
+    for item in getattr(scene, "bz_validation_issues", []):
+        export_modes = {
+            part.strip()
+            for part in (item.export_modes or "ALL").split(",")
+            if part.strip()
+        }
+        if "ALL" not in export_modes and export_mode not in export_modes:
+            continue
+        counts[item.severity] = counts.get(item.severity, 0) + 1
+    return counts
+
+
+def _draw_validation_summary_box(layout, scene, export_mode="ALL"):
+    box = layout.box()
+    box.label(text="Validation", icon='CHECKMARK')
+    box.operator("bz.validate_scene", text="Validate Battlezone Scene", icon='VIEWZOOM')
+
+    issues = getattr(scene, "bz_validation_issues", None)
+    if issues is None or len(issues) == 0:
+        box.label(text="No validation results yet.", icon='INFO')
+        return box
+
+    counts = _get_validation_counts(scene, export_mode=export_mode)
+    row = box.row(align=True)
+    row.label(text=f"Errors: {counts['ERROR']}")
+    row.label(text=f"Warnings: {counts['WARNING']}")
+    row.label(text=f"Info: {counts['INFO']}")
+    if _validation_results_are_stale(scene):
+        box.label(text="Results may be stale after scene changes.", icon='ERROR')
+    return box
+
+
+def _draw_shared_autoport_options(layout, operator):
+    layout.prop(operator, "ogre_name")
+    layout.prop(operator, "ogre_suffix")
+    layout.prop(operator, "ogre_flat_colors")
+    layout.prop(operator, "ogre_bounds_mult")
+    layout.prop(operator, "ogre_act_path")
+    layout.prop(operator, "ogre_config_path")
+    layout.prop(operator, "ogre_dest_dir")
+
+    adv = layout.box()
+    adv.label(text="Advanced")
+    adv.prop(operator, "ogre_only_once")
+    adv.prop(operator, "ogre_nowrite")
+
+
+def _draw_vdf_autoport_options(layout, operator):
+    box = layout.box()
+    box.label(text="VDF-Specific BZR Options")
+    box.prop(operator, "ogre_headlights")
+    box.prop(operator, "ogre_person_mode")
+    box.prop(operator, "ogre_turret_mode")
+    box.prop(operator, "ogre_cockpit_mode")
+    box.prop(operator, "ogre_skeletalanims_mode")
+    box.prop(operator, "ogre_scope_mode")
+    box.prop(operator, "ogre_scope_type")
+    box.prop(operator, "ogre_scope_nation")
+    box.prop(operator, "ogre_scope_screen")
+    box.prop(operator, "ogre_scope_gun")
+    box.prop(operator, "ogre_scope_transform")
+    box.prop(operator, "ogre_scope_texture")
+    box.prop(operator, "ogre_no_pov_rots")
+
+
+def _draw_xyz_row(layout, prop_group, prop_names, labels):
+    row = layout.row(align=True)
+    for prop_name, label in zip(prop_names, labels):
+        row.prop(prop_group, prop_name, text=label)
+
+
+def _derive_legacy_texture_name(name):
+    derived = os.path.splitext((name or "").strip())[0].replace(" ", "_").lower()
+    return derived[:8]
+
+
+def _get_material_image_name(material):
+    node_tree = getattr(material, "node_tree", None)
+    if node_tree is None:
+        return ""
+
+    image_nodes = [
+        node for node in getattr(node_tree, "nodes", [])
+        if getattr(node, "type", "") == 'TEX_IMAGE' and getattr(node, "image", None) is not None
+    ]
+    if not image_nodes:
+        return ""
+
+    active_node = next((node for node in image_nodes if getattr(node, "select", False)), None)
+    if active_node is None:
+        active_node = image_nodes[0]
+
+    image = active_node.image
+    return _derive_legacy_texture_name(getattr(image, "name", "") or getattr(image, "filepath", ""))
+
+
+def _get_material_texture_preview(material):
+    material_props = getattr(material, "MaterialPropertyGroup", None)
+    explicit_name = ""
+    if material_props is not None:
+        explicit_name = (getattr(material_props, "MapTexture", "") or "").strip()
+
+    image_name = _get_material_image_name(material)
+    derived_name = _derive_legacy_texture_name(getattr(material, "name", ""))
+    resolved_name = explicit_name or image_name or derived_name
+
+    if explicit_name:
+        source = "explicit"
+    elif image_name:
+        source = "image"
+    elif derived_name:
+        source = "derived"
+    else:
+        source = "missing"
+
+    return explicit_name, image_name, derived_name, resolved_name, source
+
+
+def _get_animation_index_hint(index_value):
+    index_value = int(index_value)
+    if index_value == 0:
+        return "Slot 0 is commonly the primary action: deploy, launch, get-out, or stance change depending on classLabel."
+    if index_value == 1:
+        return "Slot 1 is commonly the reverse action: undeploy, return, get-in, or reverse stance change."
+    if index_value == 2:
+        return "Slot 2 is often an idle or standing idle state on units that support multiple animation slots."
+    if index_value == 3:
+        return "Slot 3 is often a deployed idle or alternate idle state."
+    if index_value == 4:
+        return "Slot 4 is often an active deployed state or forward movement on walkers/persons."
+    if index_value in (5, 6, 7):
+        return "Slots 5-7 are commonly movement directions on walkers and person units."
+    if index_value in (8, 9, 10, 11):
+        return "Slots 8-11 are commonly situational character animations such as death, parachute, or jump states."
+    return "Animation index meaning is classLabel-dependent. Use the reference popup to confirm the slot for this unit type."
+
+
+def _copy_animation_item(source_item, dest_item):
+    dest_item.Index = source_item.Index
+    dest_item.Start = source_item.Start
+    dest_item.Length = source_item.Length
+    dest_item.Loop = source_item.Loop
+    dest_item.Speed = source_item.Speed
+    dest_item.UseCustomUnknownGeoMask = source_item.UseCustomUnknownGeoMask
+    dest_item.UnknownGeoMask = tuple(source_item.UnknownGeoMask)
+
+
+def _get_active_export_operator(context, export_kind):
+    expected_idname = EXPORT_KIND_IDNAMES.get(export_kind)
+    space = getattr(context, "space_data", None)
+    operator = getattr(space, "active_operator", None) if space is not None else None
+    if operator is None:
+        return None
+    if getattr(operator, "bl_idname", "") != expected_idname:
+        return None
+    return operator
+
+
+def _normalize_preset_filename(name):
+    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in (name or "").strip())
+    cleaned = cleaned.strip("._")
+    return cleaned or "preset"
+
+
+def _serialize_export_operator(operator, export_kind):
+    values = {}
+    for prop_name in EXPORT_PRESET_PROPERTY_NAMES.get(export_kind, ()):
+        if not hasattr(operator, prop_name):
+            continue
+        value = getattr(operator, prop_name)
+        if isinstance(value, (list, tuple)):
+            values[prop_name] = list(value)
+        else:
+            values[prop_name] = value
+    return values
+
+
+def _apply_export_preset_values(operator, export_kind, values):
+    for prop_name in EXPORT_PRESET_PROPERTY_NAMES.get(export_kind, ()):
+        if prop_name not in values or not hasattr(operator, prop_name):
+            continue
+        value = values[prop_name]
+        current = getattr(operator, prop_name)
+        if isinstance(current, (list, tuple)):
+            setattr(operator, prop_name, tuple(value))
+        else:
+            setattr(operator, prop_name, value)
+
+
+def _get_builtin_export_preset(export_kind, preset_key):
+    for key, _label, values in BUILTIN_EXPORT_PRESETS.get(export_kind, ()):
+        if key == preset_key:
+            return values
+    return None
+
+
+def _list_custom_export_presets(export_kind):
+    preset_dir = get_export_preset_dir(export_kind)
+    if not os.path.isdir(preset_dir):
+        return []
+
+    results = []
+    for entry in sorted(os.listdir(preset_dir)):
+        if not entry.lower().endswith(".json"):
+            continue
+        path = os.path.join(preset_dir, entry)
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        label = (payload.get("label") or os.path.splitext(entry)[0]).strip()
+        results.append({
+            "label": label,
+            "path": path,
+        })
+    return results
+
+
+def _load_custom_export_preset(export_kind, preset_label):
+    for entry in _list_custom_export_presets(export_kind):
+        if entry["label"] != preset_label:
+            continue
+        try:
+            with open(entry["path"], "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+        return payload.get("values", {})
+    return None
+
+
+def _draw_export_preset_box(layout, export_kind):
+    box = layout.box()
+    box.label(text="Presets")
+    if export_kind == "GEO":
+        box.menu("BZ98TOOLS_MT_geo_export_presets", text="Apply Preset")
+        box.menu("BZ98TOOLS_MT_geo_delete_export_preset", text="Delete Saved Preset")
+    elif export_kind == "VDF":
+        box.menu("BZ98TOOLS_MT_vdf_export_presets", text="Apply Preset")
+        box.menu("BZ98TOOLS_MT_vdf_delete_export_preset", text="Delete Saved Preset")
+    else:
+        box.menu("BZ98TOOLS_MT_sdf_export_presets", text="Apply Preset")
+        box.menu("BZ98TOOLS_MT_sdf_delete_export_preset", text="Delete Saved Preset")
+
+    save_op = box.operator("bz.save_export_preset", text="Save Current Settings")
+    save_op.export_kind = export_kind
+    return box
+
+
+def _draw_export_preset_menu_entries(layout, export_kind, delete_mode=False):
+    if not delete_mode:
+        for preset_key, label, _values in BUILTIN_EXPORT_PRESETS.get(export_kind, ()):
+            op = layout.operator("bz.apply_export_preset", text=label, icon='IMPORT')
+            op.export_kind = export_kind
+            op.preset_key = preset_key
+            op.custom_label = ""
+
+        custom_presets = _list_custom_export_presets(export_kind)
+        if custom_presets:
+            layout.separator()
+            layout.label(text="Saved Presets")
+            for entry in custom_presets:
+                op = layout.operator("bz.apply_export_preset", text=entry["label"], icon='FILE')
+                op.export_kind = export_kind
+                op.preset_key = ""
+                op.custom_label = entry["label"]
+        else:
+            layout.separator()
+            layout.label(text="No saved presets yet.", icon='INFO')
+        return
+
+    custom_presets = _list_custom_export_presets(export_kind)
+    if not custom_presets:
+        layout.label(text="No saved presets yet.", icon='INFO')
+        return
+
+    for entry in custom_presets:
+        op = layout.operator("bz.delete_export_preset", text=entry["label"], icon='TRASH')
+        op.export_kind = export_kind
+        op.custom_label = entry["label"]
+
 '''
 PANEL DEFINITIONS
 BattlezoneSDFVDFProperties - Stores all the properties of the current SDF/VDF in the scene tab.
@@ -746,7 +1385,7 @@ BattlezoneGEOProperties - Stores all the properties of a GEO object in the objec
 '''
 class BattlezoneSDFVDFProperties(bpy.types.Panel):
     bl_idname = "SCENE_PT_BZ_SDFVDF"
-    bl_label = "Battlezone SDF/VDF Properties"
+    bl_label = "Battlezone"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
@@ -756,57 +1395,257 @@ class BattlezoneSDFVDFProperties(bpy.types.Panel):
         scene = context.scene
         SDFVDFPropertyGroup = scene.SDFVDFPropertyGroup
 
-        layout.prop( SDFVDFPropertyGroup, "Name")
-        
-        box = layout.box()
-        box.label(text="VDF Settings")
-        box.prop( SDFVDFPropertyGroup, "VehicleSize")
-        box.prop( SDFVDFPropertyGroup, "VehicleType") 
-        box.prop( SDFVDFPropertyGroup, "Mass")
-        box.prop( SDFVDFPropertyGroup, "CollMult")
-        box.prop( SDFVDFPropertyGroup, "DragCoefficient")
-        
-        box = layout.box()
-        box.label(text="SDF Settings")
-        box.prop( SDFVDFPropertyGroup, "StructureType")
-        box.prop( SDFVDFPropertyGroup, "Defensive")
-        box.label(text="Death Explosion")
-        box.prop( SDFVDFPropertyGroup, "DeathExplosion")
-        box.label(text="Death Sound")
-        box.prop( SDFVDFPropertyGroup, "DeathSound")
-        
-        box = layout.box()
-        box.label(text="Level of Detail Settings")
-        box.prop( SDFVDFPropertyGroup, "LOD1")
-        box.prop( SDFVDFPropertyGroup, "LOD2")
-        box.prop( SDFVDFPropertyGroup, "LOD3")
-        box.prop( SDFVDFPropertyGroup, "LOD4")
-        box.prop( SDFVDFPropertyGroup, "LOD5")
+        layout.prop(SDFVDFPropertyGroup, "Name", text="Internal Name")
+        row = layout.row(align=True)
+        row.label(text=f"Animation Elements: {len(scene.AnimationCollection)}", icon='ANIM')
+        row.label(text=f"Validation Issues: {len(getattr(scene, 'bz_validation_issues', []))}", icon='CHECKMARK')
 
-        adv = layout.box()
-        adv.label(text="Experimental Binary (VDF/SDF)")
-        adv.prop(SDFVDFPropertyGroup, "UseAdvancedAnimHeader")
-        if SDFVDFPropertyGroup.UseAdvancedAnimHeader:
-            adv.prop(SDFVDFPropertyGroup, "AnimNull2")
-            adv.prop(SDFVDFPropertyGroup, "AnimUnknown2")
-            adv.prop(SDFVDFPropertyGroup, "AnimReserved")
-        adv.prop(SDFVDFPropertyGroup, "UseTranslation2Track")
-        adv.prop(SDFVDFPropertyGroup, "UseCustomSCPS")
-        if SDFVDFPropertyGroup.UseCustomSCPS:
-            adv.prop(SDFVDFPropertyGroup, "SCPSData")
 
+class BZ98TOOLS_PT_scene_asset_properties(bpy.types.Panel):
+    bl_idname = "SCENE_PT_BZ_ASSET_PROPERTIES"
+    bl_label = "Asset Properties"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.SDFVDFPropertyGroup
+
+        vdf_box = layout.box()
+        vdf_box.label(text="VDF Settings")
+        vdf_box.prop(props, "VehicleSize")
+        vdf_box.prop(props, "VehicleType")
+        vdf_box.prop(props, "Mass")
+        vdf_box.prop(props, "CollMult", text="Collision Multiplier")
+        vdf_box.prop(props, "DragCoefficient")
+
+        sdf_box = layout.box()
+        sdf_box.label(text="SDF Settings")
+        sdf_box.prop(props, "StructureType")
+        sdf_box.prop(props, "Defensive")
+        sdf_box.prop(props, "DeathExplosion", text="Death Explosion")
+        sdf_box.prop(props, "DeathSound", text="Death Sound")
+
+        lod_box = layout.box()
+        lod_box.label(text="Level of Detail")
+        lod_box.prop(props, "LOD1")
+        lod_box.prop(props, "LOD2")
+        lod_box.prop(props, "LOD3")
+        lod_box.prop(props, "LOD4")
+        lod_box.prop(props, "LOD5")
+
+
+class BZ98TOOLS_PT_scene_collision_helpers(bpy.types.Panel):
+    bl_idname = "SCENE_PT_BZ_COLLISION_HELPERS"
+    bl_label = "Collision Helpers"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
         box = layout.box()
-        box.label(text="VDF Collision Helpers (not used for SDF)")
-        box.label(text="Uses active mesh bounds to build VDF COL boxes")
+        box.label(text="VDF Collision Helpers")
+        box.label(text="For vehicles only. SDF collision is stored per GEO.")
+        box.label(text="Uses selected mesh bounds to build inner_col and outer_col.")
         box.operator(
             "bz.generate_vdf_collision_meshes",
             text="Generate inner_col / outer_col",
         )
 
 
+class BZ98TOOLS_PT_scene_advanced(bpy.types.Panel):
+    bl_idname = "SCENE_PT_BZ_ADVANCED"
+    bl_label = "Advanced"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.SDFVDFPropertyGroup
+
+        anim_box = layout.box()
+        anim_box.label(text="ANIM Header / Track Overrides")
+        anim_box.prop(props, "UseAdvancedAnimHeader")
+        if props.UseAdvancedAnimHeader:
+            anim_box.prop(props, "AnimNull2")
+            anim_box.prop(props, "AnimUnknown2")
+            anim_box.prop(props, "AnimReserved")
+        anim_box.prop(props, "UseTranslation2Track")
+
+        scps_box = layout.box()
+        scps_box.label(text="VDF SCPS Raw")
+        scps_box.prop(props, "UseCustomSCPS")
+        if props.UseCustomSCPS:
+            scps_box.prop(props, "SCPSData")
+
+
+class BZ98TOOLS_OT_validate_scene(bpy.types.Operator):
+    """Validate scene objects for legacy Battlezone export"""
+    bl_idname = "bz.validate_scene"
+    bl_label = "Validate Battlezone Scene"
+
+    def execute(self, context):
+        issues = bz_validation.collect_legacy_validation_issues(context, export_mode="ALL")
+        _store_validation_results(context.scene, issues)
+
+        counts = _get_validation_counts(context.scene, export_mode="ALL")
+        if counts["ERROR"] > 0:
+            self.report(
+                {'WARNING'},
+                f"Validation found {counts['ERROR']} errors, {counts['WARNING']} warnings, and {counts['INFO']} info items.",
+            )
+        elif counts["WARNING"] > 0 or counts["INFO"] > 0:
+            self.report(
+                {'INFO'},
+                f"Validation found {counts['WARNING']} warnings and {counts['INFO']} info items.",
+            )
+        else:
+            self.report({'INFO'}, "Validation found no legacy export issues.")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_select_validation_target(bpy.types.Operator):
+    bl_idname = "bz.select_validation_target"
+    bl_label = "Select Validation Target"
+    bl_description = "Select and activate the object referenced by this validation issue"
+
+    object_name: StringProperty(name="Object Name", default="")
+
+    def execute(self, context):
+        if not self.object_name:
+            self.report({'ERROR'}, "Validation issue has no selectable object.")
+            return {'CANCELLED'}
+
+        obj = context.scene.objects.get(self.object_name)
+        if obj is None:
+            self.report({'ERROR'}, f"Could not find object '{self.object_name}'.")
+            return {'CANCELLED'}
+
+        for selected in list(context.selected_objects):
+            selected.select_set(False)
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
+        self.report({'INFO'}, f"Selected '{obj.name}'.")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_fix_validation_name(bpy.types.Operator):
+    bl_idname = "bz.fix_validation_name"
+    bl_label = "Fix Legacy Name"
+    bl_description = "Rename this object to a valid legacy Battlezone export name"
+
+    object_name: StringProperty(name="Object Name", default="")
+
+    def execute(self, context):
+        if not self.object_name:
+            self.report({'ERROR'}, "Validation issue has no rename target.")
+            return {'CANCELLED'}
+
+        obj = context.scene.objects.get(self.object_name)
+        if obj is None:
+            self.report({'ERROR'}, f"Could not find object '{self.object_name}'.")
+            return {'CANCELLED'}
+
+        original_name = obj.name
+        source_name = "".join(
+            ch for ch in original_name.lower().replace(" ", "_")
+            if ch.isalnum() or ch == "_"
+        )
+        if not source_name:
+            source_name = "geo"
+
+        lod = 3
+        if len(original_name) >= 4 and original_name[3] in {'1', '2', '3'}:
+            lod = int(original_name[3])
+
+        min_len = max(5, min(8, len(source_name)))
+        chars = list(source_name[:8].ljust(min_len, 'x'))
+        chars[3] = str(lod)
+        chars[4] = '1'
+        candidate = "".join(chars[:8])
+
+        existing = {
+            scene_obj.name.lower()
+            for scene_obj in context.scene.objects
+            if scene_obj != obj
+        }
+        if candidate.lower() in existing:
+            base = candidate[:7]
+            for suffix in "0123456789abcdefghijklmnopqrstuvwxyz":
+                alt = (base + suffix)[:8]
+                if alt.lower() not in existing:
+                    candidate = alt
+                    break
+
+        obj.name = candidate
+        self.report({'INFO'}, f"Renamed '{original_name}' to '{candidate}'.")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_PT_validation(bpy.types.Panel):
+    bl_idname = "SCENE_PT_BZ_VALIDATION"
+    bl_label = "Battlezone Export Validation"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+        _draw_validation_summary_box(layout, scene, export_mode="ALL")
+
+        issues = getattr(scene, "bz_validation_issues", None)
+        if issues is None or len(issues) == 0:
+            return
+
+        list_box = layout.box()
+        list_box.label(text="Latest Results")
+        if _validation_results_are_stale(scene):
+            list_box.label(text="Scene data changed after the last validation run.", icon='ERROR')
+        shown = 0
+        for item in issues:
+            if shown >= 20:
+                list_box.label(text="More results are available after the first 20 entries.")
+                break
+
+            if item.severity == "ERROR":
+                icon = 'ERROR'
+            elif item.severity == "WARNING":
+                icon = 'WARNING'
+            else:
+                icon = 'INFO'
+
+            row = list_box.row()
+            label = f"{item.scope}"
+            if item.target:
+                label += f": {item.target}"
+            row.label(text=label, icon=icon)
+            if item.object_name:
+                op = row.operator("bz.select_validation_target", text="Select", icon='RESTRICT_SELECT_OFF')
+                op.object_name = item.object_name
+            if item.action == "fix_name" and item.object_name:
+                op = row.operator("bz.fix_validation_name", text="Fix Name", icon='SORTALPHA')
+                op.object_name = item.object_name
+
+            msg_row = list_box.row()
+            msg_row.scale_y = 0.85
+            msg_row.label(text=item.message)
+            shown += 1
+
+
 class BattlezoneGEOProperties(bpy.types.Panel):
     bl_idname = "OBJECT_PT_BZ_GEO"
-    bl_label = "Battlezone GEO Properties"
+    bl_label = "Battlezone GEO"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "object"
@@ -820,58 +1659,108 @@ class BattlezoneGEOProperties(bpy.types.Panel):
             layout.label(text="No GEO data on active object.")
             return
 
-        # --- GEO settings box ---
-        box = layout.box()
-        box.label(text="SDF/VDF GEO Settings")
-        box.prop(geo, "GEOType")
-        box.prop(geo, "GEOFlags")
+        layout.prop(geo, "GEOTypeEnum", text="GEO Type")
+        layout.prop(geo, "GEOFlags")
 
-        row = box.row()
+        row = layout.row()
         row.popover(
             panel="BZ_PT_GeoTypeListPopover",
             text="Show GEO Types",
             icon="INFO",
         )
+        layout.label(text=f"Selected Role: {_get_geotype_label(geo.GEOType)}")
+        _draw_geotype_hint(layout, geo.GEOType)
+        if getattr(obj, "type", None) == 'MESH':
+            layout.label(text=f"Vertices: {len(obj.data.vertices)}", icon='MESH_DATA')
+        else:
+            layout.label(text="Non-mesh object. Advanced helper workflow only.", icon='INFO')
 
-        # --- Collision settings box ---
-        col_box = layout.box()
-        col_box.label(text="GEO Collision Settings")
-        col_box.prop(geo, "GenerateCollision")
 
-        col_box.label(text="GEO Center X/Y/Z")
-        split = col_box.split()
-        split.prop(geo, "GeoCenterX")
-        split.prop(geo, "GeoCenterY")
-        split.prop(geo, "GeoCenterZ")
+class BZ98TOOLS_PT_geo_collision(bpy.types.Panel):
+    bl_idname = "OBJECT_PT_BZ_GEO_COLLISION"
+    bl_label = "Collision"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_parent_id = "OBJECT_PT_BZ_GEO"
 
-        col_box.label(text="Projectile Collision Box X/Y/Z")
-        split = col_box.split()
-        split.prop(geo, "BoxHalfHeightX")
-        split.prop(geo, "BoxHalfHeightY")
-        split.prop(geo, "BoxHalfHeightZ")
+    def draw(self, context):
+        layout = self.layout
+        geo = getattr(context.object, "GEOPropertyGroup", None)
+        if geo is None:
+            layout.label(text="No GEO data on active object.")
+            return
 
-        col_box.prop(geo, "SphereRadius")
-        col_box.operator('bz.generatecollision', text="Generate Collision Settings")
+        layout.prop(geo, "GenerateCollision")
+        layout.label(text="GEO Center")
+        _draw_xyz_row(layout, geo, ("GeoCenterX", "GeoCenterY", "GeoCenterZ"), ("X", "Y", "Z"))
+        layout.label(text="Projectile Box Half-Extents")
+        _draw_xyz_row(layout, geo, ("BoxHalfHeightX", "BoxHalfHeightY", "BoxHalfHeightZ"), ("X", "Y", "Z"))
+        layout.prop(geo, "SphereRadius")
+        layout.operator('bz.generatecollision', text="Generate Collision Settings")
 
-        # --- SDF-specific settings ---
-        box = layout.box()
-        box.label(text="SDF Specific GEO Settings")
-        box.prop(geo, "SDFDDR")
-        box.prop(geo, "SDFX")
-        box.prop(geo, "SDFY")
-        box.prop(geo, "SDFZ")
-        box.prop(geo, "SDFTime")
 
-        # --- VDF spinner helper settings ---
-        spin_box = layout.box()
-        spin_box.label(text="VDF Spinner Helper")
-        spin_box.operator("bz.create_spinner_helper", text="Create Spinner Helper")
-        spin_box.prop(geo, "IsSpinnerHelper")
+class BZ98TOOLS_PT_geo_sdf(bpy.types.Panel):
+    bl_idname = "OBJECT_PT_BZ_GEO_SDF"
+    bl_label = "SDF Extras"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_parent_id = "OBJECT_PT_BZ_GEO"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        geo = getattr(context.object, "GEOPropertyGroup", None)
+        if geo is None:
+            layout.label(text="No GEO data on active object.")
+            return
+
+        layout.prop(geo, "SDFDDR")
+        _draw_xyz_row(layout, geo, ("SDFX", "SDFY", "SDFZ"), ("X", "Y", "Z"))
+        layout.prop(geo, "SDFTime")
+
+
+class BZ98TOOLS_PT_geo_vdf(bpy.types.Panel):
+    bl_idname = "OBJECT_PT_BZ_GEO_VDF"
+    bl_label = "VDF Extras"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_parent_id = "OBJECT_PT_BZ_GEO"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        geo = getattr(context.object, "GEOPropertyGroup", None)
+        if geo is None:
+            layout.label(text="No GEO data on active object.")
+            return
+
+        layout.operator("bz.create_spinner_helper", text="Create Spinner Helper")
+        layout.prop(geo, "IsSpinnerHelper")
         if geo.IsSpinnerHelper:
-            spin_box.prop(geo, "SpinnerTarget")
-            spin_box.prop(geo, "SpinnerAxis")
-            spin_box.prop(geo, "SpinnerSpeed")
-            spin_box.label(text="Tip: helper exports as GEO Type 15.")
+            layout.prop(geo, "SpinnerTarget")
+            layout.prop(geo, "SpinnerAxis")
+            layout.prop(geo, "SpinnerSpeed")
+            layout.label(text="Spinner helpers export as GEO Type 15.", icon='INFO')
+
+
+class BZ98TOOLS_PT_geo_advanced(bpy.types.Panel):
+    bl_idname = "OBJECT_PT_BZ_GEO_ADVANCED"
+    bl_label = "Experimental"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_parent_id = "OBJECT_PT_BZ_GEO"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        geo = getattr(context.object, "GEOPropertyGroup", None)
+        if geo is None:
+            layout.label(text="No GEO data on active object.")
+            return
 
         raw_box = layout.box()
         raw_box.label(text="VDF Transform Override")
@@ -882,7 +1771,7 @@ class BattlezoneGEOProperties(bpy.types.Panel):
             raw_box.prop(geo, "RawVDFMatrix")
 
         face_box = layout.box()
-        face_box.label(text="Experimental GEO Header/Face Raw")
+        face_box.label(text="GEO Header / Face Raw")
         face_box.prop(geo, "GEOHeaderUnknown")
         face_box.prop(geo, "GEOHeaderUnknown2")
         face_box.prop(geo, "GEOFaceUnknownDefault")
@@ -894,9 +1783,61 @@ class BattlezoneGEOProperties(bpy.types.Panel):
         face_box.label(text="Per-face attrs: bz_face_* (Spreadsheet).")
 
         
+class BZ98TOOLS_OT_fill_material_texture_name(bpy.types.Operator):
+    bl_idname = "bz.fill_material_texture_name"
+    bl_label = "Use Material Name"
+    bl_description = "Fill the Battlezone texture name from the current Blender material name"
+
+    def execute(self, context):
+        material = context.material
+        if material is None:
+            self.report({'ERROR'}, "No active material.")
+            return {'CANCELLED'}
+
+        material_props = getattr(material, "MaterialPropertyGroup", None)
+        if material_props is None:
+            self.report({'ERROR'}, "Active material has no Battlezone material properties.")
+            return {'CANCELLED'}
+
+        derived_name = _derive_legacy_texture_name(material.name)
+        if not derived_name:
+            self.report({'ERROR'}, "Material name cannot be converted into a Battlezone texture name.")
+            return {'CANCELLED'}
+
+        material_props.MapTexture = derived_name
+        self.report({'INFO'}, f"Battlezone texture name set to '{derived_name}'.")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_fill_material_texture_from_image(bpy.types.Operator):
+    bl_idname = "bz.fill_material_texture_from_image"
+    bl_label = "Use Image Name"
+    bl_description = "Fill the Battlezone texture name from the linked image texture"
+
+    def execute(self, context):
+        material = context.material
+        if material is None:
+            self.report({'ERROR'}, "No active material.")
+            return {'CANCELLED'}
+
+        material_props = getattr(material, "MaterialPropertyGroup", None)
+        if material_props is None:
+            self.report({'ERROR'}, "Active material has no Battlezone material properties.")
+            return {'CANCELLED'}
+
+        derived_name = _get_material_image_name(material)
+        if not derived_name:
+            self.report({'ERROR'}, "No linked image texture was found on this material.")
+            return {'CANCELLED'}
+
+        material_props.MapTexture = derived_name
+        self.report({'INFO'}, f"Battlezone texture name set to '{derived_name}' from the linked image.")
+        return {'FINISHED'}
+
+
 class BattlezoneMaterialProperties(bpy.types.Panel):
     bl_idname = "MATERIAL_PT_BZ_GEO"
-    bl_label = "Battlezone Material Properties"
+    bl_label = "Battlezone Material"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "material"
@@ -905,12 +1846,35 @@ class BattlezoneMaterialProperties(bpy.types.Panel):
         layout = self.layout
         material = context.material
         MaterialPropertyGroup = material.MaterialPropertyGroup
-        
+
+        explicit_name, image_name, derived_name, resolved_name, source = _get_material_texture_preview(material)
+
         box = layout.box()
-        box.label(text="Material Settings")
-        box.prop( MaterialPropertyGroup, "MapTexture")
-        # Fix: use the current material, not an undefined 'Material'
-        box.prop( material, "diffuse_color")
+        box.label(text="Legacy Texture")
+        box.prop(MaterialPropertyGroup, "MapTexture", text="Texture Name")
+
+        row = box.row(align=True)
+        row.operator("bz.fill_material_texture_name", text="Use Material Name")
+        image_row = row.row(align=True)
+        image_row.enabled = bool(image_name)
+        image_row.operator("bz.fill_material_texture_from_image", text="Use Image Name")
+
+        preview_box = layout.box()
+        preview_box.label(text="Export Preview")
+        preview_box.label(text=f"Resolved Name: {resolved_name or '(none)'}")
+        preview_box.label(text=f"Source: {source}")
+        if explicit_name and len(explicit_name) > 8:
+            preview_box.label(text="Explicit Battlezone texture names should stay within 8 characters.", icon='WARNING')
+        elif image_name and not explicit_name:
+            preview_box.label(text=f"If left blank, export will derive '{image_name}' from the linked image.", icon='INFO')
+        elif not explicit_name and derived_name:
+            preview_box.label(text=f"If left blank, export will derive '{derived_name}'.", icon='INFO')
+        elif not resolved_name:
+            preview_box.label(text="No texture name is available yet.", icon='ERROR')
+
+        color_box = layout.box()
+        color_box.label(text="Color")
+        color_box.prop(material, "diffuse_color")
       
 
 '''
@@ -926,6 +1890,7 @@ class OPCreateNewElement(bpy.types.Operator):
     def execute(self, context):
         item = context.scene.AnimationCollection.add()
         item.Index = len(context.scene.AnimationCollection)-1
+        context.scene.CurAnimation = len(context.scene.AnimationCollection) - 1
         return {'FINISHED'}
 
 class OPDeleteElement(bpy.types.Operator):
@@ -935,7 +1900,101 @@ class OPDeleteElement(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
+        if len(scene.AnimationCollection) == 0 or scene.CurAnimation >= len(scene.AnimationCollection):
+            self.report({'ERROR'}, "No animation element selected.")
+            return {'CANCELLED'}
         scene.AnimationCollection.remove(scene.CurAnimation)
+        scene.CurAnimation = min(scene.CurAnimation, len(scene.AnimationCollection) - 1)
+        if len(scene.AnimationCollection) == 0:
+            scene.CurAnimation = 0
+        return {'FINISHED'}
+
+
+class OPDuplicateElement(bpy.types.Operator):
+    bl_idname = "bz.duplicateanimelement"
+    bl_label = "Duplicate Element"
+    bl_description = "Duplicate the currently selected animation element"
+
+    def execute(self, context):
+        scene = context.scene
+        if len(scene.AnimationCollection) == 0 or scene.CurAnimation >= len(scene.AnimationCollection):
+            self.report({'ERROR'}, "No animation element selected.")
+            return {'CANCELLED'}
+
+        source_index = scene.CurAnimation
+        source_item = scene.AnimationCollection[source_index]
+        new_item = scene.AnimationCollection.add()
+        _copy_animation_item(source_item, new_item)
+        new_index = len(scene.AnimationCollection) - 1
+        target_index = source_index + 1
+        scene.AnimationCollection.move(new_index, target_index)
+        scene.CurAnimation = target_index
+        return {'FINISHED'}
+
+
+class OPMoveElement(bpy.types.Operator):
+    bl_idname = "bz.moveanimelement"
+    bl_label = "Move Element"
+    bl_description = "Move the selected animation element up or down"
+
+    direction: EnumProperty(
+        name="Direction",
+        items=(
+            ('UP', "Up", "Move the animation element up"),
+            ('DOWN', "Down", "Move the animation element down"),
+        ),
+        default='UP',
+    )
+
+    def execute(self, context):
+        scene = context.scene
+        index = scene.CurAnimation
+        count = len(scene.AnimationCollection)
+        if count == 0 or index >= count:
+            self.report({'ERROR'}, "No animation element selected.")
+            return {'CANCELLED'}
+
+        if self.direction == 'UP':
+            if index <= 0:
+                return {'CANCELLED'}
+            scene.AnimationCollection.move(index, index - 1)
+            scene.CurAnimation = index - 1
+        else:
+            if index >= count - 1:
+                return {'CANCELLED'}
+            scene.AnimationCollection.move(index, index + 1)
+            scene.CurAnimation = index + 1
+        return {'FINISHED'}
+
+
+class OPApplyAnimationPreset(bpy.types.Operator):
+    bl_idname = "bz.apply_animation_preset"
+    bl_label = "Add Animation Preset"
+    bl_description = "Append a preset set of animation slots as a starting point"
+
+    preset: EnumProperty(
+        name="Preset",
+        items=ANIMATION_PRESET_ITEMS,
+        default='DEPLOY_PAIR',
+    )
+
+    def execute(self, context):
+        scene = context.scene
+        indices = ANIMATION_PRESET_SLOTS.get(self.preset, [])
+        if not indices:
+            self.report({'ERROR'}, "Unknown animation preset.")
+            return {'CANCELLED'}
+
+        for index_value in indices:
+            item = scene.AnimationCollection.add()
+            item.Index = index_value
+            item.Start = 0
+            item.Length = 0
+            item.Loop = 1
+            item.Speed = 15.0
+
+        scene.CurAnimation = len(scene.AnimationCollection) - 1
+        self.report({'INFO'}, f"Added {len(indices)} slots from the preset.")
         return {'FINISHED'}
         
 '''
@@ -1242,12 +2301,12 @@ Animation Panel - Used to hold the UIList, buttons, and all the good stuff inclu
 class AnimationUIList(bpy.types.UIList):
     bl_idname = "SCENE_UL_Battlezone_ANIM_Element"
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        split = layout.split(factor=0.20)
-        split.label(text="Ind: %d" % (item.Index))
-        split.label(text="Srt: %d" % (item.Start))
-        split.label(text="Len: %d" % (item.Length))
-        split.label(text="Loop: %d" % (item.Loop))
-        split.label(text="Spd: %d" % (item.Speed))
+        row = layout.row(align=True)
+        row.label(text=f"Index {item.Index}")
+        row.label(text=f"Start {item.Start}")
+        row.label(text=f"Length {item.Length}")
+        row.label(text=f"Loop {item.Loop}")
+        row.label(text=f"Speed {item.Speed:g}")
         
 # And now we can use this list everywhere in Blender. Here is a small example panel.
 class AnimationPanel(bpy.types.Panel):
@@ -1256,6 +2315,7 @@ class AnimationPanel(bpy.types.Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
 
     def draw(self, context):
         layout = self.layout
@@ -1263,27 +2323,41 @@ class AnimationPanel(bpy.types.Panel):
         scene = context.scene
 
         box = layout.box()
-        box.label(text="Battlezone Animation Elements")
+        box.label(text="Animation Elements")
         box.template_list("SCENE_UL_Battlezone_ANIM_Element", "", scene, "AnimationCollection", scene, "CurAnimation")
-        
-        box = layout.box()
-        box.label(text="Create/Delete element.")
-        box.operator('bz.createanimelement', text="New Element", text_ctxt="", translate=True, icon='NONE', emboss=True, depress=False, icon_value=0)
-        box.operator('bz.deleteanimelement', text="Delete Element", text_ctxt="", translate=True, icon='NONE', emboss=True, depress=False, icon_value=0)
-        
-        box = layout.box()
-        box.label(text="Element Editor")
-        if len(scene.AnimationCollection) > 0:
+
+        actions = layout.box()
+        actions.label(text="Actions")
+        row = actions.row(align=True)
+        row.operator('bz.createanimelement', text="New Element")
+        row.operator('bz.duplicateanimelement', text="Duplicate")
+        row.operator('bz.deleteanimelement', text="Delete Element")
+        move_row = actions.row(align=True)
+        move_up = move_row.operator('bz.moveanimelement', text="Move Up")
+        move_up.direction = 'UP'
+        move_down = move_row.operator('bz.moveanimelement', text="Move Down")
+        move_down.direction = 'DOWN'
+        actions.operator_menu_enum('bz.apply_animation_preset', "preset", text="Add Preset Slots")
+
+        editor = layout.box()
+        editor.label(text="Selected Element")
+        if len(scene.AnimationCollection) > 0 and scene.CurAnimation < len(scene.AnimationCollection):
             item = scene.AnimationCollection[scene.CurAnimation]
-            box.prop(item, "Index")
-            box.prop(item, "Start")
-            box.prop(item, "Length")
-            box.prop(item, "Loop")
-            box.prop(item, "Speed")
-            box.prop(item, "UseCustomUnknownGeoMask")
+            editor.prop(item, "Index")
+            editor.label(text=_get_animation_index_hint(item.Index), icon='INFO')
+            timing = editor.box()
+            timing.label(text="Timing")
+            timing.prop(item, "Start")
+            timing.prop(item, "Length")
+            timing.prop(item, "Loop")
+            timing.prop(item, "Speed")
+
+            advanced = editor.box()
+            advanced.label(text="Advanced")
+            advanced.prop(item, "UseCustomUnknownGeoMask")
             if item.UseCustomUnknownGeoMask:
                 for i in range(0, 32, 8):
-                    row = box.row(align=True)
+                    row = advanced.row(align=True)
                     row.prop(item, "UnknownGeoMask", index=i+0, text=str(i+0))
                     row.prop(item, "UnknownGeoMask", index=i+1, text=str(i+1))
                     row.prop(item, "UnknownGeoMask", index=i+2, text=str(i+2))
@@ -1292,15 +2366,169 @@ class AnimationPanel(bpy.types.Panel):
                     row.prop(item, "UnknownGeoMask", index=i+5, text=str(i+5))
                     row.prop(item, "UnknownGeoMask", index=i+6, text=str(i+6))
                     row.prop(item, "UnknownGeoMask", index=i+7, text=str(i+7))
+        else:
+            editor.label(text="No animation element selected.", icon='INFO')
 
         # Animation index reference helper
         ref_box = layout.box()
         ref_box.label(text="Animation Index Reference")
+        ref_box.label(text="Index meaning depends on classLabel. Use this as a quick lookup.")
         ref_box.operator(
             "bz.show_anim_index_reference",
             text="Show Animation Index Reference",
             icon='INFO'
         )
+
+
+class BZ98TOOLS_OT_apply_export_preset(bpy.types.Operator):
+    bl_idname = "bz.apply_export_preset"
+    bl_label = "Apply Export Preset"
+    bl_description = "Apply a built-in or saved export preset to the active export dialog"
+
+    export_kind: StringProperty(name="Export Kind", default="")
+    preset_key: StringProperty(name="Preset Key", default="")
+    custom_label: StringProperty(name="Custom Label", default="")
+
+    def execute(self, context):
+        operator = _get_active_export_operator(context, self.export_kind)
+        if operator is None:
+            self.report({'ERROR'}, "No matching export dialog is active.")
+            return {'CANCELLED'}
+
+        if self.custom_label:
+            values = _load_custom_export_preset(self.export_kind, self.custom_label)
+            preset_label = self.custom_label
+        else:
+            values = _get_builtin_export_preset(self.export_kind, self.preset_key)
+            preset_label = self.preset_key
+
+        if values is None:
+            self.report({'ERROR'}, "Preset could not be loaded.")
+            return {'CANCELLED'}
+
+        _apply_export_preset_values(operator, self.export_kind, values)
+        self.report({'INFO'}, f"Applied preset '{preset_label}'.")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_save_export_preset(bpy.types.Operator):
+    bl_idname = "bz.save_export_preset"
+    bl_label = "Save Export Preset"
+    bl_description = "Save the current export settings as a reusable preset"
+
+    export_kind: StringProperty(name="Export Kind", default="")
+    preset_name: StringProperty(name="Preset Name", default="")
+
+    def invoke(self, context, event):
+        if not self.preset_name:
+            self.preset_name = f"{self.export_kind.lower()}_preset"
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        self.layout.prop(self, "preset_name")
+
+    def execute(self, context):
+        operator = _get_active_export_operator(context, self.export_kind)
+        if operator is None:
+            self.report({'ERROR'}, "No matching export dialog is active.")
+            return {'CANCELLED'}
+
+        preset_name = (self.preset_name or "").strip()
+        if not preset_name:
+            self.report({'ERROR'}, "Preset name cannot be empty.")
+            return {'CANCELLED'}
+
+        preset_dir = get_export_preset_dir(self.export_kind)
+        os.makedirs(preset_dir, exist_ok=True)
+        filename = _normalize_preset_filename(preset_name) + ".json"
+        path = os.path.join(preset_dir, filename)
+        payload = {
+            "label": preset_name,
+            "export_kind": self.export_kind,
+            "values": _serialize_export_operator(operator, self.export_kind),
+        }
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+
+        self.report({'INFO'}, f"Saved preset '{preset_name}'.")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_delete_export_preset(bpy.types.Operator):
+    bl_idname = "bz.delete_export_preset"
+    bl_label = "Delete Export Preset"
+    bl_description = "Delete a saved export preset"
+
+    export_kind: StringProperty(name="Export Kind", default="")
+    custom_label: StringProperty(name="Custom Label", default="")
+
+    def execute(self, context):
+        custom_label = (self.custom_label or "").strip()
+        if not custom_label:
+            self.report({'ERROR'}, "No preset name was provided.")
+            return {'CANCELLED'}
+
+        for entry in _list_custom_export_presets(self.export_kind):
+            if entry["label"] != custom_label:
+                continue
+            try:
+                os.remove(entry["path"])
+            except OSError as exc:
+                self.report({'ERROR'}, f"Could not delete preset: {exc}")
+                return {'CANCELLED'}
+            self.report({'INFO'}, f"Deleted preset '{custom_label}'.")
+            return {'FINISHED'}
+
+        self.report({'ERROR'}, f"Could not find preset '{custom_label}'.")
+        return {'CANCELLED'}
+
+
+class BZ98TOOLS_MT_geo_export_presets(bpy.types.Menu):
+    bl_idname = "BZ98TOOLS_MT_geo_export_presets"
+    bl_label = "GEO Presets"
+
+    def draw(self, context):
+        _draw_export_preset_menu_entries(self.layout, "GEO")
+
+
+class BZ98TOOLS_MT_vdf_export_presets(bpy.types.Menu):
+    bl_idname = "BZ98TOOLS_MT_vdf_export_presets"
+    bl_label = "VDF Presets"
+
+    def draw(self, context):
+        _draw_export_preset_menu_entries(self.layout, "VDF")
+
+
+class BZ98TOOLS_MT_sdf_export_presets(bpy.types.Menu):
+    bl_idname = "BZ98TOOLS_MT_sdf_export_presets"
+    bl_label = "SDF Presets"
+
+    def draw(self, context):
+        _draw_export_preset_menu_entries(self.layout, "SDF")
+
+
+class BZ98TOOLS_MT_geo_delete_export_preset(bpy.types.Menu):
+    bl_idname = "BZ98TOOLS_MT_geo_delete_export_preset"
+    bl_label = "Delete GEO Preset"
+
+    def draw(self, context):
+        _draw_export_preset_menu_entries(self.layout, "GEO", delete_mode=True)
+
+
+class BZ98TOOLS_MT_vdf_delete_export_preset(bpy.types.Menu):
+    bl_idname = "BZ98TOOLS_MT_vdf_delete_export_preset"
+    bl_label = "Delete VDF Preset"
+
+    def draw(self, context):
+        _draw_export_preset_menu_entries(self.layout, "VDF", delete_mode=True)
+
+
+class BZ98TOOLS_MT_sdf_delete_export_preset(bpy.types.Menu):
+    bl_idname = "BZ98TOOLS_MT_sdf_delete_export_preset"
+    bl_label = "Delete SDF Preset"
+
+    def draw(self, context):
+        _draw_export_preset_menu_entries(self.layout, "SDF", delete_mode=True)
 
 
 '''
@@ -1507,6 +2735,21 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
         from . import export_geo
         from . import ogre_autoport
 
+        issues = bz_validation.collect_legacy_validation_issues(context, export_mode="GEO")
+        _store_validation_results(context.scene, issues)
+        counts = _get_validation_counts(context.scene, export_mode="GEO")
+        if counts["ERROR"] > 0:
+            self.report(
+                {'ERROR'},
+                f"GEO export blocked by {counts['ERROR']} validation errors. Run 'Validate Battlezone Scene' for details.",
+            )
+            return {'CANCELLED'}
+        if counts["WARNING"] > 0:
+            self.report(
+                {'WARNING'},
+                f"GEO export validation found {counts['WARNING']} warnings.",
+            )
+
         keywords = self.as_keywords(ignore=(
             "axis_forward",
             "axis_up",
@@ -1543,6 +2786,29 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
             ogre_autoport.auto_port_bz98_to_ogre(self.filepath, opts)
 
         return result
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        _draw_export_preset_box(layout, "GEO")
+
+        core = layout.box()
+        core.label(text="Core Export")
+        active_obj = getattr(getattr(context.view_layer, "objects", None), "active", None)
+        if active_obj is None:
+            core.label(text="No active object selected.", icon='ERROR')
+        else:
+            core.label(text=f"Active Object: {active_obj.name}", icon='OBJECT_DATA')
+            core.label(text="Only the active mesh object is exported.", icon='INFO')
+
+        _draw_validation_summary_box(layout, scene, export_mode="GEO")
+
+        port = layout.box()
+        port.label(text="Create Redux Files")
+        port.prop(self, "auto_port_ogre")
+        if self.auto_port_ogre:
+            _draw_shared_autoport_options(port, self)
 
 class ExportVDF(bpy.types.Operator, ExportHelper):
     bl_idname = "export_scene.vdf"
@@ -1739,6 +3005,21 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         from . import export_vdf
         from . import ogre_autoport
 
+        issues = bz_validation.collect_legacy_validation_issues(context, export_mode="VDF")
+        _store_validation_results(context.scene, issues)
+        counts = _get_validation_counts(context.scene, export_mode="VDF")
+        if counts["ERROR"] > 0:
+            self.report(
+                {'ERROR'},
+                f"VDF export blocked by {counts['ERROR']} validation errors. Run 'Validate Battlezone Scene' for details.",
+            )
+            return {'CANCELLED'}
+        if counts["WARNING"] > 0:
+            self.report(
+                {'WARNING'},
+                f"VDF export validation found {counts['WARNING']} warnings.",
+            )
+
         # Don't pass OGRE UI options to the VDF exporter
         keywords = self.as_keywords(ignore=(
             "axis_forward",
@@ -1806,6 +3087,37 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
             ogre_autoport.auto_port_bz98_to_ogre(self.filepath, opts)
 
         return result
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        _draw_export_preset_box(layout, "VDF")
+
+        core = layout.box()
+        core.label(text="Core Export")
+        core.label(text="Exports scene GEO slots plus VDF container data.", icon='INFO')
+
+        anim_box = layout.box()
+        anim_box.label(text="Animations")
+        anim_box.prop(self, "ExportAnimations")
+        anim_count = len(getattr(scene, "AnimationCollection", []))
+        anim_box.label(text=f"Scene animation elements: {anim_count}")
+
+        legacy = layout.box()
+        legacy.label(text="Legacy Output")
+        legacy.prop(self, "ExportVDFOnly")
+        if not self.ExportVDFOnly:
+            legacy.label(text="Referenced GEO files in the export folder may be overwritten.", icon='ERROR')
+
+        _draw_validation_summary_box(layout, scene, export_mode="VDF")
+
+        port = layout.box()
+        port.label(text="Create BZR Files")
+        port.prop(self, "auto_port_ogre")
+        if self.auto_port_ogre:
+            _draw_shared_autoport_options(port, self)
+            _draw_vdf_autoport_options(port, self)
 
 class ExportSDF(bpy.types.Operator, ExportHelper):
     """Exports a Battlezone SDF file"""
@@ -1910,6 +3222,21 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         from . import export_sdf
         from . import ogre_autoport
 
+        issues = bz_validation.collect_legacy_validation_issues(context, export_mode="SDF")
+        _store_validation_results(context.scene, issues)
+        counts = _get_validation_counts(context.scene, export_mode="SDF")
+        if counts["ERROR"] > 0:
+            self.report(
+                {'ERROR'},
+                f"SDF export blocked by {counts['ERROR']} validation errors. Run 'Validate Battlezone Scene' for details.",
+            )
+            return {'CANCELLED'}
+        if counts["WARNING"] > 0:
+            self.report(
+                {'WARNING'},
+                f"SDF export validation found {counts['WARNING']} warnings.",
+            )
+
         # Warn if there are no animation definitions in the Scene
         anims = getattr(context.scene, "AnimationCollection", None)
         if self.ExportAnimations and (not anims or len(anims) == 0):
@@ -1955,6 +3282,36 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
             ogre_autoport.auto_port_bz98_to_ogre(self.filepath, opts)
 
         return result
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        _draw_export_preset_box(layout, "SDF")
+
+        core = layout.box()
+        core.label(text="Core Export")
+        core.label(text="Exports scene GEO slots plus SDF container data.", icon='INFO')
+
+        anim_box = layout.box()
+        anim_box.label(text="Animations")
+        anim_box.prop(self, "ExportAnimations")
+        anim_count = len(getattr(scene, "AnimationCollection", []))
+        anim_box.label(text=f"Scene animation elements: {anim_count}")
+
+        legacy = layout.box()
+        legacy.label(text="Legacy Output")
+        legacy.prop(self, "ExportSDFOnly")
+        if not self.ExportSDFOnly:
+            legacy.label(text="Referenced GEO files in the export folder may be overwritten.", icon='ERROR')
+
+        _draw_validation_summary_box(layout, scene, export_mode="SDF")
+
+        port = layout.box()
+        port.label(text="Create BZR Files")
+        port.prop(self, "auto_port_ogre")
+        if self.auto_port_ogre:
+            _draw_shared_autoport_options(port, self)
 
 class BZ98TOOLS_OT_import_bzr_mesh(bpy.types.Operator, ImportHelper):
     """Import BZR Mesh (Ogre .mesh)"""
@@ -2233,19 +3590,76 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
         col.prop(self, "overwrite_material")
         col.prop(self, "copy_textures")
 
+def _get_selected_zfs_entry(scene):
+    index = getattr(scene, "zfs_active_index", -1)
+    if index < 0 or index >= len(scene.zfs_files):
+        return None
+    return scene.zfs_files[index]
+
+
+def _get_zfs_entry_icon(item):
+    if item.is_model:
+        return 'MESH_DATA'
+    if item.ext in ZFS_TEXTURE_EXTENSIONS:
+        return 'FILE_IMAGE'
+    return 'FILE'
+
+
+def _get_current_zfs_cache_dir(scene):
+    active_zfs_path = getattr(scene, "active_zfs_path", "")
+    cache_root = getattr(scene, "zfs_cache_dir", "") or get_default_zfs_cache_dir()
+    return get_zfs_archive_cache_dir(active_zfs_path, cache_root)
+
+
+def _open_path_in_shell(path):
+    target_path = os.path.abspath(path)
+    if hasattr(bpy.ops, "wm") and hasattr(bpy.ops.wm, "path_open"):
+        bpy.ops.wm.path_open(filepath=target_path)
+        return
+    if hasattr(os, "startfile"):
+        os.startfile(target_path)
+        return
+    raise RuntimeError("No supported path-open handler is available.")
+
+
+class BZ98TOOLS_MT_import_menu(bpy.types.Menu):
+    bl_idname = "TOPBAR_MT_bz98_import"
+    bl_label = "Battlezone"
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Legacy Formats")
+        layout.operator(ImportGEO.bl_idname, text="Geometry (.geo)")
+        layout.operator(ImportVDF.bl_idname, text="Vehicle Definition (.vdf)")
+        layout.operator(ImportSDF.bl_idname, text="Structure Definition (.sdf)")
+        layout.separator()
+        layout.label(text="Redux Formats")
+        layout.operator(BZ98TOOLS_OT_import_bzr_mesh.bl_idname, text="Redux Mesh (.mesh)")
+        layout.separator()
+        layout.label(text="Archive Tools")
+        layout.operator(BZ98TOOLS_OT_open_zfs.bl_idname, text="Open ZFS Archive (.zfs)")
+
+
+class BZ98TOOLS_MT_export_menu(bpy.types.Menu):
+    bl_idname = "TOPBAR_MT_bz98_export"
+    bl_label = "Battlezone"
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Legacy Formats")
+        layout.operator(ExportGEO.bl_idname, text="Geometry (.geo)")
+        layout.operator(ExportVDF.bl_idname, text="Vehicle Definition (.vdf)")
+        layout.operator(ExportSDF.bl_idname, text="Structure Definition (.sdf)")
+        layout.separator()
+        layout.label(text="Redux Formats")
+        layout.operator(BZ98TOOLS_OT_export_bzr_mesh.bl_idname, text="Redux Mesh (.mesh)")
 
 
 def menu_func_import(self, context):
-    self.layout.operator(ImportGEO.bl_idname, text="Battlezone Geometry (.geo)")
-    self.layout.operator(ImportVDF.bl_idname, text="Battlezone Vehicle Definition File (.vdf)")
-    self.layout.operator(ImportSDF.bl_idname, text="Battlezone Structure Definition File (.sdf)")
-    self.layout.operator(BZ98TOOLS_OT_import_bzr_mesh.bl_idname, text="Battlezone 98 Redux Mesh (.mesh)")
+    self.layout.menu(BZ98TOOLS_MT_import_menu.bl_idname, text="Battlezone")
     
 def menu_func_export(self, context):
-    self.layout.operator(ExportGEO.bl_idname, text="Battlezone Geometry (.geo)")
-    self.layout.operator(ExportVDF.bl_idname, text="Battlezone Vehicle Definition File (.vdf)")
-    self.layout.operator(ExportSDF.bl_idname, text="Battlezone Structure Definition File (.sdf)")
-    self.layout.operator(BZ98TOOLS_OT_export_bzr_mesh.bl_idname, text="Battlezone 98 Redux Mesh (.mesh)")
+    self.layout.menu(BZ98TOOLS_MT_export_menu.bl_idname, text="Battlezone")
 
 
 Properties = [
@@ -2253,6 +3667,7 @@ Properties = [
     GEOPropertyGroup,
     SDFVDFPropertyGroup,
     MaterialPropertyGroup,
+    ValidationIssuePropertyGroup,
 ]
 
 class ZFSFileEntry(bpy.types.PropertyGroup):
@@ -2342,6 +3757,11 @@ class BZ98TOOLS_OT_open_zfs(bpy.types.Operator, ImportHelper):
     def execute(self, context):
         from .zfs_reader import ZFSReader
         context.scene.active_zfs_path = self.filepath
+        context.scene.zfs_active_cache_path = get_zfs_archive_cache_dir(
+            self.filepath,
+            context.scene.zfs_cache_dir.strip() or get_default_zfs_cache_dir(),
+        )
+        context.scene.zfs_last_import_path = ""
         reader = ZFSReader(self.filepath)
         try:
             reader.open()
@@ -2351,10 +3771,111 @@ class BZ98TOOLS_OT_open_zfs(bpy.types.Operator, ImportHelper):
                 item.name = name
                 item.ext = os.path.splitext(name)[1].lower()
                 item.is_model = item.ext in {'.vdf', '.sdf', '.geo'}
+            first_model_index = next((idx for idx, item in enumerate(context.scene.zfs_files) if item.is_model), -1)
+            context.scene.zfs_active_index = first_model_index if first_model_index >= 0 else (0 if len(context.scene.zfs_files) > 0 else -1)
             reader.close()
         except Exception as e:
             self.report({'ERROR'}, f"Failed to open ZFS: {e}")
             return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_open_zfs_cache_folder(bpy.types.Operator):
+    """Open the configured ZFS cache folder or the active archive cache folder"""
+    bl_idname = "bz.open_zfs_cache_folder"
+    bl_label = "Open ZFS Cache Folder"
+
+    scope: EnumProperty(
+        name="Scope",
+        items=(
+            ('ROOT', "Root Cache", "Open the root ZFS cache folder"),
+            ('ARCHIVE', "Archive Cache", "Open the cache folder for the active ZFS archive"),
+        ),
+        default='ARCHIVE',
+    )
+
+    def execute(self, context):
+        scene = context.scene
+        if self.scope == 'ROOT':
+            target_dir = os.path.abspath(scene.zfs_cache_dir.strip() or get_default_zfs_cache_dir())
+        else:
+            target_dir = _get_current_zfs_cache_dir(scene)
+            if not target_dir:
+                self.report({'ERROR'}, "No active ZFS archive is selected.")
+                return {'CANCELLED'}
+
+        os.makedirs(target_dir, exist_ok=True)
+        try:
+            _open_path_in_shell(target_dir)
+        except Exception as exc:
+            self.report({'ERROR'}, f"Could not open cache folder: {exc}")
+            return {'CANCELLED'}
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_clear_zfs_cache(bpy.types.Operator):
+    """Delete extracted ZFS cache files"""
+    bl_idname = "bz.clear_zfs_cache"
+    bl_label = "Clear ZFS Cache"
+
+    def execute(self, context):
+        import shutil
+
+        cache_dir = context.scene.zfs_cache_dir.strip() or get_default_zfs_cache_dir()
+        cache_dir = os.path.abspath(cache_dir)
+        if not os.path.isdir(cache_dir):
+            self.report({'INFO'}, "ZFS cache folder is already empty")
+            return {'FINISHED'}
+
+        removed = 0
+        failures = 0
+        for entry in os.listdir(cache_dir):
+            path = os.path.join(cache_dir, entry)
+            try:
+                if os.path.isdir(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+                removed += 1
+            except OSError:
+                failures += 1
+
+        if failures:
+            self.report({'WARNING'}, f"Cleared {removed} cache entries, but {failures} could not be removed")
+        else:
+            self.report({'INFO'}, f"Cleared {removed} cache entries")
+        context.scene.zfs_last_import_path = ""
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_clear_zfs_archive_cache(bpy.types.Operator):
+    """Delete extracted cache files for the active ZFS archive"""
+    bl_idname = "bz.clear_zfs_archive_cache"
+    bl_label = "Clear Active Archive Cache"
+
+    def execute(self, context):
+        import shutil
+
+        archive_cache_dir = _get_current_zfs_cache_dir(context.scene)
+        if not archive_cache_dir:
+            self.report({'ERROR'}, "No active ZFS archive is selected.")
+            return {'CANCELLED'}
+
+        if not os.path.isdir(archive_cache_dir):
+            self.report({'INFO'}, "The active archive cache is already empty.")
+            return {'FINISHED'}
+
+        try:
+            shutil.rmtree(archive_cache_dir)
+        except OSError as exc:
+            self.report({'ERROR'}, f"Could not clear archive cache: {exc}")
+            return {'CANCELLED'}
+
+        last_import = getattr(context.scene, "zfs_last_import_path", "")
+        if last_import and os.path.abspath(last_import).startswith(os.path.abspath(archive_cache_dir)):
+            context.scene.zfs_last_import_path = ""
+
+        self.report({'INFO'}, "Cleared the active archive cache.")
         return {'FINISHED'}
 
 class BZ98TOOLS_OT_import_from_zfs(bpy.types.Operator):
@@ -2371,24 +3892,33 @@ class BZ98TOOLS_OT_import_from_zfs(bpy.types.Operator):
             self.report({'ERROR'}, "No active ZFS archive")
             return {'CANCELLED'}
 
-        import tempfile, shutil
-        temp_dir = tempfile.mkdtemp(prefix="bz98_zfs_")
+        filename = self.filename
+        if not filename:
+            selected = _get_selected_zfs_entry(context.scene)
+            if not selected:
+                self.report({'ERROR'}, "No ZFS file is selected")
+                return {'CANCELLED'}
+            filename = selected.name
+
+        cache_root = context.scene.zfs_cache_dir.strip() or get_default_zfs_cache_dir()
+        temp_dir = get_zfs_archive_cache_dir(zfs_path, cache_root)
+        os.makedirs(temp_dir, exist_ok=True)
         
         try:
             reader = ZFSReader(zfs_path)
             reader.open()
             
             extracted_files = set()
-            find_zfs_dependencies(reader, self.filename, extracted_files, temp_dir)
+            find_zfs_dependencies(reader, filename, extracted_files, temp_dir)
             
             reader.close()
 
-            main_path = os.path.join(temp_dir, self.filename)
+            main_path = os.path.join(temp_dir, filename)
             if not os.path.exists(main_path):
-                self.report({'ERROR'}, f"Failed to extract {self.filename}")
+                self.report({'ERROR'}, f"Failed to extract {filename}")
                 return {'CANCELLED'}
 
-            ext = os.path.splitext(self.filename)[1].lower()
+            ext = os.path.splitext(filename)[1].lower()
             if ext == '.vdf':
                 from . import import_vdf
                 import_vdf.load(context, main_path)
@@ -2398,22 +3928,52 @@ class BZ98TOOLS_OT_import_from_zfs(bpy.types.Operator):
             elif ext == '.geo':
                 from . import import_geo
                 import_geo.geoload(context, main_path)
+            else:
+                self.report({'ERROR'}, f"Unsupported ZFS import type: {ext}")
+                return {'CANCELLED'}
+
+            context.scene.zfs_active_cache_path = temp_dir
+            context.scene.zfs_last_import_path = main_path
             
-            self.report({'INFO'}, f"Successfully imported {self.filename} and dependencies")
+            self.report({'INFO'}, f"Successfully imported {filename} and dependencies")
         except Exception as e:
             self.report({'ERROR'}, f"Import failed: {e}")
             import traceback
             traceback.print_exc()
             return {'CANCELLED'}
         finally:
-            # Note: We keep the temp files FOR NOW if we want Blender to keep links to them 
-            # (especially textures). If we delete them now, textures might go missing if 
-            # they are not packed into the .blend.
-            # Shifting to a more permanent 'cache' folder in the addon dir might be better.
-            # But for now, let's keep them so the user can see the models.
+            # Keep extracted dependencies in the cache folder so imported textures
+            # remain available to Blender until the user clears the cache manually.
             pass
 
         return {'FINISHED'}
+
+class BZ98TOOLS_UL_zfs_files(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.label(text=item.name, icon=_get_zfs_entry_icon(item))
+        row.label(text=item.ext or "file")
+
+    def filter_items(self, context, data, propname):
+        items = getattr(data, propname)
+        flags = []
+
+        filter_text = data.zfs_filter.strip().lower()
+        type_filter = data.zfs_type_filter
+
+        for item in items:
+            matches_text = not filter_text or filter_text in item.name.lower()
+            matches_type = (
+                type_filter == 'ALL'
+                or (type_filter == 'MODELS' and item.is_model)
+                or (type_filter == 'TEXTURES' and item.ext in ZFS_TEXTURE_EXTENSIONS)
+                or (type_filter == 'OTHER' and not item.is_model and item.ext not in ZFS_TEXTURE_EXTENSIONS)
+            )
+            flags.append(self.bitflag_filter_item if (matches_text and matches_type) else 0)
+
+        order = bpy.types.UI_UL_list.sort_items_by_name(items, "name")
+        return flags, order
+
 
 class BZ98TOOLS_PT_zfs_explorer(bpy.types.Panel):
     bl_idname = "SCENE_PT_BZ_ZFS"
@@ -2421,55 +3981,123 @@ class BZ98TOOLS_PT_zfs_explorer(bpy.types.Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
+    bl_options = {'DEFAULT_CLOSED'}
 
     def draw(self, context):
         layout = self.layout
         scene = context.scene
+        archive_cache_dir = _get_current_zfs_cache_dir(scene)
+        if archive_cache_dir and scene.zfs_active_cache_path != archive_cache_dir:
+            scene.zfs_active_cache_path = archive_cache_dir
         
         layout.operator("bz.open_zfs", icon='FILE_FOLDER')
+
+        cache_box = layout.box()
+        cache_box.label(text="Cache")
+        cache_box.prop(scene, "zfs_cache_dir", text="Folder")
+        cache_actions = cache_box.row(align=True)
+        root_open = cache_actions.operator("bz.open_zfs_cache_folder", text="Open Root", icon='FILE_FOLDER')
+        root_open.scope = 'ROOT'
+        cache_actions.operator("bz.clear_zfs_cache", icon='TRASH')
         
         if scene.active_zfs_path:
-            layout.label(text=f"Archive: {os.path.basename(scene.active_zfs_path)}")
-            
-            row = layout.row()
-            row.prop(scene, "zfs_filter", text="Filter", icon='VIEWZOOM')
-            
-            box = layout.box()
-            col = box.column(align=True)
-            
-            filter_str = scene.zfs_filter.lower()
-            count = 0
-            for item in scene.zfs_files:
-                if filter_str and filter_str not in item.name.lower():
-                    continue
-                
-                if item.is_model:
-                    row = col.row(align=True)
-                    row.label(text=item.name, icon='MESH_DATA')
-                    op = row.operator("bz.import_from_zfs", text="Import")
-                    op.filename = item.name
-                    count += 1
-                
-                if count > 30: # Limit display for performance
-                    col.label(text="... (more files hidden, use filter)")
-                    break
+            archive_box = layout.box()
+            archive_box.label(text=f"Archive: {os.path.basename(scene.active_zfs_path)}", icon='FILE_FOLDER')
+            archive_box.label(text=f"Files indexed: {len(scene.zfs_files)}")
+            archive_path_row = archive_box.row()
+            archive_path_row.enabled = False
+            archive_path_row.prop(scene, "active_zfs_path", text="Archive Path")
+            cache_dir_row = archive_box.row()
+            cache_dir_row.enabled = False
+            cache_dir_row.prop(scene, "zfs_active_cache_path", text="Cache Path")
+            archive_actions = archive_box.row(align=True)
+            archive_open = archive_actions.operator("bz.open_zfs_cache_folder", text="Open Archive Cache", icon='FILE_FOLDER')
+            archive_open.scope = 'ARCHIVE'
+            archive_actions.operator("bz.clear_zfs_archive_cache", icon='TRASH')
+            if scene.zfs_last_import_path:
+                last_row = archive_box.row()
+                last_row.enabled = False
+                last_row.prop(scene, "zfs_last_import_path", text="Last Extracted")
+
+            filters = layout.box()
+            filters.label(text="Browser")
+            row = filters.row(align=True)
+            row.prop(scene, "zfs_filter", text="", icon='VIEWZOOM')
+            row.prop(scene, "zfs_type_filter", text="")
+
+            list_box = layout.box()
+            list_box.template_list(
+                "BZ98TOOLS_UL_zfs_files",
+                "",
+                scene,
+                "zfs_files",
+                scene,
+                "zfs_active_index",
+                rows=10,
+            )
+
+            selected = _get_selected_zfs_entry(scene)
+            action_box = layout.box()
+            action_box.label(text="Selection")
+            if selected:
+                action_box.label(text=selected.name, icon=_get_zfs_entry_icon(selected))
+                import_row = action_box.row()
+                import_row.enabled = selected.is_model
+                op = import_row.operator("bz.import_from_zfs", text="Import Selected", icon='IMPORT')
+                op.filename = selected.name
+                if not selected.is_model:
+                    action_box.label(text="Only GEO, VDF, and SDF files can be imported directly.", icon='INFO')
+            else:
+                action_box.label(text="Select a file from the archive list.", icon='INFO')
 
 GUIClasses = [
+    BZ98TOOLS_MT_import_menu,
+    BZ98TOOLS_MT_export_menu,
     BZ_OT_ShowAnimIndexReference,
     BZ_PT_GeoTypeListPopover,
     BattlezoneSDFVDFProperties,
+    BZ98TOOLS_PT_scene_asset_properties,
+    BZ98TOOLS_PT_scene_collision_helpers,
+    BZ98TOOLS_PT_scene_advanced,
+    BZ98TOOLS_OT_validate_scene,
+    BZ98TOOLS_OT_select_validation_target,
+    BZ98TOOLS_OT_fix_validation_name,
+    BZ98TOOLS_PT_validation,
     BattlezoneGEOProperties,
+    BZ98TOOLS_PT_geo_collision,
+    BZ98TOOLS_PT_geo_sdf,
+    BZ98TOOLS_PT_geo_vdf,
+    BZ98TOOLS_PT_geo_advanced,
+    BZ98TOOLS_OT_fill_material_texture_name,
+    BZ98TOOLS_OT_fill_material_texture_from_image,
     BattlezoneMaterialProperties,
     OPCreateNewElement,
     OPDeleteElement,
+    OPDuplicateElement,
+    OPMoveElement,
+    OPApplyAnimationPreset,
+    BZ98TOOLS_OT_apply_export_preset,
+    BZ98TOOLS_OT_save_export_preset,
+    BZ98TOOLS_OT_delete_export_preset,
+    BZ98TOOLS_MT_geo_export_presets,
+    BZ98TOOLS_MT_vdf_export_presets,
+    BZ98TOOLS_MT_sdf_export_presets,
+    BZ98TOOLS_MT_geo_delete_export_preset,
+    BZ98TOOLS_MT_vdf_delete_export_preset,
+    BZ98TOOLS_MT_sdf_delete_export_preset,
     OPGenerateVDFCollisionMeshes,
     OPGenerateCollision,
     OPCreateSpinnerHelper,
     OPCaptureRawVDFMatrix,
     AnimationUIList,
     AnimationPanel,
+    BZ98TOOLS_UL_zfs_files,
     BZ98TOOLS_PT_zfs_explorer,
     BZ98TOOLS_OT_open_zfs,
+    BZ98TOOLS_OT_open_zfs_cache_folder,
+    BZ98TOOLS_OT_clear_zfs_cache,
+    BZ98TOOLS_OT_clear_zfs_archive_cache,
     BZ98TOOLS_OT_import_from_zfs,
     ZFSFileEntry,
 ]
@@ -2515,7 +4143,28 @@ def register():
     # ZFS Explorer Properties
     bpy.types.Scene.zfs_files = bpy.props.CollectionProperty(type=ZFSFileEntry)
     bpy.types.Scene.active_zfs_path = bpy.props.StringProperty(name="Active ZFS")
+    bpy.types.Scene.zfs_active_cache_path = bpy.props.StringProperty(name="Active ZFS Cache Path")
+    bpy.types.Scene.zfs_active_index = bpy.props.IntProperty(name="Active ZFS Entry", default=-1)
     bpy.types.Scene.zfs_filter = bpy.props.StringProperty(name="ZFS Filter")
+    bpy.types.Scene.zfs_type_filter = bpy.props.EnumProperty(
+        name="ZFS Type Filter",
+        items=(
+            ('ALL', "All Files", "Show all files"),
+            ('MODELS', "Models", "Show importable GEO, VDF, and SDF files"),
+            ('TEXTURES', "Textures", "Show texture and image files"),
+            ('OTHER', "Other", "Show non-model support files"),
+        ),
+        default='MODELS',
+    )
+    bpy.types.Scene.zfs_cache_dir = bpy.props.StringProperty(
+        name="ZFS Cache Folder",
+        description="Folder used to keep extracted ZFS dependencies available after import",
+        default=get_default_zfs_cache_dir(),
+        subtype='DIR_PATH',
+    )
+    bpy.types.Scene.zfs_last_import_path = bpy.props.StringProperty(name="Last ZFS Import Path")
+    bpy.types.Scene.bz_validation_issues = bpy.props.CollectionProperty(type=ValidationIssuePropertyGroup)
+    bpy.types.Scene.bz_validation_signature = bpy.props.StringProperty(name="Validation Signature")
 
 def unregister():
     # Remove menus first so UI won't try to use unregistered classes
@@ -2531,7 +4180,14 @@ def unregister():
         (bpy.types.Scene, "SDFVDFPropertyGroup"),
         (bpy.types.Scene, "zfs_files"),
         (bpy.types.Scene, "active_zfs_path"),
+        (bpy.types.Scene, "zfs_active_cache_path"),
+        (bpy.types.Scene, "zfs_active_index"),
         (bpy.types.Scene, "zfs_filter"),
+        (bpy.types.Scene, "zfs_type_filter"),
+        (bpy.types.Scene, "zfs_cache_dir"),
+        (bpy.types.Scene, "zfs_last_import_path"),
+        (bpy.types.Scene, "bz_validation_issues"),
+        (bpy.types.Scene, "bz_validation_signature"),
     ):
         if hasattr(owner, prop_name):
             delattr(owner, prop_name)
