@@ -1,5 +1,6 @@
 
 import os
+import math
 from statistics import mean
 import traceback
 from typing import List, Dict, Set
@@ -23,6 +24,66 @@ def _get_log_file():
     log_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'log')
     os.makedirs(log_dir, exist_ok=True)
     return os.path.join(log_dir, 'kenshi_io_OGRE.log')
+
+
+def _build_safe_split_normals(raw_normals, expected_len: int):
+    if expected_len <= 0 or raw_normals is None:
+        return None
+
+    try:
+        normal_count = len(raw_normals)
+    except TypeError:
+        return None
+
+    if normal_count != expected_len:
+        return None
+
+    safe_normals = []
+    for normal in raw_normals:
+        try:
+            x = float(normal[0])
+            y = float(normal[1])
+            z = float(normal[2])
+        except (TypeError, ValueError, IndexError):
+            return None
+
+        if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+            return None
+
+        length_sq = (x * x) + (y * y) + (z * z)
+        if length_sq <= 1.0e-12:
+            safe_normals.append((0.0, 0.0, 1.0))
+            continue
+
+        inv_len = 1.0 / math.sqrt(length_sq)
+        safe_normals.append((x * inv_len, y * inv_len, z * inv_len))
+
+    return safe_normals
+
+
+def _try_apply_custom_split_normals(
+        operator: Operator,
+        me: Mesh,
+        raw_normals,
+        label: str,
+        require_exact_loops: int = 0) -> bool:
+    me.validate(verbose=False)
+    me.update()
+
+    expected_len = require_exact_loops if require_exact_loops > 0 else len(me.loops)
+    safe_normals = _build_safe_split_normals(raw_normals, expected_len)
+    if not safe_normals:
+        operator.report({'WARNING'}, f'Skipped unsafe custom normals for {label}')
+        print(f'Warning: Skipped unsafe custom normals for {label}')
+        return False
+
+    try:
+        me.normals_split_custom_set(safe_normals)
+        return True
+    except RuntimeError as exc:
+        operator.report({'WARNING'}, f'Skipped custom normals for {label}: {exc}')
+        print(f'Warning: Skipped custom normals for {label}: {exc}')
+        return False
 
 
 def set_bone_head_position(bones: List[BoneData]):
@@ -171,12 +232,14 @@ def create_skeleton(
 
 def create_mesh(
         context: Context,
+        operator: Operator,
         import_info_log: List[str],
         mesh_data: MeshData,
         armature: Object,
         bone_map: Dict[str, str],
         mesh_name: str,
         import_normals: bool = True,
+        normal_mode: str = 'custom',
         import_shapekeys: bool = True,
         create_materials: bool = True,
         use_filename: bool = False,
@@ -319,12 +382,12 @@ def create_mesh(
             bpy.ops.mesh.remove_doubles(threshold=0.0001)
             bpy.ops.object.mode_set(mode='OBJECT')
 
-        if import_normals and submesh.geometry.has_normals:
+        if import_normals and normal_mode == 'custom' and submesh.geometry.has_normals:
             normals = submesh.get_normals()
 
             noChange = len(me.loops) == (submesh.face_count * 3)
             if noChange:
-                me.normals_split_custom_set(normals)
+                _try_apply_custom_split_normals(operator, me, normals, submesh_name)
             else:
                 print('Removed',
                       submesh.face_count - len(me.loops) / 3,
@@ -341,7 +404,7 @@ def create_mesh(
                             split_append(normals[vx])
 
                 if len(split) == len(me.loops):
-                    me.normals_split_custom_set(split)
+                    _try_apply_custom_split_normals(operator, me, split, submesh_name)
                 else:
                     print('Warning: Failed to import mesh normals',
                           polyIndex,
@@ -481,6 +544,7 @@ def load(operator: Operator,
          context: Context,
          filepath: str,
          import_normals: bool = True,
+         normal_mode: str = 'custom',
          import_shapekeys: bool = True,
          import_animations: bool = False,
          round_frames: bool = False,
@@ -539,12 +603,14 @@ def load(operator: Operator,
                     operator.report({'WARNING'}, 'Failed to load linked skeleton')
 
         create_mesh(context=context,
+                    operator=operator,
                     import_info_log=import_info_log,
                     mesh_data=mesh_data,
                     armature=selected_skeleton,
                     bone_map=bone_map,
                     mesh_name=os.path.splitext(mesh_file)[0],
                     import_normals=import_normals,
+                    normal_mode=normal_mode,
                     import_shapekeys=import_shapekeys,
                     select_encoding=select_encoding,
                     create_materials=create_materials,

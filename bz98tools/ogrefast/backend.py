@@ -60,6 +60,7 @@ def import_mesh(
             context,
             filepath,
             import_normals=import_normals,
+            normal_mode=normal_mode,
             import_shapekeys=import_shapekeys,
             import_animations=import_animations,
             round_frames=round_frames,

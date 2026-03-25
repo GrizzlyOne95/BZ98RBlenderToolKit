@@ -177,6 +177,60 @@ blender_version = 259
 rounding_epsilon = 1e-4
 
 
+def _build_safe_split_normals(raw_normals, expected_len):
+    if expected_len <= 0 or raw_normals is None:
+        return None
+
+    try:
+        normal_count = len(raw_normals)
+    except TypeError:
+        return None
+
+    if normal_count != expected_len:
+        return None
+
+    safe_normals = []
+    for normal in raw_normals:
+        try:
+            x = float(normal[0])
+            y = float(normal[1])
+            z = float(normal[2])
+        except (TypeError, ValueError, IndexError):
+            return None
+
+        if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
+            return None
+
+        length_sq = (x * x) + (y * y) + (z * z)
+        if length_sq <= 1.0e-12:
+            safe_normals.append((0.0, 0.0, 1.0))
+            continue
+
+        inv_len = 1.0 / math.sqrt(length_sq)
+        safe_normals.append((x * inv_len, y * inv_len, z * inv_len))
+
+    return safe_normals
+
+
+def _try_apply_custom_split_normals(operator, me, raw_normals, label):
+    me.validate(verbose=False)
+    me.update()
+
+    safe_normals = _build_safe_split_normals(raw_normals, len(me.loops))
+    if not safe_normals:
+        operator.report({'WARNING'}, f"Skipped unsafe custom normals for {label}")
+        print('Warning: Skipped unsafe custom normals for', label)
+        return False
+
+    try:
+        me.normals_split_custom_set(safe_normals)
+        return True
+    except RuntimeError as exc:
+        operator.report({'WARNING'}, f"Skipped custom normals for {label}: {exc}")
+        print('Warning: Skipped custom normals for', label, ':', exc)
+        return False
+
+
 def _run_converter(args):
     try:
         result = subprocess.run(args, check=False)
@@ -1380,9 +1434,9 @@ def bCreateSubMeshes(meshData, meshName, import_params):
                             split.append(normals[vx])
 
                 if len(split) == len(me.loops):
-                    me.normals_split_custom_set(split)
+                    _try_apply_custom_split_normals(import_params['operator'], me, split, meshName)
                 else:
-                    operator.report( {'WARNING'}, "Failed to import mesh normals")
+                    import_params['operator'].report( {'WARNING'}, "Failed to import mesh normals")
                     print('Warning: Failed to import mesh normals',
                         polyIndex, '/', len(me.polygons))
 
@@ -1460,6 +1514,7 @@ def load(operator,
          import_materials=True):
     
     import_params = {
+        "operator" : operator,
         "xml_converter" : xml_converter,
         "keep_xml" : keep_xml,
         "import_normals" : import_normals,
