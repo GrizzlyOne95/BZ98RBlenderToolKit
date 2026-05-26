@@ -4,10 +4,10 @@
 ---
 
 ## Overview
-The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with both classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`) and Battlezone Redux model formats (`.MESH`, `.SKELETON`, `.MATERIAL`).  
+The **Battlezone Blender Toolkit** is a modern, unified Blender add-on for working with classic Battlezone model formats (`.VDF`, `.SDF`, `.GEO`, `.MAP`), Battlezone Redux model formats (`.MESH`, `.SKELETON`, `.MATERIAL`), and Battlezone map terrain workflows (`.HG2`).
 It combines multiple tools into one streamlined workflow — no external scripts or converters required.
 
-This plugin targets the **Blender 4.5 LTS** line, with **quaternion animation**, **auto Ogre export**, and major stability fixes for the Red Odyssey VDFs.
+This plugin targets the **Blender 4.5 LTS** and **Blender 5.1** lines, with **quaternion animation**, **auto Ogre export**, integrated map tooling, and major stability fixes for the Red Odyssey VDFs.
 
 ---
 
@@ -19,12 +19,15 @@ This plugin targets the **Blender 4.5 LTS** line, with **quaternion animation**,
 ## Quick Feature Summary
 
 - ✅ **Import models directly from ZFS archives** (Auto-extracts dependencies)
-- ✅ Full **Blender 4.5 LTS** compatibility  
+- ✅ Full **Blender 4.5 LTS** and **Blender 5.1** compatibility
 - ✅ **Auto Ogre Mesh/Skeleton/Material export** (Redux-ready)  
-- ✅ **Optional native Ogre mesh/skeleton fast path** on Windows Blender 4.5.x
+- ✅ **Optional native Ogre mesh/skeleton fast path** on Windows Blender 4.5.x; Blender 5.1 falls back to XML conversion until a Python 3.13 native backend is available
+- ✅ **Integrated BZMapIO map tools** for `.HG2` terrain import/export, texture tools, and game playback data
 - ✅ **Quaternion animation** import/export  
 - ✅ **Automatic `.MAP` → `.PNG` conversion** for textures on import
 - ✅ **Automatic `.PNG` or `.MAP` → `.DDS` conversion** for textures on export
+- ✅ **Clear export modes** for Legacy Only, Legacy + Redux, and Redux Only workflows
+- ✅ **Hardpoint/turret GEO suffix validation** for common `gc`, `gr`, `gm`, `gs`, `tx`, and `ty` naming conventions
 - ✅ **Safe material name auto-generation**  
 - ✅ **Auto UV unwrap** when missing  
 - ✅ **Accurate GEO scaling and GEOFlags**  
@@ -56,6 +59,7 @@ This process required multiple exports, conversions, CLI tools, next to zero doc
 Everything is handled inside Blender:
 
 - **Import models directly from `.ZFS` archives** (Explorer in Scene tab)
+- Open the bundled BZMapIO template and import/export `.HG2` terrain from the Battlezone panel
 - Import or export `.GEO`, `.VDF`, and `.SDF` directly  
 - Auto-convert `.MAP` textures to `.PNG`  
 - Export or Import Redux `.mesh`, `.skeleton`, and `.material` automatically, complete with animations
@@ -65,6 +69,36 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
+**Blender 5.1 Compatibility, Map Tooling, Export UX, and Validation Updates**
+
+#### Added
+- **Integrated BZMapIO**
+  - Added Battlezone map panels in the 3D View sidebar.
+  - Bundled the BZMapIO `.blend` template for one-click setup.
+  - Added `.HG2` terrain import/export, map texture tools, and game playback log tooling.
+- **Blender 5.1 support**
+  - Verified registration, model import/export, Redux mesh export, ZFS browsing, and HG2 map import under Blender 5.1.2.
+  - Added compatibility for Blender 5.1 layered Action f-curves in VDF/SDF animation export.
+  - Added compatibility wrappers for map operators changed or removed in modern Blender.
+- **Export workflow clarity**
+  - Legacy exporters are labeled as **Legacy Geometry (.geo)**, **Legacy Vehicle (.vdf)**, and **Legacy Structure (.sdf)**.
+  - Redux direct export is labeled as **Redux Mesh Only (.mesh)**.
+  - Legacy exporters now describe whether the output mode is **Legacy only** or **Legacy + Redux**.
+  - The Redux checkbox is labeled **Also Create Redux Files** to make it clear that Redux files are generated after the legacy export.
+- **Modder validation**
+  - Added validation warnings for documented hardpoint and turret suffix conventions such as `gc1`, `gr1`, `gm1`, `gs1`, `tx1`, and `ty1`.
+
+#### Changed
+- Shortened Redux option labels so Blender dialogs do not truncate important setting names.
+- Moved command-line flag names into tooltips where they are still available without crowding the UI.
+- Filtered the GEO Type Reference down to confirmed/handled type entries.
+- Tracked bundled `.blend` assets through Git LFS to keep the repository lightweight.
+
+#### Notes
+- Blender 5.1 uses Python 3.13. The bundled native Ogre backend currently includes a Python 3.11 Windows module, so Blender 5.1 uses the legacy XML converter fallback. Export still works; native Blender 5.1 Ogre support requires a future `cp313-win_amd64` native backend build.
+
+---
+
 **Import from ZFS, Blender 4.5 LTS Compatibility, Ogre Auto-Port Integration, and Major Pipeline Updates**
 
 #### Added
@@ -132,15 +166,16 @@ Everything is handled inside Blender:
 | Category | Update |
 |-----------|---------|
 | **ZFS** | **Directly browse and import from .ZFS archives** |
-| Compatibility | Full Blender 4.5 LTS compliance |
+| Compatibility | Full Blender 4.5 LTS and Blender 5.1 compliance |
 | File I/O | Safe ASCII decoding, EOF handling |
+| Maps | Integrated BZMapIO `.HG2` terrain, texture, and playback tools |
 | Materials | `.MAP → .PNG` conversion and name auto-fill |
 | Geometry | Scale, collision, and UV safety |
 | Animation | Quaternion/Euler auto-conversion |
 | VDF | Robust ANIM/COLP parsing, visible collision boxes |
 | SDF | Correct GEOFlags/DDR fields, fixed struct layouts |
-| Export | Auto-port to Ogre mesh/skeleton/material |
-| UI | Organized panels and GEOFlags range fix |
+| Export | Explicit Legacy Only, Legacy + Redux, and Redux Only workflows |
+| UI | Organized panels, confirmed GEO type reference, clearer Redux labels |
 | Stability | Major crash and data-corruption fixes |
 
 ---
@@ -152,6 +187,7 @@ Everything is handled inside Blender:
 | **DivisionByZero** | Original Python Ogre mesh port script |
 | **Commando950** | Original SDF/VDF/GEO Blender plugin |
 | **Kindrad** | Ogre import/export base code (Kenshi add-on) |
+| **Business Lawyer** | Original Battlezone Map IO tool |
 | **GrizzlyOne95** | Blender 4.5 LTS update, Ogre integration, quaternion/scaling/UI modernization, multiple bug fixes |
 
 ---
