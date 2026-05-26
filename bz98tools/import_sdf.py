@@ -19,6 +19,50 @@ importlib.reload(sdf_classes)
 importlib.reload(import_geo)
 
 
+def _add_import_diagnostic(scene, severity, scope, target, message):
+    diagnostics = getattr(scene, "bz_import_diagnostics", None)
+    if diagnostics is None:
+        return
+    item = diagnostics.add()
+    item.severity = severity
+    item.scope = scope
+    item.target = target
+    item.message = message
+
+
+def _is_valid_legacy_geo_name(name):
+    if not name:
+        return False
+    lowered = name.lower()
+    if lowered.startswith("null"):
+        return False
+    if len(name) > 8:
+        return False
+    for char in name:
+        if ord(char) < 32 or ord(char) > 126:
+            return False
+        if not (char.isalnum() or char == "_"):
+            return False
+    return True
+
+
+def _is_valid_sdf_geo_slot(geo):
+    if not _is_valid_legacy_geo_name(getattr(geo, "name", "")):
+        return False
+    parent = getattr(geo, "parent", "")
+    if parent.lower() != "world" and not _is_valid_legacy_geo_name(parent):
+        return False
+    geo_type = int(getattr(geo, "type", -1))
+    return 0 <= geo_type <= 100
+
+
+def _diagnostic_name(name):
+    if not name:
+        return "<blank>"
+    cleaned = "".join(char if 32 <= ord(char) <= 126 else "?" for char in str(name))
+    return cleaned or "<blank>"
+
+
 def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
          ImportMapTextures=False):
     EXIT = sdf_classes.EXITSection() #We going to be using this class to read through exit sections.
@@ -44,6 +88,8 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
         fileContent = file.read()
         position = 0
         scene = context.scene
+        if hasattr(scene, "bz_import_diagnostics"):
+            scene.bz_import_diagnostics.clear()
         
         #Read the VDF header information.
         position = SDFHeader.Read(fileContent, position)
@@ -53,10 +99,24 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
         
         #Read SDFC header.
         position = SDFC.Read(fileContent, position)
-        
+        _add_import_diagnostic(
+            scene,
+            "INFO",
+            "SDF",
+            os.path.basename(filepath),
+            f"Structure '{SDFC.name}', type {SDFC.structuretype}.",
+        )
+
         #Read SGEO header.
         position = SGEO.Read(fileContent, position)
-        
+        _add_import_diagnostic(
+            scene,
+            "INFO",
+            "SGEO",
+            "slots",
+            f"{SGEO.geocount} GEO slots per LOD band across 6 SDF bands.",
+        )
+
         for LOD in range(6):
             for i in range(SGEO.geocount):
                 GEO = sdf_classes.GEOData()
@@ -87,6 +147,25 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                 Position = sdf_classes.ANIMPosition()
                 position = Position.Read(fileContent, position)
                 ANIMpositions.append(Position)
+            _add_import_diagnostic(
+                scene,
+                "INFO",
+                "ANIM",
+                ANIM.name,
+                (
+                    f"{ANIM.elementscount} elements, {ANIM.orientationscount} orientations, "
+                    f"{ANIM.rotationcount} rotations, {ANIM.translation2count} Translation2 keys, "
+                    f"{ANIM.positioncount} position keys."
+                ),
+            )
+            if ANIM.translation2count > 0:
+                _add_import_diagnostic(
+                    scene,
+                    "INFO",
+                    "ANIM",
+                    "Translation2",
+                    "This file uses the niche Translation2 position track.",
+                )
             position = EXIT.Read(fileContent, position)
 
         if anim_found:
@@ -106,10 +185,12 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
         OBJList = {}
         currentlod = 0
         currentgeo = 0
-        for GEO in GEOList:          
-            if GEO.name[0:4].lower() != 'null':
+        skipped_slots = 0
+        skipped_samples = []
+        for GEO in GEOList:
+            if _is_valid_sdf_geo_slot(GEO):
                 geofilename = os.path.dirname(filepath)+'/' + GEO.name + '.geo'
-                
+
                 #This code is mostly for Linux. This will allow us to search for a file if it doesn't exist with the file's correct capitalization.
                 if not os.path.exists(geofilename):
                     for root, dirs, files in os.walk(os.path.dirname(geofilename)):
@@ -117,15 +198,24 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                             if (GEO.name + '.geo').lower() == afile.lower():
                                 geofilename = os.path.join(os.path.dirname(geofilename), afile.lower())
                                 break
-                
-                #Load the GEO.
-                newobj = import_geo.geoload(
-                    context, 
-                    geofilename, 
-                    PreserveFaceColors=PreserveFaceColors,
-                    ImportMapTextures=ImportMapTextures,
-                    map_base_dir=os.path.dirname(filepath),
-                )
+
+                newobj = None
+                try:
+                    newobj = import_geo.geoload(
+                        context,
+                        geofilename,
+                        PreserveFaceColors=PreserveFaceColors,
+                        ImportMapTextures=ImportMapTextures,
+                        map_base_dir=os.path.dirname(filepath),
+                    )
+                except Exception as exc:
+                    _add_import_diagnostic(
+                        scene,
+                        "WARNING",
+                        "SGEO",
+                        GEO.name,
+                        f"Could not load referenced GEO file: {exc}",
+                    )
 
                 if newobj != None:
                     geolod = currentlod
@@ -156,10 +246,24 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                     blenobj.obj_index = currentgeo
                     blenobj.obj_lod = geolod
                     OBJList.update({GEO.name.lower():blenobj})
+            else:
+                if not str(getattr(GEO, "name", "")).lower().startswith("null"):
+                    skipped_slots += 1
+                    if len(skipped_samples) < 5:
+                        skipped_samples.append(f"{_diagnostic_name(GEO.name)} / type {getattr(GEO, 'type', '')}")
             currentgeo = currentgeo + 1
             if currentgeo == SGEO.geocount:
                 currentgeo = 0
                 currentlod = currentlod + 1
+
+        if skipped_slots:
+            _add_import_diagnostic(
+                scene,
+                "WARNING",
+                "SGEO",
+                "skipped slots",
+                f"Skipped {skipped_slots} invalid or non-legacy GEO slots: {', '.join(skipped_samples)}.",
+            )
                 
         for Model in OBJList.values():
             #Are we not parented to the world and is there a parent that exists?

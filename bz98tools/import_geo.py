@@ -24,6 +24,17 @@ importlib.reload(geo_classes)
 BZ_FORCE_ACT_NAME = "moon.act"
 
 
+def _add_import_diagnostic(scene, severity, scope, target, message):
+    diagnostics = getattr(scene, "bz_import_diagnostics", None)
+    if diagnostics is None:
+        return
+    item = diagnostics.add()
+    item.severity = severity
+    item.scope = scope
+    item.target = target
+    item.message = message
+
+
 BUILTIN_ACT_PALETTES = {
     'moon.act': [
         (0, 0, 0),
@@ -937,12 +948,26 @@ def geoload(context, geofilepath, *, name=None, flip=True,
                     uv_layer[loop_index].uv = (0.0, 0.0)
 
         Slots = {}
-        face_unknown_attr = mesh.attributes.new(name="bz_face_unknown_raw", type='INT', domain='FACE')
-        face_shade_attr = mesh.attributes.new(name="bz_face_shade_type", type='INT', domain='FACE')
-        face_texture_attr = mesh.attributes.new(name="bz_face_texture_type", type='INT', domain='FACE')
-        face_xluscent_attr = mesh.attributes.new(name="bz_face_xluscent_type", type='INT', domain='FACE')
-        face_parent_attr = mesh.attributes.new(name="bz_face_parent", type='INT', domain='FACE')
-        face_node_attr = mesh.attributes.new(name="bz_face_node", type='INT', domain='FACE')
+        face_attribute_names = (
+            "bz_face_unknown_raw",
+            "bz_face_shade_type",
+            "bz_face_texture_type",
+            "bz_face_xluscent_type",
+            "bz_face_parent",
+            "bz_face_node",
+        )
+        for attr_name in face_attribute_names:
+            if mesh.attributes.get(attr_name) is None:
+                mesh.attributes.new(name=attr_name, type='INT', domain='FACE')
+
+        # Blender 4.5 can invalidate RNA attribute handles after adding more
+        # attributes, so fetch them after all creation is complete.
+        face_unknown_attr = mesh.attributes["bz_face_unknown_raw"]
+        face_shade_attr = mesh.attributes["bz_face_shade_type"]
+        face_texture_attr = mesh.attributes["bz_face_texture_type"]
+        face_xluscent_attr = mesh.attributes["bz_face_xluscent_type"]
+        face_parent_attr = mesh.attributes["bz_face_parent"]
+        face_node_attr = mesh.attributes["bz_face_node"]
 
         for i, face in enumerate(used_faces):
             if i >= len(mesh.polygons):
@@ -998,6 +1023,49 @@ def load(context, filepath, *, PreserveFaceColors=True, ImportMapTextures=False)
     if not os.path.exists(filepath):
         raise Exception(filepath + ' was not found!')
         return {'FINISHED'}
+
+    scene = getattr(context, "scene", None)
+    if scene is not None and hasattr(scene, "bz_import_diagnostics"):
+        scene.bz_import_diagnostics.clear()
+        with open(filepath, mode='rb') as file:
+            file_content = file.read()
+        header = geo_classes.GEOHeader(struct.unpack("=4si16siii", file_content[:36]))
+        position = 36 + (header.Vertices * 12) + (header.Vertices * 12)
+        string_headers = {}
+        face_parents = {}
+        face_nodes = {}
+        for _ in range(header.Faces):
+            face = geo_classes.GEOFace(struct.unpack("=iiBBBffffi3s13sii", file_content[position:position + 55]))
+            position += 55 + (face.Vertices * 16)
+            raw = getattr(face, "StringHeaderRaw", b"\x00\x00\x00")
+            string_headers[raw] = string_headers.get(raw, 0) + 1
+            face_parents[face.Parent] = face_parents.get(face.Parent, 0) + 1
+            face_nodes[face.Node] = face_nodes.get(face.Node, 0) + 1
+
+        _add_import_diagnostic(
+            scene,
+            "INFO",
+            "GEO",
+            header.GEOName,
+            f"{header.Vertices} vertices, {header.Faces} faces, header raw {header.Unknown}/{header.Unknown2}.",
+        )
+        if string_headers:
+            top_raw, top_count = max(string_headers.items(), key=lambda item: item[1])
+            _add_import_diagnostic(
+                scene,
+                "INFO",
+                "GEO Faces",
+                "string header",
+                f"Most common face bytes: {top_raw[0]:02X} {top_raw[1]:02X} {top_raw[2]:02X} on {top_count} faces.",
+            )
+        if len(face_parents) > 1 or len(face_nodes) > 1:
+            _add_import_diagnostic(
+                scene,
+                "INFO",
+                "GEO Faces",
+                "hierarchy",
+                f"Face parent values: {len(face_parents)} unique; face node values: {len(face_nodes)} unique.",
+            )
 
     geoload(
         context,

@@ -30,6 +30,17 @@ def _get_target_collection(context):
     return bpy.context.collection
 
 
+def _add_import_diagnostic(scene, severity, scope, target, message):
+    diagnostics = getattr(scene, "bz_import_diagnostics", None)
+    if diagnostics is None:
+        return
+    item = diagnostics.add()
+    item.severity = severity
+    item.scope = scope
+    item.target = target
+    item.message = message
+
+
 def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
          PreserveFaceColors=True, ImportMapTextures=False):
     EXIT = vdf_classes.EXITSection()  # We are going to be using this class to read through exit sections.
@@ -57,6 +68,8 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         position = 0
         scene = context.scene
         target_collection = _get_target_collection(context)
+        if hasattr(scene, "bz_import_diagnostics"):
+            scene.bz_import_diagnostics.clear()
 
         # Read the VDF header information.
         position = VDFHeader.Read(fileContent, position)
@@ -67,6 +80,21 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         # Read VDFC header.
         position = VDFC.Read(fileContent, position)
         position = EXIT.Read(fileContent, position)
+        _add_import_diagnostic(
+            scene,
+            "INFO",
+            "VDF",
+            os.path.basename(filepath),
+            f"Vehicle '{VDFC.name}', type {VDFC.vehicletype}, size {VDFC.vehiclesize}.",
+        )
+        if int(getattr(VDFC, "null", 0)) != 0:
+            _add_import_diagnostic(
+                scene,
+                "WARNING",
+                "VDFC",
+                "raw null",
+                f"Nonzero VDFC trailing int preserved only as diagnostics: {int(VDFC.null)}.",
+            )
 
         # Take our VDF information and load it into the scene.
         scene.SDFVDFPropertyGroup['Name'] = VDFC.name
@@ -83,6 +111,13 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
 
         # Read VGEO header.
         position = VGEO.Read(fileContent, position)
+        _add_import_diagnostic(
+            scene,
+            "INFO",
+            "VGEO",
+            "slots",
+            f"{VGEO.geocount} GEO slots per LOD band across 28 VDF bands.",
+        )
 
         # Read all GEO slots (28 LOD-bands × geocount), including NULLs
         for i in range(28):
@@ -103,6 +138,13 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         if position + 4 > len(fileContent):
             # No ANIM / EXIT / COLP – fall back to empty collision data.
             COLP.data = [0.0] * 12
+            _add_import_diagnostic(
+                scene,
+                "WARNING",
+                "COLP",
+                "collision",
+                "No optional sections were present after VGEO; empty collision helpers were created.",
+            )
         else:
             sectionname = struct.unpack('4s', fileContent[position:position + 4])
 
@@ -130,6 +172,25 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                     Position = vdf_classes.ANIMPosition()
                     position = Position.Read(fileContent, position)
                     ANIMpositions.append(Position)
+                _add_import_diagnostic(
+                    scene,
+                    "INFO",
+                    "ANIM",
+                    ANIM.name,
+                    (
+                        f"{ANIM.elementscount} elements, {ANIM.orientationscount} orientations, "
+                        f"{ANIM.rotationcount} rotations, {ANIM.translation2count} Translation2 keys, "
+                        f"{ANIM.positioncount} position keys."
+                    ),
+                )
+                if ANIM.translation2count > 0:
+                    _add_import_diagnostic(
+                        scene,
+                        "INFO",
+                        "ANIM",
+                        "Translation2",
+                        "This file uses the niche Translation2 position track.",
+                    )
 
                 # EXIT after ANIM, if there is enough data left.
                 if position + EXIT.binlength <= len(fileContent):
@@ -144,6 +205,13 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                 colp_header = struct.unpack('4s', fileContent[position:position + 4])[0]
                 if colp_header == b'COLP' and position + COLP.binlength <= len(fileContent):
                     position = COLP.Read(fileContent, position)
+                    _add_import_diagnostic(
+                        scene,
+                        "INFO",
+                        "COLP",
+                        "collision",
+                        "Imported VDF inner/outer collision box values.",
+                    )
                     if position + EXIT.binlength <= len(fileContent):
                         next_header = struct.unpack('4s', fileContent[position:position + 4])[0]
                         if next_header == b'EXIT':
@@ -155,12 +223,33 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                             position = SCPS.Read(fileContent, position)
                             scps_data = [int(v) for v in SCPS.data]
                             scps_found = True
+                            _add_import_diagnostic(
+                                scene,
+                                "INFO",
+                                "SCPS",
+                                "raw data",
+                                f"SCPS raw ints: {scps_data[0]}, {scps_data[1]}, {scps_data[2]}.",
+                            )
                 else:
                     # No valid COLP – use an empty collision box.
                     COLP.data = [0.0] * 12
+                    _add_import_diagnostic(
+                        scene,
+                        "WARNING",
+                        "COLP",
+                        "collision",
+                        "No VDF COLP collision box section was found; empty collision helpers were created.",
+                    )
             else:
                 # Not enough bytes even for a COLP header.
                 COLP.data = [0.0] * 12
+                _add_import_diagnostic(
+                    scene,
+                    "WARNING",
+                    "COLP",
+                    "collision",
+                    "File ended before a VDF COLP collision box section; empty collision helpers were created.",
+                )
 
         if anim_found:
             scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = True

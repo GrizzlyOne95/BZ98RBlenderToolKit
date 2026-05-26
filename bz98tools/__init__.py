@@ -76,7 +76,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "Commando950/DivisionByZero/GrizzlyOne95",
-    "version": (1, 4, 0),
+    "version": (1, 4, 1),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -518,13 +518,13 @@ class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
     )
 
 geotypes = []
-# Build default "Unknown" entries up through the supported property range.
-for i in range(0, 101):
-    geotypes.append((i, f"{i} - Unknown", ""))
+geotype_lookup = {}
 
 
 def insertgeotypedata(idx, label):
-    geotypes[idx] = (idx, f"{idx} - {label}", "")
+    item = (idx, f"{idx} - {label}", "")
+    geotypes.append(item)
+    geotype_lookup[idx] = item
 
 
 # -------------------------------------------------------------------
@@ -607,19 +607,17 @@ GEO_TYPE_UI_HINTS = {
 
 
 def _get_geotype_label(geo_type_value):
-    for idx, label, _ in geotypes:
-        if idx == int(geo_type_value):
-            return label
+    item = geotype_lookup.get(int(geo_type_value))
+    if item is not None:
+        return item[1]
     return f"{int(geo_type_value)} - Unknown"
 
 
 def _get_geotype_enum_value(self):
     value = int(getattr(self, "GEOType", 60))
-    if value < 0:
-        return 0
-    if value > 100:
-        return 100
-    return value
+    if value in geotype_lookup:
+        return value
+    return 60
 
 
 def _set_geotype_enum_value(self, value):
@@ -640,6 +638,59 @@ def _draw_geotype_hint(layout, geo_type_value):
     else:
         icon = 'INFO'
     box.label(text=message, icon=icon)
+
+
+def _get_object_lod_label(obj):
+    name = getattr(obj, "name", "")
+    if len(name) >= 4 and name[3] in {'1', '2', '3'}:
+        return f"LOD {name[3]}"
+    return "LOD unknown"
+
+
+def _get_selected_face_indices(obj):
+    if obj is None or getattr(obj, "type", None) != 'MESH':
+        return []
+
+    mesh = getattr(obj, "data", None)
+    if mesh is None:
+        return []
+
+    if getattr(obj, "mode", "OBJECT") == 'EDIT':
+        try:
+            import bmesh
+            bm = bmesh.from_edit_mesh(mesh)
+            bm.faces.ensure_lookup_table()
+            return [face.index for face in bm.faces if face.select]
+        except Exception:
+            return []
+
+    return [poly.index for poly in mesh.polygons if getattr(poly, "select", False)]
+
+
+def _get_face_attr_int(mesh, attr_name, face_index, default_value=0):
+    attrs = getattr(mesh, "attributes", None)
+    if attrs is None:
+        return int(default_value)
+    attr = attrs.get(attr_name)
+    if attr is None or attr.domain != 'FACE':
+        return int(default_value)
+    try:
+        return int(attr.data[face_index].value)
+    except Exception:
+        return int(default_value)
+
+
+def _summarize_face_values(mesh, face_indices, attr_name, default_value=0):
+    values = [
+        _get_face_attr_int(mesh, attr_name, face_index, default_value)
+        for face_index in face_indices
+    ]
+    if not values:
+        return "None"
+    unique_values = sorted(set(values))
+    if len(unique_values) == 1:
+        return str(unique_values[0])
+    return f"Mixed ({len(unique_values)} values, {min(unique_values)}..{max(unique_values)})"
 
 # -------------------------------
 # Animation Index Reference Popup
@@ -915,8 +966,8 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
 
     
     SDFDDR: bpy.props.IntProperty(
-        name = "DDR",
-        description="Unknown what this does. Set to 50000 on most GEOs",
+        name = "SDF Behavior / Draw Distance",
+        description="Raw SDF DDR field. Stock structures commonly use 500000; some mines/powerups use smaller values such as 200.",
         default = 50000,
         min = 0,
         max = 5000000
@@ -924,32 +975,32 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
 
     
     SDFX: bpy.props.FloatProperty(
-        name = "X",
-        description="Controls things like spinner directions and more. Exact features need to be documented",
+        name = "Behavior X",
+        description="Raw SDF behavior vector X. Used by some special structure helpers.",
         default = 0,
         min = -500000.0,
         max = 500000.0
     )
     
     SDFY: bpy.props.FloatProperty(
-        name = "Y",
-        description="Controls things like spinner directions and more. Exact features need to be documented",
+        name = "Behavior Y / Spin Speed",
+        description="Raw SDF behavior vector Y. Stock type-15 structure spinners commonly use this as spin speed, such as 0.1 or 0.2.",
         default = 0,
         min = -500000.0,
         max = 500000.0
     )
 
     SDFZ: bpy.props.FloatProperty(
-        name = "Z",
-        description="Controls things like spinner directions and more. Exact features need to be documented",
+        name = "Behavior Z",
+        description="Raw SDF behavior vector Z. Used by some special structure helpers.",
         default = 0,
         min = -500000.0,
         max = 500000.0
     )
     
     SDFTime: bpy.props.FloatProperty(
-        name = "Time",
-        description="Unknown. Need documentation",
+        name = "Behavior Time / Value",
+        description="Raw SDF time/value field. Most stock structures leave this at 0; some mine/powerup-like SDFs use nonzero values.",
         default = 0.0,
         min = -500000.0,
         max = 500000.0
@@ -1036,6 +1087,24 @@ class ValidationIssuePropertyGroup(bpy.types.PropertyGroup):
     export_modes: bpy.props.StringProperty(name="Export Modes")
     object_name: bpy.props.StringProperty(name="Object Name")
     action: bpy.props.StringProperty(name="Action")
+
+
+class ImportDiagnosticPropertyGroup(bpy.types.PropertyGroup):
+    severity: bpy.props.StringProperty(name="Severity")
+    scope: bpy.props.StringProperty(name="Scope")
+    target: bpy.props.StringProperty(name="Target")
+    message: bpy.props.StringProperty(name="Message")
+
+
+def _add_import_diagnostic(scene, severity, scope, target, message):
+    diagnostics = getattr(scene, "bz_import_diagnostics", None)
+    if diagnostics is None:
+        return
+    item = diagnostics.add()
+    item.severity = severity
+    item.scope = scope
+    item.target = target
+    item.message = message
 
 
 def _store_validation_results(scene, issues):
@@ -1643,6 +1712,44 @@ class BZ98TOOLS_PT_validation(bpy.types.Panel):
             shown += 1
 
 
+class BZ98TOOLS_PT_import_diagnostics(bpy.types.Panel):
+    bl_idname = "SCENE_PT_BZ_IMPORT_DIAGNOSTICS"
+    bl_label = "File Diagnostics"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        diagnostics = getattr(context.scene, "bz_import_diagnostics", None)
+        if diagnostics is None or len(diagnostics) == 0:
+            layout.label(text="No import diagnostics yet.", icon='INFO')
+            return
+
+        shown = 0
+        for item in diagnostics:
+            if shown >= 30:
+                layout.label(text="More diagnostics are available after the first 30.")
+                break
+
+            if item.severity == "ERROR":
+                icon = 'ERROR'
+            elif item.severity == "WARNING":
+                icon = 'WARNING'
+            else:
+                icon = 'INFO'
+
+            box = layout.box()
+            title = item.scope
+            if item.target:
+                title += f": {item.target}"
+            box.label(text=title, icon=icon)
+            box.label(text=item.message)
+            shown += 1
+
+
 class BattlezoneGEOProperties(bpy.types.Panel):
     bl_idname = "OBJECT_PT_BZ_GEO"
     bl_label = "Battlezone GEO"
@@ -1674,6 +1781,46 @@ class BattlezoneGEOProperties(bpy.types.Panel):
             layout.label(text=f"Vertices: {len(obj.data.vertices)}", icon='MESH_DATA')
         else:
             layout.label(text="Non-mesh object. Advanced helper workflow only.", icon='INFO')
+
+
+class BZ98TOOLS_PT_view3d_selected_geo(bpy.types.Panel):
+    bl_idname = "VIEW3D_PT_BZ_SELECTED_GEO"
+    bl_label = "Selected GEO"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Battlezone"
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context, "object", None) is not None
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+        geo = getattr(obj, "GEOPropertyGroup", None)
+        if geo is None:
+            layout.label(text="No GEO data on active object.", icon='INFO')
+            return
+
+        header = layout.box()
+        header.label(text=obj.name, icon='OBJECT_DATA')
+        row = header.row(align=True)
+        row.scale_y = 1.4
+        row.label(text=f"GEO Type {int(geo.GEOType)}", icon='INFO')
+        header.label(text=_get_geotype_label(geo.GEOType))
+        _draw_geotype_hint(header, geo.GEOType)
+
+        layout.prop(geo, "GEOTypeEnum", text="Type")
+        layout.prop(geo, "GEOFlags", text="Flags")
+
+        info = layout.box()
+        parent_name = obj.parent.name if obj.parent is not None else "WORLD"
+        info.label(text=f"Parent: {parent_name}")
+        info.label(text=_get_object_lod_label(obj))
+        if getattr(obj, "type", None) == 'MESH':
+            info.label(text=f"Vertices: {len(obj.data.vertices)}", icon='MESH_DATA')
+        elif getattr(geo, "IsSpinnerHelper", False):
+            info.label(text="Spinner helper", icon='EMPTY_DATA')
 
 
 class BZ98TOOLS_PT_geo_collision(bpy.types.Panel):
@@ -1716,6 +1863,10 @@ class BZ98TOOLS_PT_geo_sdf(bpy.types.Panel):
             layout.label(text="No GEO data on active object.")
             return
 
+        if int(getattr(geo, "GEOType", 0)) == 15:
+            hint = layout.box()
+            hint.label(text="Type 15 SDF spinner helper", icon='INFO')
+            hint.label(text="Stock structures commonly use Behavior Y as spin speed.")
         layout.prop(geo, "SDFDDR")
         _draw_xyz_row(layout, geo, ("SDFX", "SDFY", "SDFZ"), ("X", "Y", "Z"))
         layout.prop(geo, "SDFTime")
@@ -1780,7 +1931,60 @@ class BZ98TOOLS_PT_geo_advanced(bpy.types.Panel):
         face_box.prop(geo, "GEOFaceXluscentTypeDefault")
         face_box.prop(geo, "GEOFaceParentDefault")
         face_box.prop(geo, "GEOFaceNodeDefault")
-        face_box.label(text="Per-face attrs: bz_face_* (Spreadsheet).")
+
+
+class BZ98TOOLS_PT_geo_face_data(bpy.types.Panel):
+    bl_idname = "OBJECT_PT_BZ_GEO_FACE_DATA"
+    bl_label = "Selected Face Raw Data"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "object"
+    bl_parent_id = "OBJECT_PT_BZ_GEO"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        obj = context.object
+        geo = getattr(obj, "GEOPropertyGroup", None)
+        if geo is None or getattr(obj, "type", None) != 'MESH':
+            layout.label(text="Select a GEO mesh object.", icon='INFO')
+            return
+
+        face_indices = _get_selected_face_indices(obj)
+        if not face_indices:
+            layout.label(text="Select one or more faces in Edit Mode.", icon='INFO')
+            layout.label(text="Object Mode face selection also works when present.")
+            return
+
+        mesh = obj.data
+        header = layout.box()
+        if len(face_indices) == 1:
+            header.label(text=f"Face {face_indices[0]}", icon='FACESEL')
+        else:
+            header.label(text=f"{len(face_indices)} selected faces", icon='FACESEL')
+
+        data_box = layout.box()
+        rows = (
+            ("Shade Byte", "bz_face_shade_type", geo.GEOFaceShadeTypeDefault),
+            ("Texture Byte", "bz_face_texture_type", geo.GEOFaceTextureTypeDefault),
+            ("Translucent Byte", "bz_face_xluscent_type", geo.GEOFaceXluscentTypeDefault),
+            ("Face Parent", "bz_face_parent", geo.GEOFaceParentDefault),
+            ("Face Node", "bz_face_node", geo.GEOFaceNodeDefault),
+            ("Unknown Raw", "bz_face_unknown_raw", geo.GEOFaceUnknownDefault),
+        )
+        for label, attr_name, default_value in rows:
+            row = data_box.row()
+            row.label(text=label)
+            row.label(text=_summarize_face_values(mesh, face_indices, attr_name, default_value))
+
+        if len(face_indices) == 1:
+            face_index = face_indices[0]
+            raw = (
+                _get_face_attr_int(mesh, "bz_face_shade_type", face_index, geo.GEOFaceShadeTypeDefault) & 0xFF,
+                _get_face_attr_int(mesh, "bz_face_texture_type", face_index, geo.GEOFaceTextureTypeDefault) & 0xFF,
+                _get_face_attr_int(mesh, "bz_face_xluscent_type", face_index, geo.GEOFaceXluscentTypeDefault) & 0xFF,
+            )
+            layout.label(text=f"String header bytes: {raw[0]:02X} {raw[1]:02X} {raw[2]:02X}")
 
         
 class BZ98TOOLS_OT_fill_material_texture_name(bpy.types.Operator):
@@ -3668,6 +3872,7 @@ Properties = [
     SDFVDFPropertyGroup,
     MaterialPropertyGroup,
     ValidationIssuePropertyGroup,
+    ImportDiagnosticPropertyGroup,
 ]
 
 class ZFSFileEntry(bpy.types.PropertyGroup):
@@ -4064,11 +4269,14 @@ GUIClasses = [
     BZ98TOOLS_OT_select_validation_target,
     BZ98TOOLS_OT_fix_validation_name,
     BZ98TOOLS_PT_validation,
+    BZ98TOOLS_PT_import_diagnostics,
     BattlezoneGEOProperties,
+    BZ98TOOLS_PT_view3d_selected_geo,
     BZ98TOOLS_PT_geo_collision,
     BZ98TOOLS_PT_geo_sdf,
     BZ98TOOLS_PT_geo_vdf,
     BZ98TOOLS_PT_geo_advanced,
+    BZ98TOOLS_PT_geo_face_data,
     BZ98TOOLS_OT_fill_material_texture_name,
     BZ98TOOLS_OT_fill_material_texture_from_image,
     BattlezoneMaterialProperties,
@@ -4165,6 +4373,7 @@ def register():
     bpy.types.Scene.zfs_last_import_path = bpy.props.StringProperty(name="Last ZFS Import Path")
     bpy.types.Scene.bz_validation_issues = bpy.props.CollectionProperty(type=ValidationIssuePropertyGroup)
     bpy.types.Scene.bz_validation_signature = bpy.props.StringProperty(name="Validation Signature")
+    bpy.types.Scene.bz_import_diagnostics = bpy.props.CollectionProperty(type=ImportDiagnosticPropertyGroup)
 
 def unregister():
     # Remove menus first so UI won't try to use unregistered classes
@@ -4188,6 +4397,7 @@ def unregister():
         (bpy.types.Scene, "zfs_last_import_path"),
         (bpy.types.Scene, "bz_validation_issues"),
         (bpy.types.Scene, "bz_validation_signature"),
+        (bpy.types.Scene, "bz_import_diagnostics"),
     ):
         if hasattr(owner, prop_name):
             delattr(owner, prop_name)
