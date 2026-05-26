@@ -14,6 +14,13 @@ OUTER_COLLISION_NAMES = {
     "outercollision",
 }
 
+HARDPOINT_SUFFIX_RULES = {
+    71: ("Cannon hardpoint", "gc"),
+    72: ("Rocket hardpoint", "gr"),
+    73: ("Mortar hardpoint", "gm"),
+    74: ("Special hardpoint", "gs"),
+}
+
 SEVERITY_ORDER = {
     "ERROR": 0,
     "WARNING": 1,
@@ -54,6 +61,17 @@ def is_collision_helper_name(name):
 
 def normalized_export_name(name, lod):
     return fixgeoname(name, lod).lower()
+
+
+def legacy_geo_suffix(name):
+    return ((name or "").strip().lower())[5:]
+
+
+def _is_numbered_suffix(suffix, prefix, min_index=1, max_index=5):
+    if len(suffix) != 3 or not suffix.startswith(prefix):
+        return False
+    slot = suffix[2:]
+    return slot.isdigit() and min_index <= int(slot) <= max_index
 
 
 def issue_applies(issue, export_mode):
@@ -273,6 +291,7 @@ def _collect_scene_export_issues(context):
             )
             continue
 
+        issues.extend(_collect_geotype_suffix_issues(obj))
         issues.extend(_collect_material_issues(obj, {"VDF", "SDF"}))
 
     for normalized_name, objects in normalized_names.items():
@@ -327,6 +346,62 @@ def _collect_scene_export_issues(context):
 
     issues.extend(_collect_collision_helper_issues(inner_helpers, "inner"))
     issues.extend(_collect_collision_helper_issues(outer_helpers, "outer"))
+    return issues
+
+
+def _collect_geotype_suffix_issues(obj):
+    issues = []
+    geo_props = getattr(obj, "GEOPropertyGroup", None)
+    if geo_props is None:
+        return issues
+
+    try:
+        geo_type = int(getattr(geo_props, "GEOType", 0))
+    except Exception:
+        return issues
+
+    suffix = legacy_geo_suffix(obj.name)
+    if geo_type == 65:
+        pitch_ok = _is_numbered_suffix(suffix, "tx", max_index=9)
+        yaw_ok = _is_numbered_suffix(suffix, "ty", max_index=9)
+        if not pitch_ok and not yaw_ok:
+            issues.append(
+                _make_issue(
+                    "WARNING",
+                    "GEO Type",
+                    obj.name,
+                    (
+                        "Type 65 turret rotators should use a tx# pitch suffix or ty# yaw suffix "
+                        "(for example tx1 or ty1). Battlezone may not apply turret rotation to this GEO."
+                    ),
+                    {"VDF"},
+                    object_name=obj.name,
+                    action="select_object",
+                )
+            )
+        return issues
+
+    hardpoint_rule = HARDPOINT_SUFFIX_RULES.get(geo_type)
+    if hardpoint_rule is None:
+        return issues
+
+    role, prefix = hardpoint_rule
+    if not _is_numbered_suffix(suffix, prefix, max_index=5):
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "GEO Type",
+                obj.name,
+                (
+                    f"Type {geo_type} {role.lower()} GEOs should use suffix {prefix}1-{prefix}5. "
+                    "Battlezone uses that suffix to bind the hardpoint slot."
+                ),
+                {"VDF"},
+                object_name=obj.name,
+                action="select_object",
+            )
+        )
+
     return issues
 
 

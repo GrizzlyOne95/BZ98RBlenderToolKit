@@ -28,7 +28,19 @@ def fixgeoname(name, lod):
         geofilename[3] = '3'
     geofilename[4] = '1'
     return "".join(geofilename)
-    
+
+
+def _iter_action_fcurves(action):
+    fcurves = getattr(action, "fcurves", None)
+    if fcurves is not None:
+        yield from fcurves
+        return
+
+    for layer in getattr(action, "layers", []):
+        for strip in getattr(layer, "strips", []):
+            for channelbag in getattr(strip, "channelbags", []):
+                yield from getattr(channelbag, "fcurves", [])
+
 def GenerateGEOCollisions(object):
     #Get the active object.
     obj = object
@@ -238,7 +250,7 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
         # If the object is in quaternion rotation mode, read quaternion curves and convert to Euler.
         if getattr(blobject, "rotation_mode", "XYZ") == 'QUATERNION':
             quat_anim = {}
-            for curve in anim.action.fcurves:
+            for curve in _iter_action_fcurves(anim.action):
                 data_path = curve.data_path
                 for akeyframe in curve.keyframe_points:
                     keyframe = int(akeyframe.co[0])
@@ -264,7 +276,7 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
 
         else:
             # ORIGINAL EULER-ONLY BEHAVIOR (unchanged), plus location.
-            for curve in anim.action.fcurves:
+            for curve in _iter_action_fcurves(anim.action):
                 for akeyframe in curve.keyframe_points:
                     keyframe = int(akeyframe.co[0])
                     keyvalue = akeyframe.co[1]

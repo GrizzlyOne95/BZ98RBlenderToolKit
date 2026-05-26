@@ -34,6 +34,9 @@ import struct
 
 from . import validation as bz_validation
 
+if bpy is not None:
+    from . import map_io as bz_map_io
+
 ZFS_TEXTURE_EXTENSIONS = {'.map', '.pic', '.tga', '.dds', '.png', '.bmp', '.jpg', '.jpeg'}
 
 def get_default_ogre_xml_converter():
@@ -166,7 +169,7 @@ EXPORT_PRESET_PROPERTY_NAMES = {
 
 BUILTIN_EXPORT_PRESETS = {
     "GEO": (
-        ("classic_geo", "Classic GEO", {
+        ("classic_geo", "Legacy GEO Only", {
             "auto_port_ogre": False,
             "ogre_name": "",
             "ogre_suffix": "_port",
@@ -178,7 +181,7 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_nowrite": False,
             "ogre_dest_dir": "",
         }),
-        ("geo_port", "GEO + Redux Port", {
+        ("geo_port", "Legacy GEO + Redux", {
             "auto_port_ogre": True,
             "ogre_name": "",
             "ogre_suffix": "_port",
@@ -192,7 +195,7 @@ BUILTIN_EXPORT_PRESETS = {
         }),
     ),
     "VDF": (
-        ("vehicle_vdf", "Vehicle VDF", {
+        ("vehicle_vdf", "Legacy Vehicle Only", {
             "ExportAnimations": True,
             "ExportVDFOnly": False,
             "auto_port_ogre": False,
@@ -222,7 +225,7 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_scope_texture": "__scope",
             "ogre_no_pov_rots": False,
         }),
-        ("vehicle_vdf_port", "Vehicle VDF + Redux Port", {
+        ("vehicle_vdf_port", "Legacy Vehicle + Redux", {
             "ExportAnimations": True,
             "ExportVDFOnly": False,
             "auto_port_ogre": True,
@@ -254,7 +257,7 @@ BUILTIN_EXPORT_PRESETS = {
         }),
     ),
     "SDF": (
-        ("structure_sdf", "Structure SDF", {
+        ("structure_sdf", "Legacy Structure Only", {
             "ExportAnimations": True,
             "ExportSDFOnly": False,
             "auto_port_ogre": False,
@@ -268,7 +271,7 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_nowrite": False,
             "ogre_dest_dir": "",
         }),
-        ("structure_sdf_port", "Structure SDF + Redux Port", {
+        ("structure_sdf_port", "Legacy Structure + Redux", {
             "ExportAnimations": True,
             "ExportSDFOnly": False,
             "auto_port_ogre": True,
@@ -595,11 +598,12 @@ GEO_TYPE_UI_HINTS = {
     15: ("INFO", "Type 15 is used for spinner behavior. Spinner helpers normally export with this role."),
     38: ("INFO", "Type 38 is typically used as a Redux headlight mask helper."),
     40: ("INFO", "Type 40 is commonly used for POV / eyepoint placement."),
+    65: ("INFO", "Type 65 is used for turret rotators. Use tx# for pitch or ty# for yaw, such as tx1 or ty1."),
     70: ("INFO", "Type 70 marks a weapon hardpoint or production smoke emitter."),
-    71: ("INFO", "Type 71 marks a cannon hardpoint."),
-    72: ("INFO", "Type 72 marks a rocket hardpoint."),
-    73: ("INFO", "Type 73 marks a mortar hardpoint."),
-    74: ("INFO", "Type 74 marks a special hardpoint."),
+    71: ("INFO", "Type 71 marks a cannon hardpoint. Use suffix gc1-gc5."),
+    72: ("INFO", "Type 72 marks a rocket hardpoint. Use suffix gr1-gr5."),
+    73: ("INFO", "Type 73 marks a mortar hardpoint. Use suffix gm1-gm5."),
+    74: ("INFO", "Type 74 marks a special hardpoint. Use suffix gs1-gs5."),
     75: ("WARNING", "Type 75 acts as a flame emitter and usually makes the GEO geometry itself invisible."),
     76: ("INFO", "Type 76 marks a smoke emitter."),
     77: ("INFO", "Type 77 marks a dust emitter."),
@@ -1197,6 +1201,26 @@ def _draw_validation_summary_box(layout, scene, export_mode="ALL"):
     return box
 
 
+def _draw_legacy_export_mode_box(layout, auto_port_enabled):
+    box = layout.box()
+    box.label(text="Output Mode", icon='EXPORT')
+    if auto_port_enabled:
+        box.label(text="Mode: Legacy + Redux", icon='CHECKMARK')
+        box.label(text="Writes legacy files first, then generates Redux mesh-side files.")
+    else:
+        box.label(text="Mode: Legacy only", icon='FILE')
+        box.label(text="Writes only the selected legacy format.")
+    return box
+
+
+def _draw_redux_only_export_mode_box(layout):
+    box = layout.box()
+    box.label(text="Output Mode", icon='EXPORT')
+    box.label(text="Mode: Redux only", icon='MESH_DATA')
+    box.label(text="Writes Redux mesh-side files without creating GEO, VDF, or SDF files.")
+    return box
+
+
 def _draw_shared_autoport_options(layout, operator):
     layout.prop(operator, "ogre_name")
     layout.prop(operator, "ogre_suffix")
@@ -1214,7 +1238,7 @@ def _draw_shared_autoport_options(layout, operator):
 
 def _draw_vdf_autoport_options(layout, operator):
     box = layout.box()
-    box.label(text="VDF-Specific BZR Options")
+    box.label(text="VDF-Specific Redux Options")
     box.prop(operator, "ogre_headlights")
     box.prop(operator, "ogre_person_mode")
     box.prop(operator, "ogre_turret_mode")
@@ -2866,10 +2890,9 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
 
     # Ogre auto-port toggle
     auto_port_ogre: BoolProperty(
-        name="Create Redux Files",
+        name="Also Create Redux Files",
         description=(
-            "After writing the GEO, run the Battlezone model porter to create "
-            "OGRE .mesh/.skeleton/.material/.dds in the same directory"
+            "After exporting legacy files, also generate Redux .mesh/.skeleton/.material/.dds files."
         ),
         default=False,
     )
@@ -2877,60 +2900,60 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
     # ---------- OGRE shared options ----------
 
     ogre_name: StringProperty(
-        name="OGRE Name (--name)",
-        description="Name to give the final OGRE model files; leave blank to use the source name",
+        name="Model Name",
+        description="Porter --name. Name to give the final Redux model files; leave blank to use the source name.",
         default="",
     )
 
     ogre_suffix: StringProperty(
-        name="Material Suffix (--suffix)",
-        description="Suffix appended to material file names",
+        name="Material Suffix",
+        description="Porter --suffix. Suffix appended to material file names.",
         default="_port",
     )
 
     ogre_flat_colors: BoolProperty(
-        name="Flat Colors (--flatcolors)",
-        description="Force the use of flat per-face color texturing",
+        name="Flat Colors",
+        description="Porter --flatcolors. Force flat per-face color texturing.",
         default=False,
     )
 
     ogre_bounds_mult: FloatVectorProperty(
-        name="Bounds Scale (--boundsmult)",
-        description="Scale factors for the mesh bounds (X, Y, Z)",
+        name="Bounds Scale",
+        description="Porter --boundsmult. Scale factors for the mesh bounds (X, Y, Z).",
         size=3,
         default=(1.0, 1.0, 1.0),
         subtype='XYZ',
     )
 
     ogre_act_path: StringProperty(
-        name="ACT Palette (--act)",
-        description="Optional .act palette file for indexed .map textures",
+        name="ACT Palette",
+        description="Porter --act. Optional .act palette file for indexed .map textures.",
         default="",
         #subtype='FILE_PATH',
     )
 
     ogre_config_path: StringProperty(
-        name="Config File (--config)",
-        description="Optional config file that defines default paths for the porter",
+        name="Config File",
+        description="Porter --config. Optional config file that defines default paths for the porter.",
         default="",
         #subtype='FILE_PATH',
     )
 
     ogre_only_once: BoolProperty(
-        name="Skip If Already Ported (--onlyonce)",
-        description="Don't port files when the mesh is already in the target directory",
+        name="Skip Existing",
+        description="Porter --onlyonce. Do not port files when the mesh is already in the target directory.",
         default=False,
     )
 
     ogre_nowrite: BoolProperty(
-        name="Dry Run: No Write (--nowrite)",
-        description="Suppress file writing (for testing)",
+        name="Dry Run",
+        description="Porter --nowrite. Suppress file writing for testing.",
         default=False,
     )
 
     ogre_dest_dir: StringProperty(
-        name="Destination Directory (--dest)",
-        description="Destination directory to write OGRE files into; leave blank to use export folder",
+        name="Output Folder",
+        description="Porter --dest. Destination directory for Redux files; leave blank to use export folder.",
         default="",
         #subtype='DIR_PATH',
     )
@@ -2995,6 +3018,7 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
         layout = self.layout
         scene = context.scene
 
+        _draw_legacy_export_mode_box(layout, self.auto_port_ogre)
         _draw_export_preset_box(layout, "GEO")
 
         core = layout.box()
@@ -3009,7 +3033,7 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
         _draw_validation_summary_box(layout, scene, export_mode="GEO")
 
         port = layout.box()
-        port.label(text="Create Redux Files")
+        port.label(text="Redux Output")
         port.prop(self, "auto_port_ogre")
         if self.auto_port_ogre:
             _draw_shared_autoport_options(port, self)
@@ -3034,76 +3058,75 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
     )
 
     ExportVDFOnly: BoolProperty(
-        name="Export Only VDF (Don't Export GEOs)",
-        description="Export only the VDF file to preserve old GEO files",
+        name="Skip GEO File Export",
+        description="Only write the VDF container and keep existing referenced GEO files.",
         default=False,
     )
 
     # NEW: Ogre auto-port checkbox
     auto_port_ogre: BoolProperty(
-        name="Create BZR Files",
+        name="Also Create Redux Files",
         description=(
-            "After writing the VDF, run the Battlezone model porter to create "
-            "OGRE .mesh/.skeleton/.material/.dds in the same directory"
+            "After exporting legacy files, also generate Redux .mesh/.skeleton/.material/.dds files."
         ),
         default=False,
     )
     
     ogre_name: StringProperty(
-        name="OGRE Name (--name)",
-        description="Name to give the final OGRE model files; leave blank to use the source name",
+        name="Model Name",
+        description="Porter --name. Name to give the final Redux model files; leave blank to use the source name.",
         default="",
     )
 
     ogre_suffix: StringProperty(
-        name="Material Suffix (--suffix)",
-        description="Suffix appended to material file names",
+        name="Material Suffix",
+        description="Porter --suffix. Suffix appended to material file names.",
         default="_port",
     )
 
     ogre_flat_colors: BoolProperty(
-        name="Flat Colors (--flatcolors)",
-        description="Force the use of flat per-face color texturing",
+        name="Flat Colors",
+        description="Porter --flatcolors. Force flat per-face color texturing.",
         default=False,
     )
 
     ogre_bounds_mult: FloatVectorProperty(
-        name="Bounds Scale (--boundsmult)",
-        description="Scale factors for the mesh bounds (X, Y, Z)",
+        name="Bounds Scale",
+        description="Porter --boundsmult. Scale factors for the mesh bounds (X, Y, Z).",
         size=3,
         default=(1.0, 1.0, 1.0),
         subtype='XYZ',
     )
 
     ogre_act_path: StringProperty(
-        name="ACT Palette (--act)",
-        description="Optional .act palette file for indexed .map textures",
+        name="ACT Palette",
+        description="Porter --act. Optional .act palette file for indexed .map textures.",
         default="",
         #subtype='FILE_PATH',
     )
 
     ogre_config_path: StringProperty(
-        name="Config File (--config)",
-        description="Optional config file that defines default paths for the porter",
+        name="Config File",
+        description="Porter --config. Optional config file that defines default paths for the porter.",
         default="",
         #subtype='FILE_PATH',
     )
 
     ogre_only_once: BoolProperty(
-        name="Skip If Already Ported (--onlyonce)",
-        description="Don't port files when the mesh is already in the target directory",
+        name="Skip Existing",
+        description="Porter --onlyonce. Do not port files when the mesh is already in the target directory.",
         default=False,
     )
 
     ogre_nowrite: BoolProperty(
-        name="Dry Run: No Write (--nowrite)",
-        description="Suppress file writing (for testing)",
+        name="Dry Run",
+        description="Porter --nowrite. Suppress file writing for testing.",
         default=False,
     )
 
     ogre_dest_dir: StringProperty(
-        name="Destination Directory (--dest)",
-        description="Destination directory to write OGRE files into; leave blank to use export folder",
+        name="Output Folder",
+        description="Porter --dest. Destination directory for Redux files; leave blank to use export folder.",
         default="",
         #subtype='DIR_PATH',
     )
@@ -3111,49 +3134,49 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         # ---------- VDF-only OGRE options ----------
 
     ogre_headlights: BoolProperty(
-        name="Headlights (--headlights)",
-        description="Enable automatic creation of headlights",
+        name="Headlights",
+        description="Porter --headlights. Enable automatic creation of headlights.",
         default=False,
     )
 
     ogre_person_mode: EnumProperty(
-        name="Person Flag (--person)",
-        description="Force this object to be flagged as a person",
+        name="Person Mode",
+        description="Porter --person. Force this object to be flagged as a person.",
         items=TERNARY_ITEMS,
         default="AUTO",
     )
 
     ogre_turret_mode: EnumProperty(
-        name="Turret Flag (--turret)",
-        description="Force this object to be flagged as a turret",
+        name="Turret Mode",
+        description="Porter --turret. Force this object to be flagged as a turret.",
         items=TERNARY_ITEMS,
         default="AUTO",
     )
 
     ogre_cockpit_mode: EnumProperty(
-        name="Cockpit Flag (--cockpit)",
-        description="Force creation/suppression of separate cockpit model files",
+        name="Cockpit Mode",
+        description="Porter --cockpit. Force creation or suppression of separate cockpit model files.",
         items=TERNARY_ITEMS,
         default="AUTO",
     )
 
     ogre_skeletalanims_mode: EnumProperty(
-        name="Skeletal Anims (--skeletalanims)",
-        description="Force creation/suppression of skeletal person animations",
+        name="Skeletal Animations",
+        description="Porter --skeletalanims. Force creation or suppression of skeletal person animations.",
         items=TERNARY_ITEMS,
         default="AUTO",
     )
 
     ogre_scope_mode: EnumProperty(
-        name="Scope Enabled (--scope)",
-        description="Force creation/suppression of a person sniper scope",
+        name="Scope",
+        description="Porter --scope. Force creation or suppression of a person sniper scope.",
         items=TERNARY_ITEMS,
         default="AUTO",
     )
 
     ogre_scope_type: EnumProperty(
-        name="Scope Type (--scopetype)",
-        description="Sniper scope type",
+        name="Scope Type",
+        description="Porter --scopetype. Sniper scope type.",
         items=[
             ("AUTO",     "Auto",     "Auto choose FIXED/GEOMETRY based on scope texture"),
             ("FIXED",    "Fixed",    "Square fixed on screen (classic)"),
@@ -3164,27 +3187,27 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
     )
 
     ogre_scope_nation: StringProperty(
-        name="Scope Nation (--scopenation)",
-        description="Nation string for fixed scope placement (e.g. 'soviet')",
+        name="Scope Nation",
+        description="Porter --scopenation. Nation string for fixed scope placement, such as 'soviet'.",
         default="",
     )
 
     ogre_scope_screen: FloatVectorProperty(
-        name="Scope Screen (--scopescreen)",
-        description="Camera-relative X, Y, Z, SIZE, BEHIND_DIST for fixed scope",
+        name="Scope Screen",
+        description="Porter --scopescreen. Camera-relative X, Y, Z, size, and behind-distance for fixed scope.",
         size=5,
         default=(0.0, 0.0, 0.0, 1.0, 0.0),
     )
 
     ogre_scope_gun: StringProperty(
-        name="Scope Gun (--scopegun)",
-        description="Gun geo name to attach scope to (ATTACHED scope type)",
+        name="Scope Gun",
+        description="Porter --scopegun. Gun GEO name to attach scope to when using attached scope type.",
         default="",
     )
 
     ogre_scope_transform: FloatVectorProperty(
-        name="Scope Transform (--scopetransform)",
-        description="Gun-relative transform RX,RY,RZ, UX,UY,UZ, FX,FY,FZ, PX,PY,PZ",
+        name="Scope Transform",
+        description="Porter --scopetransform. Gun-relative transform: right, up, front, position.",
         size=12,
         default=(1.0, 0.0, 0.0,
                  0.0, 1.0, 0.0,
@@ -3193,14 +3216,14 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
     )
 
     ogre_scope_texture: StringProperty(
-        name="Scope Texture (--scopetexture)",
-        description="Texture name to replace with scope material (GEOMETRY scope)",
+        name="Scope Texture",
+        description="Porter --scopetexture. Texture name to replace with scope material when using geometry scope.",
         default="__scope",
     )
 
     ogre_no_pov_rots: BoolProperty(
-        name="No POV Rotations (--nopovrots)",
-        description="Remove POV rotation keys from directional movement animations",
+        name="No POV Rotations",
+        description="Porter --nopovrots. Remove POV rotation keys from directional movement animations.",
         default=False,
     )
 
@@ -3296,6 +3319,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         layout = self.layout
         scene = context.scene
 
+        _draw_legacy_export_mode_box(layout, self.auto_port_ogre)
         _draw_export_preset_box(layout, "VDF")
 
         core = layout.box()
@@ -3317,7 +3341,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         _draw_validation_summary_box(layout, scene, export_mode="VDF")
 
         port = layout.box()
-        port.label(text="Create BZR Files")
+        port.label(text="Redux Output")
         port.prop(self, "auto_port_ogre")
         if self.auto_port_ogre:
             _draw_shared_autoport_options(port, self)
@@ -3348,76 +3372,75 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
     )
 
     ExportSDFOnly: BoolProperty(
-        name="Export SDF Only",
-        description="Skip exporting referenced GEO files; export only the SDF container",
+        name="Skip GEO File Export",
+        description="Only write the SDF container and keep existing referenced GEO files.",
         default=False,
     )
 
     # NEW: Ogre auto-port toggle
     auto_port_ogre: BoolProperty(
-        name="Create BZR Files",
+        name="Also Create Redux Files",
         description=(
-            "After writing the SDF, run the Battlezone model porter to create "
-            "OGRE .mesh/.skeleton/.material/.dds in the same directory"
+            "After exporting legacy files, also generate Redux .mesh/.skeleton/.material/.dds files."
         ),
         default=False,
     )
     
     ogre_name: StringProperty(
-        name="OGRE Name (--name)",
-        description="Name to give the final OGRE model files; leave blank to use the source name",
+        name="Model Name",
+        description="Porter --name. Name to give the final Redux model files; leave blank to use the source name.",
         default="",
     )
 
     ogre_suffix: StringProperty(
-        name="Material Suffix (--suffix)",
-        description="Suffix appended to material file names",
+        name="Material Suffix",
+        description="Porter --suffix. Suffix appended to material file names.",
         default="_port",
     )
 
     ogre_flat_colors: BoolProperty(
-        name="Flat Colors (--flatcolors)",
-        description="Force the use of flat per-face color texturing",
+        name="Flat Colors",
+        description="Porter --flatcolors. Force flat per-face color texturing.",
         default=False,
     )
 
     ogre_bounds_mult: FloatVectorProperty(
-        name="Bounds Scale (--boundsmult)",
-        description="Scale factors for the mesh bounds (X, Y, Z)",
+        name="Bounds Scale",
+        description="Porter --boundsmult. Scale factors for the mesh bounds (X, Y, Z).",
         size=3,
         default=(1.0, 1.0, 1.0),
         subtype='XYZ',
     )
 
     ogre_act_path: StringProperty(
-        name="ACT Palette (--act)",
-        description="Optional .act palette file for indexed .map textures",
+        name="ACT Palette",
+        description="Porter --act. Optional .act palette file for indexed .map textures.",
         default="",
         #subtype='FILE_PATH',
     )
 
     ogre_config_path: StringProperty(
-        name="Config File (--config)",
-        description="Optional config file that defines default paths for the porter",
+        name="Config File",
+        description="Porter --config. Optional config file that defines default paths for the porter.",
         default="",
         #subtype='FILE_PATH',
     )
 
     ogre_only_once: BoolProperty(
-        name="Skip If Already Ported (--onlyonce)",
-        description="Don't port files when the mesh is already in the target directory",
+        name="Skip Existing",
+        description="Porter --onlyonce. Do not port files when the mesh is already in the target directory.",
         default=False,
     )
 
     ogre_nowrite: BoolProperty(
-        name="Dry Run: No Write (--nowrite)",
-        description="Suppress file writing (for testing)",
+        name="Dry Run",
+        description="Porter --nowrite. Suppress file writing for testing.",
         default=False,
     )
 
     ogre_dest_dir: StringProperty(
-        name="Destination Directory (--dest)",
-        description="Destination directory to write OGRE files into; leave blank to use export folder",
+        name="Output Folder",
+        description="Porter --dest. Destination directory for Redux files; leave blank to use export folder.",
         default="",
         #subtype='DIR_PATH',
     )
@@ -3491,6 +3514,7 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         layout = self.layout
         scene = context.scene
 
+        _draw_legacy_export_mode_box(layout, self.auto_port_ogre)
         _draw_export_preset_box(layout, "SDF")
 
         core = layout.box()
@@ -3512,7 +3536,7 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         _draw_validation_summary_box(layout, scene, export_mode="SDF")
 
         port = layout.box()
-        port.label(text="Create BZR Files")
+        port.label(text="Redux Output")
         port.prop(self, "auto_port_ogre")
         if self.auto_port_ogre:
             _draw_shared_autoport_options(port, self)
@@ -3530,7 +3554,7 @@ class BZ98TOOLS_OT_import_bzr_mesh(bpy.types.Operator, ImportHelper):
     )
 
     xml_converter: StringProperty(
-        name="OgreXMLConverter",
+        name="XML Converter",
         description="Path to OgreXMLConverter.exe",
         default=get_default_ogre_xml_converter(),
         # subtype='FILE_PATH',
@@ -3624,7 +3648,7 @@ class BZ98TOOLS_OT_import_bzr_mesh(bpy.types.Operator, ImportHelper):
 class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
     """Export BZR Mesh (Ogre .mesh + .skeleton)"""
     bl_idname = "export_scene.bz98_bzr_mesh"
-    bl_label = "Export Battlezone Redux Mesh (.mesh)"
+    bl_label = "Export Redux Mesh Only (.mesh)"
     bl_options = {'UNDO'}
 
     filename_ext = ".mesh"
@@ -3634,7 +3658,7 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
     )
 
     xml_converter: StringProperty(
-        name="OgreXMLConverter",
+        name="XML Converter",
         description="Path to OgreXMLConverter.exe",
         default=get_default_ogre_xml_converter(),
         subtype='FILE_PATH',
@@ -3657,7 +3681,7 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
     )
 
     zero_tangents_binormals: BoolProperty(
-        name="Zero Tangents/Binormals",
+        name="Zero Tangents",
         description="Force tangents/binormals to zero (e.g. for black building meshes)",
         default=False,
     )
@@ -3688,12 +3712,12 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
     )
 
     overwrite_material: BoolProperty(
-        name="Overwrite Material Files",
+        name="Overwrite Materials",
         default=False,
     )
 
     copy_textures: BoolProperty(
-        name="Copy Textures Next to .mesh",
+        name="Copy Textures",
         default=False,
     )
 
@@ -3703,7 +3727,7 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
     )
 
     export_poses: BoolProperty(
-        name="Export Shape Keys as Poses",
+        name="Shape Keys as Poses",
         default=True,
     )
 
@@ -3718,7 +3742,7 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
     )
 
     batch_export: BoolProperty(
-        name="Batch Export Selected Objects",
+        name="Batch Selected",
         description="Export each selected object as its own .mesh file",
         default=False,
     )
@@ -3757,6 +3781,7 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
 
     def draw(self, context):
         layout = self.layout
+        _draw_redux_only_export_mode_box(layout)
         layout.prop(self, "xml_converter")
         layout.prop(self, "keep_xml")
         layout.separator()
@@ -3840,6 +3865,11 @@ class BZ98TOOLS_MT_import_menu(bpy.types.Menu):
         layout.label(text="Redux Formats")
         layout.operator(BZ98TOOLS_OT_import_bzr_mesh.bl_idname, text="Redux Mesh (.mesh)")
         layout.separator()
+        layout.label(text="Map Tools")
+        layout.operator("bzmapio.open_template", text="Open Map Template (.blend)")
+        layout.operator("bzmapimport.data", text="Height Grid Terrain (.hg2)")
+        layout.operator("bzgameimport.data", text="Game Playback Log")
+        layout.separator()
         layout.label(text="Archive Tools")
         layout.operator(BZ98TOOLS_OT_open_zfs.bl_idname, text="Open ZFS Archive (.zfs)")
 
@@ -3851,12 +3881,12 @@ class BZ98TOOLS_MT_export_menu(bpy.types.Menu):
     def draw(self, context):
         layout = self.layout
         layout.label(text="Legacy Formats")
-        layout.operator(ExportGEO.bl_idname, text="Geometry (.geo)")
-        layout.operator(ExportVDF.bl_idname, text="Vehicle Definition (.vdf)")
-        layout.operator(ExportSDF.bl_idname, text="Structure Definition (.sdf)")
+        layout.operator(ExportGEO.bl_idname, text="Legacy Geometry (.geo)")
+        layout.operator(ExportVDF.bl_idname, text="Legacy Vehicle (.vdf)")
+        layout.operator(ExportSDF.bl_idname, text="Legacy Structure (.sdf)")
         layout.separator()
         layout.label(text="Redux Formats")
-        layout.operator(BZ98TOOLS_OT_export_bzr_mesh.bl_idname, text="Redux Mesh (.mesh)")
+        layout.operator(BZ98TOOLS_OT_export_bzr_mesh.bl_idname, text="Redux Mesh Only (.mesh)")
 
 
 def menu_func_import(self, context):
@@ -4331,8 +4361,10 @@ def register():
         
     # Register BZR Ogre mesh operators
     bpy.utils.register_class(BZ98TOOLS_OT_import_bzr_mesh)
-    bpy.utils.register_class(BZ98TOOLS_OT_export_bzr_mesh)    
-        
+    bpy.utils.register_class(BZ98TOOLS_OT_export_bzr_mesh)
+
+    bz_map_io.register()
+
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
     
@@ -4379,6 +4411,8 @@ def unregister():
     # Remove menus first so UI won't try to use unregistered classes
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+
+    bz_map_io.unregister()
 
     # Remove dynamically registered Blender properties.
     for owner, prop_name in (
