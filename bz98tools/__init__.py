@@ -356,14 +356,14 @@ class AnimationPropertyGroup(bpy.types.PropertyGroup):
     )
 
     UseCustomUnknownGeoMask: bpy.props.BoolProperty(
-        name="Use Custom GEO Mask",
-        description="Use a custom 32-int ANIM element GEO mask instead of automatic defaults",
+        name="Use Custom GEO Slot Mask",
+        description="Use a custom 32-int ANIM element GEO slot mask instead of automatic defaults",
         default=False,
     )
 
     UnknownGeoMask: bpy.props.IntVectorProperty(
-        name="GEO Mask",
-        description="Raw 32-int ANIM element mask",
+        name="GEO Slot Mask",
+        description="Raw 32-int ANIM element GEO slot mask",
         size=32,
         default=(0,) * 32,
     )
@@ -1585,7 +1585,7 @@ class BZ98TOOLS_PT_scene_collision_helpers(bpy.types.Panel):
 
 class BZ98TOOLS_PT_scene_advanced(bpy.types.Panel):
     bl_idname = "SCENE_PT_BZ_ADVANCED"
-    bl_label = "Advanced"
+    bl_label = "Animation Advanced"
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "scene"
@@ -1596,20 +1596,31 @@ class BZ98TOOLS_PT_scene_advanced(bpy.types.Panel):
         layout = self.layout
         props = context.scene.SDFVDFPropertyGroup
 
-        anim_box = layout.box()
-        anim_box.label(text="ANIM Header / Track Overrides")
-        anim_box.prop(props, "UseAdvancedAnimHeader")
+        layout.label(text="ANIM Header / Track Overrides")
+        layout.prop(props, "UseAdvancedAnimHeader")
         if props.UseAdvancedAnimHeader:
-            anim_box.prop(props, "AnimNull2")
-            anim_box.prop(props, "AnimUnknown2")
-            anim_box.prop(props, "AnimReserved")
-        anim_box.prop(props, "UseTranslation2Track")
+            layout.prop(props, "AnimNull2")
+            layout.prop(props, "AnimUnknown2")
+            layout.prop(props, "AnimReserved")
+        layout.prop(props, "UseTranslation2Track")
 
-        scps_box = layout.box()
-        scps_box.label(text="VDF SCPS Raw")
-        scps_box.prop(props, "UseCustomSCPS")
+class BZ98TOOLS_PT_scene_vdf_raw(bpy.types.Panel):
+    bl_idname = "SCENE_PT_BZ_VDF_RAW"
+    bl_label = "VDF Raw Data"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        props = context.scene.SDFVDFPropertyGroup
+
+        layout.label(text="SCPS Raw Override")
+        layout.prop(props, "UseCustomSCPS")
         if props.UseCustomSCPS:
-            scps_box.prop(props, "SCPSData")
+            layout.prop(props, "SCPSData")
 
 
 class BZ98TOOLS_OT_validate_scene(bpy.types.Operator):
@@ -2613,9 +2624,10 @@ class AnimationPanel(bpy.types.Panel):
             timing.prop(item, "Speed")
 
             advanced = editor.box()
-            advanced.label(text="Advanced")
+            advanced.label(text="Affected GEO Slots")
             advanced.prop(item, "UseCustomUnknownGeoMask")
             if item.UseCustomUnknownGeoMask:
+                advanced.label(text="One value per legacy GEO slot. Leave off for automatic defaults.", icon='INFO')
                 for i in range(0, 32, 8):
                     row = advanced.row(align=True)
                     row.prop(item, "UnknownGeoMask", index=i+0, text=str(i+0))
@@ -4384,6 +4396,7 @@ GUIClasses = [
     BZ98TOOLS_PT_scene_asset_properties,
     BZ98TOOLS_PT_scene_collision_helpers,
     BZ98TOOLS_PT_scene_advanced,
+    BZ98TOOLS_PT_scene_vdf_raw,
     BZ98TOOLS_OT_validate_scene,
     BZ98TOOLS_OT_select_validation_target,
     BZ98TOOLS_OT_fix_validation_name,

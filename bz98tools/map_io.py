@@ -5389,144 +5389,140 @@ class BZMAPIO_OT_open_template(bpy.types.Operator):
 
 mystr: StringProperty(name="Enter something:")
 class BZMAPIO_PT_map_import(Panel):
-	bl_label = "Battlezone Map Import"
+	bl_label = "Map Terrain"
 	bl_idname = "BZMAPIO_PT_map_import"
 	bl_space_type = "VIEW_3D"
 	bl_region_type = "UI"
 	bl_category = "Battlezone"
 
+	@classmethod
+	def poll(cls, context):
+		return context.mode in {'OBJECT', 'EDIT_MESH', 'SCULPT'}
+
 	def draw(self, context):
 		layout = self.layout
 		scene = context.scene
+
 		template_box = layout.box()
 		template_box.label(text="Template")
 		template_box.operator("bzmapio.open_template", icon="FILE_BLEND")
 		if not MAP_TEMPLATE_PATH.exists():
 			template_box.label(text="Bundled map template is missing.", icon="ERROR")
-		layout.separator()
-		layout.prop(scene, "BZMapFile", text="File")
-		row = layout.row()
-		row.operator("bzmapimport.data", icon="IMPORT")
-		row = layout.row()
+
+		file_box = layout.box()
+		file_box.label(text="Terrain File")
+		file_box.prop(scene, "BZMapFile", text="File")
+		file_box.operator("bzmapimport.data", icon="IMPORT")
+		row = file_box.row()
 		row.prop(scene.BZMapIO_Toggles, "ImportBZN")
 		row.prop(scene.BZMapIO_Toggles, "ExportBZN")
-		layout.separator()
-		#row = layout.row()
-		#row.label(text=" // MAP-WIDE TOOLS \\\\")
-		#layout.separator()
-		row = layout.row()
-		row.label(text=" --- WORKSPACES ---")
-		row = layout.row()
-		row.scale_y = 2.1
-		row.operator("button.bzgosculpt")
-		layout.separator()
-		layout.separator()
-		row.operator("button.bzgopaint")
-		row = layout.row()
-		row.label(text=" --- SELECTION TOOLS ---")
-		layout.separator()
-		row = layout.row()
-		row.scale_y = 2.1
-		row.operator("button.bzshrinkwrap", icon="MOD_SHRINKWRAP")
-		row.operator("button.bzinvertshrinkwrap", icon="PROP_CON")
-		row = layout.row()
-		row.scale_y = 1.5
-		row.operator("button.bzpaintshrinkwrap", icon="OVERLAY")
-		row = layout.row()
-		row.operator("button.bzshrinkwrapbake", icon="MOD_SHRINKWRAP")
-		row = layout.row()
-		row = layout.row()
-		row.operator("button.bzsetrespawning", icon="PLUS")
-		row = layout.row()
-		row.label(text="Respawn Time (Seconds)")
-		row.prop(scene.BZMapIO_Toggles, "RespawnTime", icon="PLUS")
-		row = layout.row()
-		layout.separator()
-		layout.separator()
-		row = layout.row()
-		row = layout.row()
-		row.operator("button.bztransform", icon="FACESEL")
-		row = layout.row()
+		file_box.operator("button.bzmapexport", icon="OUTPUT")
+
+		size_box = layout.box()
+		size_box.label(text="Terrain Size")
+		row = size_box.row()
 		row.operator("button.bzsizeup")
 		row.operator("button.bzsizedn")
-		layout.separator()
-		row = layout.row()
-		layout.separator()
-		row = layout.row()
-		row.operator("button.bzmapexport", icon="OUTPUT")
-		layout.separator()
 
-		# Determines where in Blender's UI the panel will show up.
-		@classmethod
-		def poll(cls, context):
-			return context.mode in {'OBJECT', 'EDIT_MESH','SCULPT'} #list all the modes you want here
+
+class BZMAPIO_PT_map_object_tools(Panel):
+	bl_label = "Map Object Tools"
+	bl_idname = "BZMAPIO_PT_map_object_tools"
+	bl_space_type = "VIEW_3D"
+	bl_region_type = "UI"
+	bl_category = "Battlezone"
+
+	@classmethod
+	def poll(cls, context):
+		return context.mode in {'OBJECT', 'EDIT_MESH', 'SCULPT'}
+
+	def draw(self, context):
+		layout = self.layout
+		scene = context.scene
+
+		workspace_box = layout.box()
+		workspace_box.label(text="Workspaces")
+		row = workspace_box.row()
+		row.scale_y = 1.5
+		row.operator("button.bzgosculpt")
+		row.operator("button.bzgopaint")
+
+		selection_box = layout.box()
+		selection_box.label(text="Selection Tools")
+		row = selection_box.row()
+		row.scale_y = 1.5
+		row.operator("button.bzshrinkwrap", icon="MOD_SHRINKWRAP")
+		row.operator("button.bzinvertshrinkwrap", icon="PROP_CON")
+		row = selection_box.row()
+		row.operator("button.bzpaintshrinkwrap", icon="OVERLAY")
+		row.operator("button.bzshrinkwrapbake", icon="MOD_SHRINKWRAP")
+		selection_box.operator("button.bztransform", icon="FACESEL")
+
+		respawn_box = layout.box()
+		respawn_box.label(text="Respawning")
+		respawn_box.operator("button.bzsetrespawning", icon="PLUS")
+		respawn_box.prop(scene.BZMapIO_Toggles, "RespawnTime")
 
 
 class BZMAPIO_PT_texture_tools(Panel):
-	bl_label = "BZ Textures"
+	bl_label = "Map Texture Painting"
 	bl_idname = "BZMAPIO_PT_texture_tools"
 	bl_space_type = "VIEW_3D"
 	bl_region_type = "UI"
 	bl_category = "Battlezone"
 	#bl_context = "objectmode"
 
+	@classmethod
+	def poll(cls, context):
+		return context.mode in {'OBJECT', 'EDIT_MESH', 'SCULPT'}
+
 	def draw(self, context):
 		layout = self.layout
 		scene = context.scene
-		row = layout.row()
-		row.operator("button.bzloadtextures")
-		row = layout.row()
-		row = layout.row()
-		row = layout.row()
+
+		file_box = layout.box()
+		file_box.label(text="Texture File")
+		file_box.operator("button.bzloadtextures")
+		file_box.operator("button.bzexportmat")
+
+		brush_box = layout.box()
+		brush_box.label(text="Tile Brush")
+		row = brush_box.row()
 		row.operator("button.bzsettile1a", icon="SNAP_FACE")
 		row.operator("button.bzsettile1b", icon="IMAGE_ALPHA")
 		row.operator("button.bzsettile1c", icon="NOCURVE")
-		row = layout.row()
+		row = brush_box.row()
 		row.prop(scene.BZMapIO_Toggles, "EnableSolids")
 		row.prop(scene.BZMapIO_Toggles, "EnableDiagonals")
 		row.prop(scene.BZMapIO_Toggles, "EnableCaps")
-		row = layout.row()
-		row = layout.row()
-		row = layout.row()
-		row.scale_y = 2.1
-		row.operator("button.bzapplytilepaint")
-		row = layout.row()
-		row.operator("button.bzclearpaint")
-		row = layout.row()
-		row = layout.row()
-		row.operator("button.bzexportmat")
-		row = layout.row()
-		row.prop(scene.BZMapIO_Toggles, "RandomizeSolidRotation")
+		brush_box.prop(scene.BZMapIO_Toggles, "RandomizeSolidRotation")
 
-		# Determines where in Blender's UI the panel will show up.
-		@classmethod
-		def poll(cls, context):
-			return context.mode in {'OBJECT', 'EDIT_MESH','SCULPT'} #list all the modes you want here
+		paint_box = layout.box()
+		paint_box.label(text="Apply")
+		paint_box.operator("button.bzapplytilepaint")
+		paint_box.operator("button.bzclearpaint")
 
 
 class BZMAPIO_PT_game_playback(Panel):
-	bl_label = "BZ Game Playback"
+	bl_label = "Game Playback"
 	bl_idname = "BZMAPIO_PT_game_playback"
 	bl_space_type = "VIEW_3D"
 	bl_region_type = "UI"
 	bl_category = "Battlezone"
 	#bl_context = "objectmode"
 
+	@classmethod
+	def poll(cls, context):
+		return context.mode in {'OBJECT'}
+
 	def draw(self, context):
 		layout = self.layout
 		scene = context.scene
-		row = layout.row()
-		layout.prop(scene, "BZGameFile", text="File")
-		row = layout.row()
-		row.operator("bzgameimport.data", icon="IMPORT")
-		row = layout.row()
-		row.label(text="Game Number")
-		row.prop(scene.BZMapIO_Toggles, "GameNumber")
-
-		# Determines where in Blender's UI the panel will show up.
-		@classmethod
-		def poll(cls, context):
-			return context.mode in {'OBJECT'} #list all the modes you want here
+		file_box = layout.box()
+		file_box.label(text="Recording File")
+		file_box.prop(scene, "BZGameFile", text="File")
+		file_box.operator("bzgameimport.data", icon="IMPORT")
+		file_box.prop(scene.BZMapIO_Toggles, "GameNumber")
 
 CLASSES = (
 	bzmapimport,
@@ -5552,6 +5548,7 @@ CLASSES = (
 	BZMapIO_Toggles,
 	BZMAPIO_OT_open_template,
 	BZMAPIO_PT_map_import,
+	BZMAPIO_PT_map_object_tools,
 	BZMAPIO_PT_texture_tools,
 	BZMAPIO_PT_game_playback,
 )
