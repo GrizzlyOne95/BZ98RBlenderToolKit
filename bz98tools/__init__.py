@@ -628,6 +628,18 @@ GEO_TYPE_UI_HINTS = {
 }
 
 
+def _fix_geo_export_name(name, lod):
+    geofilename = list(name)
+    if len(geofilename) > 8:
+        geofilename = geofilename[0:8]
+    if lod in (1, 2, 3):
+        geofilename[3] = str(lod)
+    else:
+        geofilename[3] = '3'
+    geofilename[4] = '1'
+    return "".join(geofilename)
+
+
 def _get_geotype_label(geo_type_value):
     item = geotype_lookup.get(int(geo_type_value))
     if item is not None:
@@ -2456,7 +2468,7 @@ class OPCreateSpinnerHelper(bpy.types.Operator):
         src_name = src.name.lower()
         lod_char = src_name[3] if len(src_name) >= 4 else '1'
         lod = 1 if lod_char not in ['1', '2', '3'] else int(lod_char)
-        fixed_src_name = fixgeoname(src.name, lod).lower()
+        fixed_src_name = _fix_geo_export_name(src.name, lod).lower()
 
         helper_base = (fixed_src_name[:7] + "t")[:8]
         helper_name = helper_base
