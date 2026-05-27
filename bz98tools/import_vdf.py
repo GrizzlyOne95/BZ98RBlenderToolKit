@@ -87,6 +87,13 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
             os.path.basename(filepath),
             f"Vehicle '{VDFC.name}', type {VDFC.vehicletype}, size {VDFC.vehiclesize}.",
         )
+        _add_import_diagnostic(
+            scene,
+            "INFO",
+            "Orientation",
+            "vehicle front",
+            "Imported VDF vehicles are authored nose/front toward Blender +Y. Legacy + Redux export converts that setup for Redux output.",
+        )
         if int(getattr(VDFC, "null", 0)) != 0:
             _add_import_diagnostic(
                 scene,

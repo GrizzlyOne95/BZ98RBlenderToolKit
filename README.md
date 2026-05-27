@@ -27,7 +27,8 @@ This plugin targets the **Blender 4.5 LTS** and **Blender 5.1** lines, with **qu
 - ✅ **Automatic `.MAP` → `.PNG` conversion** for textures on import
 - ✅ **Automatic `.PNG` or `.MAP` → `.DDS` conversion** for textures on export
 - ✅ **Clear export modes** for Legacy Only, Legacy + Redux, and Redux Only workflows
-- ✅ **Hardpoint/turret GEO suffix validation** for common `gc`, `gr`, `gm`, `gs`, `tx`, and `ty` naming conventions
+- ✅ **Hardpoint/turret GEO suffix and hierarchy validation** for common `gc`, `gr`, `gm`, `gs`, `tx`, `ty`, and turret cockpit conventions
+- ✅ **Cockpit GEO generator** for cloning selected LOD1 faces into matching LOD2 cockpit objects with matching origins
 - ✅ **Safe material name auto-generation**  
 - ✅ **Auto UV unwrap** when missing  
 - ✅ **Accurate GEO scaling and GEOFlags**  
@@ -87,6 +88,14 @@ Everything is handled inside Blender:
   - The Redux checkbox is labeled **Also Create Redux Files** to make it clear that Redux files are generated after the legacy export.
 - **Modder validation**
   - Added validation warnings for documented hardpoint and turret suffix conventions such as `gc1`, `gr1`, `gm1`, `gs1`, `tx1`, and `ty1`.
+  - Added turret cockpit validation for Redux: warns when POV is parented under pitch (`tx#`), when turret hardpoints are not under pitch, and when cockpit LOD rotators do not mirror primary turret rotators.
+- **Turret cockpit Redux handling**
+  - Auto-port now detects VDF turret cockpits and forces separate cockpit mesh/skeleton output in `Auto` cockpit mode.
+  - The reliable convention is `ty#` for yaw, `tx#` for pitch/guns, POV under yaw, and cockpit-only visible geometry on duplicate cockpit rotator bones instead of the POV bone.
+- **Cockpit GEO generator**
+  - Added a View3D Battlezone helper that clones selected mesh faces into matching cockpit LOD objects.
+  - For example, selected faces from `ara11bda` and `ara11bdb` generate `ara21bda` and `ara21bdb`.
+  - Generated cockpit objects preserve source transforms, origins, material slots, selected mesh data, and matching parent hierarchy when the parent counterpart is generated or already exists.
 
 #### Changed
 - Shortened Redux option labels so Blender dialogs do not truncate important setting names.
@@ -182,13 +191,14 @@ Everything is handled inside Blender:
 
 ## Credits
 
-| Contributor | Role |
-|--------------|------|
-| **DivisionByZero** | Original Python Ogre mesh port script |
-| **Commando950** | Original SDF/VDF/GEO Blender plugin |
-| **Kindrad** | Ogre import/export base code (Kenshi add-on) |
-| **Business Lawyer** | Original Battlezone Map IO tool |
-| **GrizzlyOne95** | Blender 4.5 LTS update, Ogre integration, quaternion/scaling/UI modernization, multiple bug fixes |
+| Contributor / Project | Contribution |
+|-----------------------|--------------|
+| **DivisionByZero** | Original legacy model-to-Redux Python porting script |
+| **Business Lawyer** | BZMapIO map tooling |
+| **Kindrad** | Kenshi mesh add-on and Ogre import/export foundation |
+| **Commando950** | Original Blender VDF/SDF plugin |
+| **GrizzlyOne95** | Unified toolkit integration, additional features, bug fixes, Blender API upgrades, and workflow modernization |
+| **Lucius64 / kenshi_io_blender** | Inspiration and reference for modern Kenshi/Ogre mesh workflows: [github.com/Lucius64/kenshi_io_blender](https://github.com/Lucius64/kenshi_io_blender/tree/main) |
 
 ---
 
@@ -209,10 +219,13 @@ Portions of the importer/exporter system are derived from
 which is also licensed under GPL-3.0. All such portions retain their original
 copyright notices.
 
+The bundled native Ogre backend and related workflow ideas also draw from
+[Lucius64's kenshi_io_blender](https://github.com/Lucius64/kenshi_io_blender/tree/main).
+
 See the [LICENSE](LICENSE) file for full terms.
 
 Other portions of code were derived from sources by Commando950's plugin here: https://commando950.neocities.org/downloads/
-And DivisionByZeoro's porting code, never put on any site or repo.
+And DivisionByZero's porting code, never put on any site or repo.
 
 ### Third-Party Components
 

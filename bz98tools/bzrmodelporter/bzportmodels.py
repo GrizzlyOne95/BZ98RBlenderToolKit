@@ -2079,10 +2079,27 @@ def port_bwd2(target_filepath, asset_resolver, settings):
 	# Note: This works by checking if any objects are transformed differently across time or across animations.
 	#    It does not currently compare against the object's given transform - only animated positions/rotations.
 	if(settings.separate_cockpit_auto()):
-		# TODO: Detect turret cockpit when turret flag is set: settings.turret_enabled() | settings.turret_auto()
-		
 		imodel.use_cockpit = False
+		has_turret_rotator = any(
+			iobject.class_id == ClassID.TURRET_GEOMETRY
+			for iobject in imodel.iobject_list
+		)
+		has_cockpit_payload = any(
+			iobject.geometry_cockpit is not None
+			for iobject in imodel.iobject_list
+		)
+		has_eyepoint = any(iobject.is_eyepoint for iobject in imodel.iobject_list)
+		if(is_vdf
+			and has_turret_rotator
+			and has_cockpit_payload
+			and has_eyepoint
+			and not settings.turret_disabled()):
+			print("Turret cockpit detected; forcing separate cockpit Redux output")
+			imodel.use_cockpit = True
+
 		for iobject in imodel.iobject_list:
+			if(imodel.use_cockpit):
+				break
 			if(iobject.geometry_cockpit is None
 				and not iobject.is_eyepoint):
 				continue # NO COCKPIT AND NOT EYEPOINT

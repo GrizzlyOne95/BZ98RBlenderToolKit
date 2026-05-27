@@ -13,6 +13,14 @@ This release focuses on UI and workflow improvements for legacy Battlezone expor
   - stale-result warning when the scene changes after validation
 - Legacy export dialog layouts for `.geo`, `.vdf`, and `.sdf`.
 - Named `GEOType` selector with role hints instead of raw integer-only editing.
+- Turret cockpit validation for Redux exports:
+  - warns when a turret POV is parented under a `tx#` pitch rotator
+  - warns when turret hardpoints are not under a `tx#` pitch rotator
+  - warns when cockpit LOD turret rotators do not mirror primary `ty#`/`tx#` rotators
+- Cockpit GEO generator:
+  - clones selected mesh faces into matching cockpit LOD objects, such as `ara11bda` to `ara21bda`
+  - preserves source transforms, origins, material slots, and selected mesh data
+  - mirrors parent relationships to generated or existing cockpit counterparts where possible
 - Material helpers:
   - export preview for resolved legacy texture names
   - derive texture names from the Blender material name
@@ -37,6 +45,7 @@ This release focuses on UI and workflow improvements for legacy Battlezone expor
 - Reorganized Scene, Object, Material, Animation, and ZFS panels into workflow-oriented groupings.
 - Grouped Battlezone import/export entries under dedicated File menu submenus.
 - GEO export texture fallback now prefers linked image names before material-name fallback.
+- VDF Redux auto-port now treats detected turret cockpits as separate cockpit outputs when cockpit mode is `Auto`.
 
 ## Fixed
 

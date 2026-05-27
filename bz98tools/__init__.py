@@ -39,6 +39,10 @@ if bpy is not None:
 
 ZFS_TEXTURE_EXTENSIONS = {'.map', '.pic', '.tga', '.dds', '.png', '.bmp', '.jpg', '.jpeg'}
 
+LEGACY_VEHICLE_FORWARD_LABEL = "Legacy VDF/SDF/GEO vehicle front: Blender +Y"
+REDUX_MESH_FORWARD_LABEL = "Direct Redux .mesh vehicle front: Blender -Y"
+AUTO_PORT_FORWARD_NOTE = "Legacy + Redux export uses the legacy +Y setup, then converts for Redux."
+
 def get_default_ogre_xml_converter():
     """Try to find OgreXMLConverter.exe in the bundled ogretools folder."""
     addon_dir = os.path.dirname(__file__)
@@ -78,7 +82,7 @@ if "bpy" in locals():
 bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
-    "author": "Commando950/DivisionByZero/GrizzlyOne95",
+    "author": "GrizzlyOne95, Commando950, DivisionByZero, Business Lawyer, Kindrad; inspired by Lucius64",
     "version": (1, 4, 1),
     "blender": (4, 5, 1),
     "category": "Import-Export",
@@ -615,8 +619,8 @@ GEO_TYPE_UI_HINTS = {
     3: ("ERROR", "Type 3 is known to crash as a VDF/SDF GEO. Avoid using it in legacy vehicle/structure exports."),
     15: ("INFO", "Type 15 is used for spinner behavior. Spinner helpers normally export with this role."),
     38: ("INFO", "Type 38 is typically used as a Redux headlight mask helper."),
-    40: ("INFO", "Type 40 is commonly used for POV / eyepoint placement."),
-    65: ("INFO", "Type 65 is used for turret rotators. Use tx# for pitch or ty# for yaw, such as tx1 or ty1."),
+    40: ("INFO", "Type 40 is the POV / eyepoint. For Redux turret cockpits, parent POV under ty# yaw instead of tx# pitch."),
+    65: ("INFO", "Type 65 is a turret rotator. Use ty# for yaw, tx# for pitch, and keep cockpit geometry off the POV bone."),
     70: ("INFO", "Type 70 marks a weapon hardpoint or production smoke emitter."),
     71: ("INFO", "Type 71 marks a cannon hardpoint. Use suffix gc1-gc5."),
     72: ("INFO", "Type 72 marks a rocket hardpoint. Use suffix gr1-gr5."),
@@ -1172,6 +1176,20 @@ def _compute_validation_signature(scene):
         )
 
         mesh = getattr(obj, "data", None)
+        modifier_types = ",".join(getattr(modifier, "type", "") for modifier in getattr(obj, "modifiers", []))
+        constraint_names = ",".join(getattr(constraint, "name", "") for constraint in getattr(obj, "constraints", []))
+        vertex_group_count = len(getattr(obj, "vertex_groups", []))
+        shape_keys = getattr(mesh, "shape_keys", None)
+        shape_key_count = len(getattr(shape_keys, "key_blocks", [])) if shape_keys is not None else 0
+        action = getattr(getattr(obj, "animation_data", None), "action", None)
+        action_name = getattr(action, "name", "")
+        digest.update(
+            (
+                f"ANIM|{obj.name}|{modifier_types}|{constraint_names}|"
+                f"{vertex_group_count}|{shape_key_count}|{action_name}\n"
+            ).encode("utf-8", errors="ignore")
+        )
+
         materials = getattr(mesh, "materials", None) or []
         for slot_index, material in enumerate(materials):
             if material is None:
@@ -1248,6 +1266,29 @@ def _draw_redux_only_export_mode_box(layout):
     box.label(text="Output Mode", icon='EXPORT')
     box.label(text="Mode: Redux only", icon='MESH_DATA')
     box.label(text="Writes Redux mesh-side files without creating GEO, VDF, or SDF files.")
+    return box
+
+
+def _draw_legacy_animation_limits_box(layout):
+    box = layout.box()
+    box.label(text="Legacy Animation Limits", icon='INFO')
+    box.label(text="VDF/SDF ANIM exports object rotation and location only.")
+    box.label(text="Skeletal animation, skin weights, shape keys, and mesh bending are not written.")
+    box.label(text="Each moving legacy part must be a separate GEO object.")
+    return box
+
+
+def _draw_orientation_reference_box(layout, mode="LEGACY", auto_port_enabled=False):
+    box = layout.box()
+    box.label(text="Orientation Reference", icon='EMPTY_ARROWS')
+    if mode == "REDUX":
+        box.label(text=REDUX_MESH_FORWARD_LABEL, icon='MESH_DATA')
+        box.label(text="Use this for direct Redux mesh imports and exports.")
+    else:
+        box.label(text=LEGACY_VEHICLE_FORWARD_LABEL, icon='OBJECT_DATA')
+        box.label(text="Use this when authoring vehicles for legacy VDF export.")
+        if auto_port_enabled:
+            box.label(text=AUTO_PORT_FORWARD_NOTE, icon='INFO')
     return box
 
 
@@ -1560,6 +1601,24 @@ class BZ98TOOLS_PT_scene_asset_properties(bpy.types.Panel):
         lod_box.prop(props, "LOD3")
         lod_box.prop(props, "LOD4")
         lod_box.prop(props, "LOD5")
+
+
+class BZ98TOOLS_PT_scene_orientation_reference(bpy.types.Panel):
+    bl_idname = "SCENE_PT_BZ_ORIENTATION_REFERENCE"
+    bl_label = "Orientation Reference"
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "scene"
+    bl_parent_id = "SCENE_PT_BZ_SDFVDF"
+
+    def draw(self, context):
+        layout = self.layout
+        _draw_orientation_reference_box(layout, mode="LEGACY")
+
+        redux = layout.box()
+        redux.label(text="Redux Direct Mesh", icon='MESH_DATA')
+        redux.label(text=REDUX_MESH_FORWARD_LABEL)
+        redux.label(text="Legacy + Redux auto-port handles this conversion for VDF/SDF/GEO exports.")
 
 
 class BZ98TOOLS_PT_scene_collision_helpers(bpy.types.Panel):
@@ -1888,6 +1947,23 @@ class BZ98TOOLS_PT_view3d_selected_geo(bpy.types.Panel):
             info.label(text=f"Vertices: {len(obj.data.vertices)}", icon='MESH_DATA')
         elif getattr(geo, "IsSpinnerHelper", False):
             info.label(text="Spinner helper", icon='EMPTY_DATA')
+
+
+class BZ98TOOLS_PT_view3d_cockpit_tools(bpy.types.Panel):
+    bl_idname = "VIEW3D_PT_BZ_COCKPIT_TOOLS"
+    bl_label = "Cockpit Tools"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Battlezone"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        box.label(text="Cockpit Geometry Generator", icon='MESH_DATA')
+        box.label(text="Duplicates selected mesh faces into matching LOD2 cockpit GEOs.")
+        box.label(text="Example: ara11bda -> ara21bda, preserving origin and materials.")
+        box.operator("bz.generate_cockpit_geometry", text="Generate Cockpit GEOs")
 
 
 class BZ98TOOLS_PT_geo_collision(bpy.types.Panel):
@@ -2274,20 +2350,20 @@ Used for doing actions.
 In this case used for creating a new animation element and removing one.
 '''
 class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
-    """Generate VDF-style inner_col / outer_col collision cubes from selected mesh bounds"""
+    """Generate VDF-style inner_col / outer_col collision meshes from selected mesh bounds"""
     bl_idname = "bz.generate_vdf_collision_meshes"
     bl_label = "Generate VDF Collision Meshes"
     bl_description = (
-        "Create inner_col and outer_col box meshes from the combined bounding box of the "
-        "selected mesh objects for use as VDF collision data "
+        "Create stock-profiled inner_col and outer_col meshes from the combined bounding "
+        "box of the selected mesh objects for use as VDF collision data "
         "(SDF collision is calculated differently and does not use these)"
     )
 
     inner_scale: bpy.props.FloatProperty(
-        name="Inner Box Scale",
-        description="Scale of inner collision box relative to the visual bounds",
-        default=0.7,
-        min=0.0,
+        name="Inner Stock Scale",
+        description="Overall multiplier for the stock inner collision profile; 1.0 matches stock VDF side insets",
+        default=1.0,
+        min=0.05,
         max=1.0,
     )
 
@@ -2299,14 +2375,35 @@ class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
         max=1.0,
     )
 
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "inner_scale")
+        layout.prop(self, "outer_margin")
+        layout.label(text="Inner uses stock VDF side insets: X 20%, Y 25%, Z 30%/20%.")
+
     def execute(self, context):
         import mathutils
-        import bmesh
 
         # -----------------------------------------
         # Collect source objects
         # -----------------------------------------
-        selected_meshes = [o for o in context.selected_objects if o.type == 'MESH']
+        collision_helper_names = {
+            'inner_col',
+            'innercol',
+            'inner_collision',
+            'innercollision',
+            'outer_col',
+            'outercol',
+            'outer_collision',
+            'outercollision',
+        }
+        selected_meshes = [
+            o for o in context.selected_objects
+            if o.type == 'MESH' and o.name.lower() not in collision_helper_names
+        ]
 
         if not selected_meshes:
             self.report({'ERROR'}, "No mesh objects selected")
@@ -2355,9 +2452,36 @@ class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
                 setattr(half, attr, eps)
 
         outer_half = half * (1.0 + self.outer_margin)
-        inner_half = half * self.inner_scale
+        outer_min = center_w - outer_half
+        outer_max = center_w + outer_half
 
-        def make_box(name: str, half_vec: mathutils.Vector):
+        stock_inner_insets = {
+            "x_min": 0.198,
+            "x_max": 0.197,
+            "y_min": 0.256,
+            "y_max": 0.245,
+            "z_min": 0.303,
+            "z_max": 0.197,
+        }
+        outer_size = outer_max - outer_min
+        inner_min = mathutils.Vector((
+            outer_min.x + (outer_size.x * stock_inner_insets["x_min"]),
+            outer_min.y + (outer_size.y * stock_inner_insets["y_min"]),
+            outer_min.z + (outer_size.z * stock_inner_insets["z_min"]),
+        ))
+        inner_max = mathutils.Vector((
+            outer_max.x - (outer_size.x * stock_inner_insets["x_max"]),
+            outer_max.y - (outer_size.y * stock_inner_insets["y_max"]),
+            outer_max.z - (outer_size.z * stock_inner_insets["z_max"]),
+        ))
+
+        if self.inner_scale < 1.0:
+            inner_center = (inner_min + inner_max) * 0.5
+            inner_half = (inner_max - inner_min) * (0.5 * self.inner_scale)
+            inner_min = inner_center - inner_half
+            inner_max = inner_center + inner_half
+
+        def make_box(name: str, min_vec: mathutils.Vector, max_vec: mathutils.Vector):
             # Reuse an existing object with that name if it's a mesh, otherwise create new
             existing = bpy.data.objects.get(name)
             if existing is not None and existing.type != 'MESH':
@@ -2372,21 +2496,32 @@ class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
                 obj_box = existing
                 obj_box.data = mesh
 
-            bm = bmesh.new()
-            # Unit cube from -1..1, centered at origin
-            bmesh.ops.create_cube(bm, size=2.0)
-
-            # Scale to the desired half-extents (still centered at origin)
-            scale_mat = mathutils.Matrix.Diagonal(
-                (half_vec.x, half_vec.y, half_vec.z, 1.0)
-            )
-            bmesh.ops.transform(bm, matrix=scale_mat, verts=bm.verts)
-
-            bm.to_mesh(mesh)
-            bm.free()
+            box_center = (min_vec + max_vec) * 0.5
+            local_min = min_vec - box_center
+            local_max = max_vec - box_center
+            verts = [
+                (local_max.x, local_max.y, local_min.z),
+                (local_max.x, local_min.y, local_min.z),
+                (local_min.x, local_min.y, local_min.z),
+                (local_min.x, local_max.y, local_min.z),
+                (local_max.x, local_max.y, local_max.z),
+                (local_max.x, local_min.y, local_max.z),
+                (local_min.x, local_min.y, local_max.z),
+                (local_min.x, local_max.y, local_max.z),
+            ]
+            faces = [
+                (0, 1, 2, 3),
+                (4, 7, 6, 5),
+                (0, 4, 5, 1),
+                (1, 5, 6, 2),
+                (2, 6, 7, 3),
+                (3, 7, 4, 0),
+            ]
+            mesh.from_pydata(verts, [], faces)
+            mesh.update()
 
             # Place cube at the combined center in WORLD space, axis-aligned
-            obj_box.matrix_world = mathutils.Matrix.Translation(center_w)
+            obj_box.matrix_world = mathutils.Matrix.Translation(box_center)
 
             # Helper-ish but exportable:
             obj_box.display_type = 'WIRE'
@@ -2398,12 +2533,12 @@ class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
 
             return obj_box
 
-        outer_obj = make_box("outer_col", outer_half)
-        inner_obj = make_box("inner_col", inner_half)
+        outer_obj = make_box("outer_col", outer_min, outer_max)
+        inner_obj = make_box("inner_col", inner_min, inner_max)
 
         self.report(
             {'INFO'},
-            "Generated VDF inner_col and outer_col from selected mesh bounds",
+            "Generated stock-profiled VDF inner_col and outer_col from selected mesh bounds",
         )
         return {'FINISHED'}
 
@@ -2523,6 +2658,233 @@ class OPCreateSpinnerHelper(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class OPGenerateCockpitGeometry(bpy.types.Operator):
+    bl_idname = "bz.generate_cockpit_geometry"
+    bl_label = "Generate Cockpit GEOs"
+    bl_description = (
+        "Clone selected edit-mode mesh geometry into matching cockpit LOD objects "
+        "(for example ara11bda becomes ara21bda) while preserving transforms, origins, and materials"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    source_lod: bpy.props.EnumProperty(
+        name="Source LOD",
+        description="LOD marker to read from the 4th character of selected GEO names",
+        items=(
+            ("1", "LOD1", "Create cockpit pieces from LOD1 source GEOs"),
+            ("2", "LOD2", "Create cockpit pieces from LOD2 source GEOs"),
+            ("3", "LOD3", "Create cockpit pieces from LOD3 source GEOs"),
+        ),
+        default="1",
+    )
+
+    target_lod: bpy.props.EnumProperty(
+        name="Target LOD",
+        description="LOD marker to write into generated cockpit GEO names",
+        items=(
+            ("1", "LOD1", "Generate LOD1 names"),
+            ("2", "LOD2 Cockpit", "Generate LOD2 cockpit names"),
+            ("3", "LOD3", "Generate LOD3 names"),
+        ),
+        default="2",
+    )
+
+    replace_existing: bpy.props.BoolProperty(
+        name="Replace Existing Targets",
+        description="Replace existing generated target objects with the same names",
+        default=True,
+    )
+
+    select_created: bpy.props.BoolProperty(
+        name="Select Created Objects",
+        description="Select the generated cockpit objects when done",
+        default=True,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context, "mode", "") in {'EDIT_MESH', 'OBJECT'} and getattr(context, "scene", None) is not None
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        import bmesh
+
+        if self.source_lod == self.target_lod:
+            self.report({'ERROR'}, "Source LOD and target LOD must be different")
+            return {'CANCELLED'}
+
+        previous_mode = getattr(context, "mode", "OBJECT")
+        active_obj = context.view_layer.objects.active
+
+        source_objects = self._collect_source_objects(context)
+        if not source_objects:
+            self.report({'ERROR'}, "Select mesh geometry in Edit Mode, or selected faces in Object Mode")
+            return {'CANCELLED'}
+
+        selections = []
+        for source in source_objects:
+            selected_faces = self._selected_face_indices(source, bmesh)
+            if not selected_faces:
+                continue
+
+            target_name = self._target_name_for_source(source.name)
+            if not target_name:
+                self.report({'WARNING'}, f"Skipped '{source.name}': name is not a valid legacy GEO name")
+                continue
+            if target_name.lower() == source.name.lower():
+                self.report({'WARNING'}, f"Skipped '{source.name}': generated name matches the source")
+                continue
+
+            selections.append((source, selected_faces, target_name))
+
+        if not selections:
+            self.report({'ERROR'}, "No selected mesh faces found on valid source GEO objects")
+            return {'CANCELLED'}
+
+        existing_conflicts = [
+            target_name for _source, _selected_faces, target_name in selections
+            if bpy.data.objects.get(target_name) is not None
+        ]
+        if existing_conflicts and not self.replace_existing:
+            self.report(
+                {'ERROR'},
+                "Target object already exists: " + ", ".join(sorted(existing_conflicts)),
+            )
+            return {'CANCELLED'}
+
+        if previous_mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+        created_by_source = {}
+        created_objects = []
+
+        for source, selected_faces, target_name in selections:
+            existing = bpy.data.objects.get(target_name)
+            if existing is not None:
+                bpy.data.objects.remove(existing, do_unlink=True)
+
+            mesh_copy = self._copy_selected_faces_to_mesh(source, selected_faces, bmesh)
+            if mesh_copy is None or len(mesh_copy.polygons) == 0:
+                if mesh_copy is not None:
+                    bpy.data.meshes.remove(mesh_copy)
+                self.report({'WARNING'}, f"Skipped '{source.name}': selected geometry produced an empty mesh")
+                continue
+
+            mesh_copy.name = target_name
+            cockpit_obj = bpy.data.objects.new(target_name, mesh_copy)
+            self._link_to_source_collection(context, source, cockpit_obj)
+            cockpit_obj.matrix_world = source.matrix_world.copy()
+            cockpit_obj.hide_render = source.hide_render
+            cockpit_obj.display_type = source.display_type
+            self._copy_geo_properties(source, cockpit_obj)
+
+            created_by_source[source] = cockpit_obj
+            created_objects.append(cockpit_obj)
+
+        for source, cockpit_obj in created_by_source.items():
+            parent = getattr(source, "parent", None)
+            target_parent = None
+            if parent is not None:
+                target_parent = created_by_source.get(parent)
+                if target_parent is None:
+                    parent_target_name = self._target_name_for_source(parent.name)
+                    if parent_target_name:
+                        target_parent = bpy.data.objects.get(parent_target_name)
+
+            if target_parent is not None:
+                world = cockpit_obj.matrix_world.copy()
+                cockpit_obj.parent = target_parent
+                cockpit_obj.matrix_world = world
+
+        if self.select_created:
+            for obj in context.selected_objects:
+                obj.select_set(False)
+            for obj in created_objects:
+                obj.select_set(True)
+            if created_objects:
+                context.view_layer.objects.active = created_objects[0]
+        elif active_obj is not None:
+            context.view_layer.objects.active = active_obj
+
+        self.report({'INFO'}, f"Generated {len(created_objects)} cockpit GEO object(s)")
+        return {'FINISHED'}
+
+    def _collect_source_objects(self, context):
+        if getattr(context, "mode", "") == 'EDIT_MESH':
+            objects = getattr(context, "objects_in_mode_unique_data", None)
+            if objects:
+                return [obj for obj in objects if getattr(obj, "type", None) == 'MESH']
+            edit_obj = getattr(context, "edit_object", None)
+            return [edit_obj] if getattr(edit_obj, "type", None) == 'MESH' else []
+        return [obj for obj in context.selected_objects if getattr(obj, "type", None) == 'MESH']
+
+    def _selected_face_indices(self, obj, bmesh_module):
+        if getattr(obj, "mode", "") == 'EDIT':
+            bm = bmesh_module.from_edit_mesh(obj.data)
+            bm.faces.ensure_lookup_table()
+            selected = set()
+            for face in bm.faces:
+                if face.select or any(vert.select for vert in face.verts) or any(edge.select for edge in face.edges):
+                    selected.add(face.index)
+            return selected
+        return {poly.index for poly in obj.data.polygons if getattr(poly, "select", False)}
+
+    def _target_name_for_source(self, name):
+        base_name = self._legacy_base_name(name)
+        if len(base_name) < 5 or len(base_name) > 8:
+            return ""
+        if base_name[3] != self.source_lod:
+            return ""
+        chars = list(base_name)
+        chars[3] = self.target_lod
+        return _fix_geo_export_name("".join(chars), int(self.target_lod)).lower()
+
+    def _legacy_base_name(self, name):
+        raw = (name or "").strip()
+        if len(raw) > 8:
+            prefix, dot, suffix = raw.rpartition(".")
+            if dot and len(suffix) == 3 and suffix.isdigit():
+                raw = prefix
+        return raw
+
+    def _copy_selected_faces_to_mesh(self, source, selected_faces, bmesh_module):
+        mesh_copy = source.data.copy()
+        bm = bmesh_module.new()
+        bm.from_mesh(mesh_copy)
+        bm.faces.ensure_lookup_table()
+        faces_to_delete = [face for face in bm.faces if face.index not in selected_faces]
+        if faces_to_delete:
+            bmesh_module.ops.delete(bm, geom=faces_to_delete, context='FACES')
+        loose_verts = [vert for vert in bm.verts if not vert.link_faces]
+        if loose_verts:
+            bmesh_module.ops.delete(bm, geom=loose_verts, context='VERTS')
+        bm.to_mesh(mesh_copy)
+        bm.free()
+        mesh_copy.update()
+        return mesh_copy
+
+    def _link_to_source_collection(self, context, source, obj):
+        target_collection = source.users_collection[0] if source.users_collection else context.collection
+        target_collection.objects.link(obj)
+
+    def _copy_geo_properties(self, source, target):
+        source_geo = getattr(source, "GEOPropertyGroup", None)
+        target_geo = getattr(target, "GEOPropertyGroup", None)
+        if source_geo is None or target_geo is None:
+            return
+
+        for prop in source_geo.bl_rna.properties:
+            identifier = prop.identifier
+            if identifier == "rna_type" or getattr(prop, "is_readonly", False):
+                continue
+            try:
+                setattr(target_geo, identifier, getattr(source_geo, identifier))
+            except Exception:
+                pass
+
+
 class OPCaptureRawVDFMatrix(bpy.types.Operator):
     bl_idname = "bz.capture_raw_vdf_matrix"
     bl_label = "Capture Raw VDF Matrix"
@@ -2595,6 +2957,7 @@ class AnimationPanel(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="Animation Elements")
+        _draw_legacy_animation_limits_box(box)
         box.template_list("SCENE_UL_Battlezone_ANIM_Element", "", scene, "AnimationCollection", scene, "CurAnimation")
 
         actions = layout.box()
@@ -3093,6 +3456,8 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
             core.label(text=f"Active Object: {active_obj.name}", icon='OBJECT_DATA')
             core.label(text="Only the active mesh object is exported.", icon='INFO')
 
+        _draw_orientation_reference_box(layout, mode="LEGACY", auto_port_enabled=self.auto_port_ogre)
+
         _draw_validation_summary_box(layout, scene, export_mode="GEO")
 
         port = layout.box()
@@ -3116,7 +3481,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
 
     ExportAnimations: BoolProperty(
         name="Export Animations",
-        description="Export Animations for the VDF",
+        description="Export legacy VDF object rotation/location keys only; armatures, skin weights, shape keys, and mesh deformation are not supported",
         default=True,
     )
 
@@ -3408,11 +3773,14 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         core.label(text="Core Export")
         core.label(text="Exports scene GEO slots plus VDF container data.", icon='INFO')
 
+        _draw_orientation_reference_box(layout, mode="LEGACY", auto_port_enabled=self.auto_port_ogre)
+
         anim_box = layout.box()
         anim_box.label(text="Animations")
         anim_box.prop(self, "ExportAnimations")
         anim_count = len(getattr(scene, "AnimationCollection", []))
         anim_box.label(text=f"Scene animation elements: {anim_count}")
+        _draw_legacy_animation_limits_box(anim_box)
 
         legacy = layout.box()
         legacy.label(text="Legacy Output")
@@ -3449,7 +3817,7 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
 
     ExportAnimations: BoolProperty(
         name="Export Animations",
-        description="Export any animation data defined in Scene.AnimationCollection",
+        description="Export legacy SDF object rotation/location keys only; armatures, skin weights, shape keys, and mesh deformation are not supported",
         default=True,
     )
 
@@ -3622,11 +3990,14 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         core.label(text="Core Export")
         core.label(text="Exports scene GEO slots plus SDF container data.", icon='INFO')
 
+        _draw_orientation_reference_box(layout, mode="LEGACY", auto_port_enabled=self.auto_port_ogre)
+
         anim_box = layout.box()
         anim_box.label(text="Animations")
         anim_box.prop(self, "ExportAnimations")
         anim_count = len(getattr(scene, "AnimationCollection", []))
         anim_box.label(text=f"Scene animation elements: {anim_count}")
+        _draw_legacy_animation_limits_box(anim_box)
 
         legacy = layout.box()
         legacy.label(text="Legacy Output")
@@ -3714,8 +4085,11 @@ class BZ98TOOLS_OT_import_bzr_mesh(bpy.types.Operator, ImportHelper):
         from .ogrefast import backend as ogre_backend
 
         xml_converter = self.xml_converter or None
+        diagnostics = getattr(context.scene, "bz_import_diagnostics", None)
+        if diagnostics is not None:
+            diagnostics.clear()
 
-        return ogre_backend.import_mesh(
+        result = ogre_backend.import_mesh(
             self,
             context,
             self.filepath,
@@ -3730,10 +4104,20 @@ class BZ98TOOLS_OT_import_bzr_mesh(bpy.types.Operator, ImportHelper):
             use_selected_skeleton=self.use_selected_skeleton,
             import_materials=self.import_materials,
         )
+        if result == {'FINISHED'}:
+            _add_import_diagnostic(
+                context.scene,
+                "INFO",
+                "Orientation",
+                "Redux mesh front",
+                "Imported Redux .mesh vehicles use Blender -Y as the nose/front direction.",
+            )
+        return result
 
 
     def draw(self, context):
         layout = self.layout
+        _draw_orientation_reference_box(layout, mode="REDUX")
         layout.prop(self, "xml_converter")
         layout.prop(self, "keep_xml")
         layout.separator()
@@ -3883,6 +4267,7 @@ class BZ98TOOLS_OT_export_bzr_mesh(bpy.types.Operator, ExportHelper):
     def draw(self, context):
         layout = self.layout
         _draw_redux_only_export_mode_box(layout)
+        _draw_orientation_reference_box(layout, mode="REDUX")
         layout.prop(self, "xml_converter")
         layout.prop(self, "keep_xml")
         layout.separator()
@@ -4394,6 +4779,7 @@ GUIClasses = [
     BZ_PT_GeoTypeListPopover,
     BattlezoneSDFVDFProperties,
     BZ98TOOLS_PT_scene_asset_properties,
+    BZ98TOOLS_PT_scene_orientation_reference,
     BZ98TOOLS_PT_scene_collision_helpers,
     BZ98TOOLS_PT_scene_advanced,
     BZ98TOOLS_PT_scene_vdf_raw,
@@ -4404,6 +4790,7 @@ GUIClasses = [
     BZ98TOOLS_PT_import_diagnostics,
     BattlezoneGEOProperties,
     BZ98TOOLS_PT_view3d_selected_geo,
+    BZ98TOOLS_PT_view3d_cockpit_tools,
     BZ98TOOLS_PT_geo_collision,
     BZ98TOOLS_PT_geo_sdf,
     BZ98TOOLS_PT_geo_vdf,
@@ -4429,6 +4816,7 @@ GUIClasses = [
     OPGenerateVDFCollisionMeshes,
     OPGenerateCollision,
     OPCreateSpinnerHelper,
+    OPGenerateCockpitGeometry,
     OPCaptureRawVDFMatrix,
     AnimationUIList,
     AnimationPanel,

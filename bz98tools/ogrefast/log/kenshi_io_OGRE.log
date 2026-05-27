@@ -1,0 +1,30 @@
+09:22:23: Creating resource group General
+09:22:23: Creating resource group Internal
+09:22:23: Creating resource group Autodetect
+09:22:23: Registering ResourceManager for type Mesh
+09:22:23: Registering ResourceManager for type Material
+09:22:23: Registering ResourceManager for type OldSkeleton
+09:22:23: ArchiveFactory for archive type FileSystem registered.
+09:22:23: set_vertex: start
+09:22:23: set_vertex: get buffer
+09:22:23: set_vertex: valid buffer size
+09:22:23: set_vertex: valid export info
+09:22:23: set_vertex: init vertex info
+09:22:23: set_vertex: set vertex info
+09:22:23: set_vertex: end
+09:22:23: MeshSerializer writing mesh data to stream ...
+09:22:23: File header written.
+09:22:23: Writing mesh data...
+09:22:23: Writing submesh...
+09:22:23: Exporting submesh texture aliases...
+09:22:23: Submesh texture aliases exported.
+09:22:23: Submesh exported.
+09:22:23: Exporting bounds information....
+09:22:23: Bounds information exported.
+09:22:23: Exporting submesh name table...
+09:22:23: Submesh name table exported.
+09:22:23: Mesh data exported.
+09:22:23: MeshSerializer export successful.
+09:22:23: Unregistering ResourceManager for type OldSkeleton
+09:22:23: Unregistering ResourceManager for type Mesh
+09:22:23: Unregistering ResourceManager for type Material

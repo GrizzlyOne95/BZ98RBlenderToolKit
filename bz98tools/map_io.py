@@ -19,7 +19,7 @@
 bl_info = {
 	"name": "Battlezone Map IO",
 	"description": "Imports and exports Battlezone Redux map terrain, texture, object, path, and playback data.",
-	"author": "Business Lawyer, HG2 converter by DivisionByZero",
+	"author": "Business Lawyer; integrated in BZ98R Blender Toolkit by GrizzlyOne95; HG2 converter by DivisionByZero",
 	"blender": (4, 5, 0),
 	"location": "VIEW_3D > Battlezone > Map Tools",
 	"category": "Import-Export",

@@ -23,6 +23,11 @@ This project includes or adapts code from the following sources:
   Licensed under the GNU General Public License v3.0  
   <https://codeberg.org/Kindrad/Kenshi_IO_Continued>
 
+• **kenshi_io_blender / kenshi_blender_tool**  
+  Copyright (C) 2023-2025 Lucius64  
+  Used as inspiration and for bundled native Ogre backend components  
+  <https://github.com/Lucius64/kenshi_io_blender>
+
 Portions of serialization, import/export, and data handling logic are
 based on Kenshi_IO_Continued, which is licensed under the GPL-3.0. These
 components remain under GPL-3.0 terms, and therefore the entirety of this

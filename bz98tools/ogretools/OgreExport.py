@@ -107,7 +107,7 @@ History:<br>
 
 bl_info = {
     "name": "Battlezone 98 Redux Mesh/Skeleton Importer",
-    "author": "GrizzlyOne95, samedog, Kindrad",
+    "author": "GrizzlyOne95, Kindrad, samedog; inspired by Lucius64",
     "blender": (4, 5, 2),
     "version": (2025, 11, 11),
     "location": "File > Import-Export",
