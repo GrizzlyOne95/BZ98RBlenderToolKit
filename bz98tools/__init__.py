@@ -102,12 +102,40 @@ ANIMATION_PRESET_ITEMS = (
     ('PERSON_CORE', "Person Core", "Add slots 0 through 11 for a broad person animation starter set"),
 )
 
+VALIDATION_PRESET_ITEMS = (
+    ('AUTO', "General", "Run the standard legacy export checks"),
+    ('VEHICLE', "Vehicle / VDF", "Run vehicle-oriented checks, including POV and COL helpers"),
+    ('TURRET', "Turret", "Require turret animation slots and turret/cockpit conventions"),
+    ('WALKER', "Walker", "Require standard walker animation slots"),
+    ('PERSON', "Person", "Require standard person animation slots"),
+    ('ANIMATED', "Animated", "Require at least one legacy ANIM sequence entry"),
+)
+
 ANIMATION_PRESET_SLOTS = {
     'DEPLOY_PAIR': [0, 1],
     'TURRET_PAIR': [0, 1],
     'WALKER_CORE': [2, 3, 4, 5, 6, 7],
     'PERSON_CORE': list(range(0, 12)),
 }
+
+LEGACY_TRANSFORM_DATA_PATHS = {
+    "location",
+    "rotation_euler",
+    "rotation_quaternion",
+    "rotation_axis_angle",
+    "scale",
+}
+
+QUICK_VEHICLE_GEO_SPECS = (
+    ("bod", 60, "Body", (0.0, 0.0, 0.0), 0.28),
+    ("pov", 40, "POV", (0.0, 0.85, 0.45), 0.12),
+    ("gc1", 71, "GC1", (-0.22, 0.7, 0.18), 0.10),
+    ("gr1", 72, "GR1", (0.22, 0.7, 0.18), 0.10),
+    ("gs1", 74, "GS1", (-0.22, 0.15, 0.18), 0.10),
+    ("gm1", 73, "GM1", (0.22, 0.15, 0.18), 0.10),
+    ("rot", 66, "Rotor", (-0.45, 0.0, 0.12), 0.12),
+    ("nac", 67, "Nacelle", (0.45, 0.0, 0.12), 0.12),
+)
 
 EXPORT_KIND_IDNAMES = {
     "GEO": "export_scene.geo",
@@ -683,6 +711,65 @@ def _get_object_lod_label(obj):
     if len(name) >= 4 and name[3] in {'1', '2', '3'}:
         return f"LOD {name[3]}"
     return "LOD unknown"
+
+
+def _sanitize_quick_geo_prefix(value):
+    source = (value or "").strip().lower()
+    chars = [ch for ch in source if ch.isalnum()]
+    if not chars:
+        chars = list("veh")
+    return ("".join(chars) + "veh")[:3]
+
+
+def _quick_geo_prefix_from_scene(context):
+    scene = getattr(context, "scene", None)
+    props = getattr(scene, "SDFVDFPropertyGroup", None)
+    return _sanitize_quick_geo_prefix(getattr(props, "Name", "veh"))
+
+
+def _find_available_quick_geo_prefix(prefix):
+    suffixes = [spec[0] for spec in QUICK_VEHICLE_GEO_SPECS]
+
+    def is_available(candidate):
+        return all(bpy.data.objects.get(f"{candidate}11{suffix}") is None for suffix in suffixes)
+
+    prefix = _sanitize_quick_geo_prefix(prefix)
+    if is_available(prefix):
+        return prefix
+
+    digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+    for first in digits:
+        for second in digits:
+            candidate = (prefix[0] + first + second)[:3]
+            if is_available(candidate):
+                return candidate
+    return ""
+
+
+def _create_box_mesh(name, size):
+    half = float(size) * 0.5
+    verts = [
+        (-half, -half, -half),
+        (half, -half, -half),
+        (half, half, -half),
+        (-half, half, -half),
+        (-half, -half, half),
+        (half, -half, half),
+        (half, half, half),
+        (-half, half, half),
+    ]
+    faces = [
+        (0, 1, 2, 3),
+        (4, 7, 6, 5),
+        (0, 4, 5, 1),
+        (1, 5, 6, 2),
+        (2, 6, 7, 3),
+        (3, 7, 4, 0),
+    ]
+    mesh = bpy.data.meshes.new(name)
+    mesh.from_pydata(verts, [], faces)
+    mesh.update()
+    return mesh
 
 
 def _get_selected_face_indices(obj):
@@ -1409,6 +1496,137 @@ def _copy_animation_item(source_item, dest_item):
     dest_item.UnknownGeoMask = tuple(source_item.UnknownGeoMask)
 
 
+def _axis_mirror_matrix(axis):
+    values = [1.0, 1.0, 1.0, 1.0]
+    axis_index = {"X": 0, "Y": 1, "Z": 2}.get(axis, 0)
+    values[axis_index] = -1.0
+    return mathutils.Matrix.Diagonal(values)
+
+
+def _iter_action_fcurve_collections(action):
+    if action is None:
+        return
+
+    fcurves = getattr(action, "fcurves", None)
+    if fcurves is not None:
+        yield fcurves
+        return
+
+    for layer in getattr(action, "layers", []):
+        for strip in getattr(layer, "strips", []):
+            for channelbag in getattr(strip, "channelbags", []):
+                yield getattr(channelbag, "fcurves", [])
+
+
+def _legacy_transform_fcurves(action, include_scale=False):
+    curves = []
+
+    allowed_paths = set(LEGACY_TRANSFORM_DATA_PATHS)
+    if not include_scale:
+        allowed_paths.discard("scale")
+
+    for fcurves in _iter_action_fcurve_collections(action):
+        curves.extend(curve for curve in fcurves if getattr(curve, "data_path", "") in allowed_paths)
+    return curves
+
+
+def _legacy_action_keyframes(action, frame_start=None, frame_end=None, include_scale=False):
+    frames = set()
+    for curve in _legacy_transform_fcurves(action, include_scale=include_scale):
+        for keyframe in curve.keyframe_points:
+            frame = float(keyframe.co.x)
+            if frame_start is not None and frame < frame_start:
+                continue
+            if frame_end is not None and frame > frame_end:
+                continue
+            frames.add(frame)
+    return sorted(frames)
+
+
+def _replace_name_token(name, source_token, target_token):
+    if not source_token:
+        return ""
+
+    if source_token in name:
+        return name.replace(source_token, target_token, 1)
+
+    lower_name = name.lower()
+    lower_source = source_token.lower()
+    index = lower_name.find(lower_source)
+    if index < 0:
+        return ""
+    return name[:index] + target_token + name[index + len(source_token):]
+
+
+def _expand_object_descendants(objects):
+    expanded = []
+    seen = set()
+
+    def add_object(obj):
+        if obj is None or obj.name in seen:
+            return
+        seen.add(obj.name)
+        expanded.append(obj)
+        for child in getattr(obj, "children", []):
+            add_object(child)
+
+    for obj in objects:
+        add_object(obj)
+    return expanded
+
+
+def _delete_action_keys_in_range(action, data_paths, frame_start, frame_end):
+    if action is None:
+        return
+
+    for fcurves in _iter_action_fcurve_collections(action):
+        for curve in list(fcurves):
+            if curve.data_path not in data_paths:
+                continue
+            for keyframe in reversed(curve.keyframe_points):
+                frame = float(keyframe.co.x)
+                if frame_start <= frame <= frame_end:
+                    curve.keyframe_points.remove(keyframe, fast=True)
+            curve.update()
+            if len(curve.keyframe_points) == 0:
+                fcurves.remove(curve)
+
+
+def _source_key_interpolation(action, frame, include_scale=False):
+    for curve in _legacy_transform_fcurves(action, include_scale=include_scale):
+        for keyframe in curve.keyframe_points:
+            if abs(float(keyframe.co.x) - float(frame)) < 0.0001:
+                return keyframe.interpolation
+    return None
+
+
+def _set_inserted_key_interpolation(action, data_paths, frame, interpolation):
+    if action is None or interpolation is None:
+        return
+
+    for fcurves in _iter_action_fcurve_collections(action):
+        for curve in fcurves:
+            if curve.data_path not in data_paths:
+                continue
+            for keyframe in curve.keyframe_points:
+                if abs(float(keyframe.co.x) - float(frame)) < 0.0001:
+                    keyframe.interpolation = interpolation
+            curve.update()
+
+
+def _ensure_object_action(obj, suffix="_mirrored"):
+    obj.animation_data_create()
+    if obj.animation_data.action is None:
+        obj.animation_data.action = bpy.data.actions.new(f"{obj.name}{suffix}")
+    return obj.animation_data.action
+
+
+def _set_scene_frame_float(scene, frame):
+    frame_value = float(frame)
+    frame_base = math.floor(frame_value)
+    scene.frame_set(frame_base, subframe=frame_value - frame_base)
+
+
 def _get_active_export_operator(context, export_kind):
     expected_idname = EXPORT_KIND_IDNAMES.get(export_kind)
     space = getattr(context, "space_data", None)
@@ -1633,12 +1851,12 @@ class BZ98TOOLS_PT_scene_collision_helpers(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         box = layout.box()
-        box.label(text="VDF Collision Helpers")
-        box.label(text="For vehicles only. SDF collision is stored per GEO.")
-        box.label(text="Uses selected mesh bounds to build inner_col and outer_col.")
+        box.label(text="VDF COL Helpers")
+        box.label(text="Vehicles only.")
+        box.label(text="Uses selected meshes.")
         box.operator(
             "bz.generate_vdf_collision_meshes",
-            text="Generate inner_col / outer_col",
+            text="Generate COL Boxes",
         )
 
 
@@ -1687,8 +1905,19 @@ class BZ98TOOLS_OT_validate_scene(bpy.types.Operator):
     bl_idname = "bz.validate_scene"
     bl_label = "Validate Battlezone Scene"
 
+    preset: EnumProperty(
+        name="Preset",
+        description="Validation focus for animation and vehicle workflow checks",
+        items=VALIDATION_PRESET_ITEMS,
+        default='AUTO',
+    )
+
     def execute(self, context):
-        issues = bz_validation.collect_legacy_validation_issues(context, export_mode="ALL")
+        issues = bz_validation.collect_legacy_validation_issues(
+            context,
+            export_mode="ALL",
+            validation_preset=self.preset,
+        )
         _store_validation_results(context.scene, issues)
 
         counts = _get_validation_counts(context.scene, export_mode="ALL")
@@ -1782,6 +2011,186 @@ class BZ98TOOLS_OT_fix_validation_name(bpy.types.Operator):
 
         obj.name = candidate
         self.report({'INFO'}, f"Renamed '{original_name}' to '{candidate}'.")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_select_by_object_type(bpy.types.Operator):
+    bl_idname = "bz.select_by_object_type"
+    bl_label = "Select Battlezone Objects"
+    bl_description = "Select all mesh or non-mesh objects in the active scene"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    selection_mode: EnumProperty(
+        name="Selection Mode",
+        items=(
+            ("MESH", "Mesh Objects", "Select only mesh objects"),
+            ("NON_MESH", "Non-Mesh Objects", "Select empties, armatures, lights, cameras, and other non-mesh objects"),
+        ),
+        default="MESH",
+    )
+
+    def execute(self, context):
+        try:
+            if getattr(context, "mode", "OBJECT") != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+        except Exception:
+            pass
+
+        for obj in list(context.selected_objects):
+            obj.select_set(False)
+
+        selected = []
+        for obj in context.scene.objects:
+            is_mesh = getattr(obj, "type", None) == 'MESH'
+            if (self.selection_mode == "MESH" and is_mesh) or (self.selection_mode == "NON_MESH" and not is_mesh):
+                try:
+                    obj.select_set(True)
+                    selected.append(obj)
+                except Exception:
+                    continue
+
+        if selected:
+            context.view_layer.objects.active = selected[0]
+
+        label = "mesh" if self.selection_mode == "MESH" else "non-mesh"
+        self.report({'INFO'}, f"Selected {len(selected)} {label} object(s).")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_quick_normals_fix(bpy.types.Operator):
+    bl_idname = "bz.quick_normals_fix"
+    bl_label = "Quick Normals Fix"
+    bl_description = "Recalculate selected mesh normals for common Ogre import cleanup"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    normal_mode: EnumProperty(
+        name="Mode",
+        items=(
+            ("OUTSIDE", "Recalculate Outside", "Recalculate selected mesh face winding/normals outward"),
+            ("FACE_NORMALS", "Generate From Faces", "Recalculate outward and switch polygons to flat face normals"),
+        ),
+        default="OUTSIDE",
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return any(getattr(obj, "type", None) == 'MESH' for obj in getattr(context, "selected_objects", []))
+
+    def execute(self, context):
+        import bmesh
+
+        active = context.view_layer.objects.active
+        previous_mode = getattr(context, "mode", "OBJECT")
+        meshes = [obj for obj in context.selected_objects if getattr(obj, "type", None) == 'MESH']
+        if not meshes:
+            self.report({'ERROR'}, "No mesh objects selected.")
+            return {'CANCELLED'}
+
+        try:
+            if previous_mode != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+        except Exception:
+            pass
+
+        fixed = 0
+        for obj in meshes:
+            mesh = getattr(obj, "data", None)
+            if mesh is None:
+                continue
+
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+            bm.faces.ensure_lookup_table()
+            if bm.faces:
+                bmesh.ops.recalc_face_normals(bm, faces=list(bm.faces))
+            bm.to_mesh(mesh)
+            bm.free()
+
+            if self.normal_mode == "FACE_NORMALS":
+                for poly in mesh.polygons:
+                    poly.use_smooth = False
+
+            try:
+                mesh.normals_split_custom_set([(0.0, 0.0, 0.0)] * len(mesh.loops))
+            except Exception:
+                pass
+            mesh.update()
+            fixed += 1
+
+        if active is not None:
+            context.view_layer.objects.active = active
+            if previous_mode != 'OBJECT' and getattr(active, "type", None) == 'MESH':
+                try:
+                    bpy.ops.object.mode_set(mode='EDIT')
+                except Exception:
+                    pass
+
+        mode_label = "from faces" if self.normal_mode == "FACE_NORMALS" else "outside"
+        self.report({'INFO'}, f"Fixed normals {mode_label} on {fixed} mesh object(s).")
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_create_vehicle_geo_set(bpy.types.Operator):
+    bl_idname = "bz.create_vehicle_geo_set"
+    bl_label = "Create Vehicle GEO Set"
+    bl_description = "Create a movable starter set of tiny standard vehicle GEO cubes"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    base_prefix: StringProperty(
+        name="3-Character Prefix",
+        description="First three characters for generated legacy GEO names",
+        default="",
+        maxlen=3,
+    )
+
+    parent_to_body: BoolProperty(
+        name="Parent To Body",
+        description="Parent generated helper GEOs to the body cube",
+        default=True,
+    )
+
+    select_created: BoolProperty(
+        name="Select Created",
+        description="Select all generated GEO cubes when complete",
+        default=True,
+    )
+
+    def execute(self, context):
+        prefix = _find_available_quick_geo_prefix(self.base_prefix or _quick_geo_prefix_from_scene(context))
+        if not prefix:
+            self.report({'ERROR'}, "Could not find an unused 3-character GEO prefix.")
+            return {'CANCELLED'}
+
+        created = []
+        body = None
+        for suffix, geo_type, _label, location, size in QUICK_VEHICLE_GEO_SPECS:
+            name = f"{prefix}11{suffix}"
+            mesh = _create_box_mesh(name, size)
+            obj = bpy.data.objects.new(name, mesh)
+            context.collection.objects.link(obj)
+            obj.location = location
+            obj.display_type = 'WIRE'
+
+            geo = getattr(obj, "GEOPropertyGroup", None)
+            if geo is not None:
+                geo.GEOType = geo_type
+                geo.GenerateCollision = (geo_type == 60)
+
+            if suffix == "bod":
+                body = obj
+            elif self.parent_to_body and body is not None:
+                obj.parent = body
+
+            created.append(obj)
+
+        if self.select_created:
+            for obj in list(context.selected_objects):
+                obj.select_set(False)
+            for obj in created:
+                obj.select_set(True)
+            context.view_layer.objects.active = body or created[0]
+
+        self.report({'INFO'}, f"Created {len(created)} starter vehicle GEOs with prefix '{prefix}'.")
         return {'FINISHED'}
 
 
@@ -1949,6 +2358,78 @@ class BZ98TOOLS_PT_view3d_selected_geo(bpy.types.Panel):
             info.label(text="Spinner helper", icon='EMPTY_DATA')
 
 
+class BZ98TOOLS_PT_view3d_quick_tools(bpy.types.Panel):
+    bl_idname = "VIEW3D_PT_BZ_QUICK_TOOLS"
+    bl_label = "Quick Tools"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Battlezone"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+
+        select_box = layout.box()
+        select_box.label(text="Selection", icon='RESTRICT_SELECT_OFF')
+        row = select_box.row(align=True)
+        mesh_op = row.operator("bz.select_by_object_type", text="Meshes")
+        mesh_op.selection_mode = "MESH"
+        non_mesh_op = row.operator("bz.select_by_object_type", text="Non-Mesh")
+        non_mesh_op.selection_mode = "NON_MESH"
+
+        col_box = layout.box()
+        col_box.label(text="VDF COL", icon='CUBE')
+        col_row = col_box.row(align=True)
+        col_row.operator_context = 'EXEC_DEFAULT'
+        shaped_op = col_row.operator("bz.generate_vdf_collision_meshes", text="Shaped")
+        shaped_op.profile = "SHAPED"
+        square_op = col_row.operator("bz.generate_vdf_collision_meshes", text="Square")
+        square_op.profile = "SQUARE"
+
+        geo_box = layout.box()
+        geo_box.label(text="Vehicle GEO Starter", icon='MESH_CUBE')
+        geo_box.operator("bz.create_vehicle_geo_set", text="Create Standard Set")
+
+        normal_box = layout.box()
+        normal_box.label(text="Normals", icon='NORMALS_FACE')
+        normal_row = normal_box.row(align=True)
+        outside_op = normal_row.operator("bz.quick_normals_fix", text="Outside")
+        outside_op.normal_mode = "OUTSIDE"
+        faces_op = normal_row.operator("bz.quick_normals_fix", text="From Faces")
+        faces_op.normal_mode = "FACE_NORMALS"
+
+        validation_box = layout.box()
+        validation_box.label(text="Validation", icon='CHECKMARK')
+        validate_op = validation_box.operator("bz.validate_scene", text="Validate Vehicle")
+        validate_op.preset = "VEHICLE"
+        validation_box.operator_menu_enum("bz.validate_scene", "preset", text="Validate Preset")
+        if len(getattr(context.scene, "bz_validation_issues", [])) > 0:
+            counts = _get_validation_counts(context.scene, export_mode="ALL")
+            row = validation_box.row(align=True)
+            row.label(text=f"E {counts['ERROR']}")
+            row.label(text=f"W {counts['WARNING']}")
+            row.label(text=f"I {counts['INFO']}")
+            if _validation_results_are_stale(context.scene):
+                validation_box.label(text="Results may be stale.", icon='ERROR')
+
+
+class BZ98TOOLS_PT_view3d_animation_tools(bpy.types.Panel):
+    bl_idname = "VIEW3D_PT_BZ_ANIMATION_TOOLS"
+    bl_label = "Animation Tools"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Battlezone"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        box.label(text="Legacy Object Animation", icon='ANIM_DATA')
+        box.label(text="Copies mirrored transform keys between matched GEO parts.")
+        box.label(text="Default pairing: .L -> .R")
+        box.operator("bz.mirror_legacy_animation_keys", text="Mirror Legacy Keys", icon='MOD_MIRROR')
+
+
 class BZ98TOOLS_PT_view3d_cockpit_tools(bpy.types.Panel):
     bl_idname = "VIEW3D_PT_BZ_COCKPIT_TOOLS"
     bl_label = "Cockpit Tools"
@@ -1982,6 +2463,9 @@ class BZ98TOOLS_PT_geo_collision(bpy.types.Panel):
             return
 
         layout.prop(geo, "GenerateCollision")
+        if not geo.GenerateCollision:
+            return
+
         layout.label(text="GEO Center")
         _draw_xyz_row(layout, geo, ("GeoCenterX", "GeoCenterY", "GeoCenterZ"), ("X", "Y", "Z"))
         layout.label(text="Projectile Box Half-Extents")
@@ -2343,7 +2827,311 @@ class OPApplyAnimationPreset(bpy.types.Operator):
         scene.CurAnimation = len(scene.AnimationCollection) - 1
         self.report({'INFO'}, f"Added {len(indices)} slots from the preset.")
         return {'FINISHED'}
-        
+
+
+class BZ98TOOLS_OT_mirror_legacy_animation_keys(bpy.types.Operator):
+    bl_idname = "bz.mirror_legacy_animation_keys"
+    bl_label = "Mirror Legacy Animation Keys"
+    bl_description = "Copy mirrored object transform keyframes between matched legacy GEO parts"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    source_token: StringProperty(
+        name="Source Token",
+        description="Text in source object names to replace when finding the target side",
+        default=".L",
+    )
+
+    target_token: StringProperty(
+        name="Target Token",
+        description="Replacement text used to find matching target object names",
+        default=".R",
+    )
+
+    source_scope: EnumProperty(
+        name="Scope",
+        description="Objects to scan for source-side animation",
+        items=(
+            ("SELECTED", "Selected", "Use selected source objects"),
+            ("SCENE", "Scene", "Scan all scene objects"),
+        ),
+        default="SELECTED",
+    )
+
+    mirror_axis: EnumProperty(
+        name="Mirror Axis",
+        description="Local legacy axis to mirror across",
+        items=(
+            ("X", "X", "Mirror left/right across local X"),
+            ("Y", "Y", "Mirror across local Y"),
+            ("Z", "Z", "Mirror across local Z"),
+        ),
+        default="X",
+    )
+
+    use_scene_range: BoolProperty(
+        name="Use Scene Frame Range",
+        description="Limit copied keys to the current scene frame range",
+        default=True,
+    )
+
+    frame_start: IntProperty(
+        name="Start",
+        description="First frame to copy when scene range is disabled",
+        default=0,
+        min=-999999,
+        max=999999,
+    )
+
+    frame_end: IntProperty(
+        name="End",
+        description="Last frame to copy when scene range is disabled",
+        default=9999,
+        min=-999999,
+        max=999999,
+    )
+
+    rest_frame: IntProperty(
+        name="Rest Frame",
+        description="Frame used as the source and target rest pose before mirrored motion is applied",
+        default=0,
+        min=-999999,
+        max=999999,
+    )
+
+    include_descendants: BoolProperty(
+        name="Include Descendants",
+        description="When using selected sources, also scan their child objects",
+        default=True,
+    )
+
+    include_location: BoolProperty(
+        name="Location",
+        description="Copy mirrored location keys",
+        default=True,
+    )
+
+    include_rotation: BoolProperty(
+        name="Rotation",
+        description="Copy mirrored rotation keys",
+        default=True,
+    )
+
+    include_scale: BoolProperty(
+        name="Scale",
+        description="Copy scale keys too; legacy VDF/SDF export normally ignores object scale animation",
+        default=False,
+    )
+
+    overwrite_target_keys: BoolProperty(
+        name="Overwrite Target Keys",
+        description="Remove existing target transform keys in the copied frame range before inserting mirrored keys",
+        default=True,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context, "scene", None) is not None
+
+    def invoke(self, context, event):
+        scene = context.scene
+        self.frame_start = int(getattr(scene, "frame_start", self.frame_start))
+        self.frame_end = int(getattr(scene, "frame_end", self.frame_end))
+        self.rest_frame = int(getattr(scene, "frame_start", self.rest_frame))
+        return context.window_manager.invoke_props_dialog(self, width=420)
+
+    def draw(self, context):
+        layout = self.layout
+        naming = layout.box()
+        naming.label(text="Matching")
+        row = naming.row(align=True)
+        row.prop(self, "source_token")
+        row.prop(self, "target_token")
+        naming.prop(self, "source_scope")
+        naming.prop(self, "include_descendants")
+
+        timing = layout.box()
+        timing.label(text="Timing")
+        timing.prop(self, "use_scene_range")
+        if not self.use_scene_range:
+            row = timing.row(align=True)
+            row.prop(self, "frame_start")
+            row.prop(self, "frame_end")
+        timing.prop(self, "rest_frame")
+
+        mirror = layout.box()
+        mirror.label(text="Mirror")
+        mirror.prop(self, "mirror_axis")
+        row = mirror.row(align=True)
+        row.prop(self, "include_location")
+        row.prop(self, "include_rotation")
+        row.prop(self, "include_scale")
+        mirror.prop(self, "overwrite_target_keys")
+
+    def execute(self, context):
+        if not self.source_token:
+            self.report({'ERROR'}, "Source token cannot be blank.")
+            return {'CANCELLED'}
+        if not (self.include_location or self.include_rotation or self.include_scale):
+            self.report({'ERROR'}, "Enable at least one transform channel.")
+            return {'CANCELLED'}
+
+        scene = context.scene
+        if self.use_scene_range:
+            frame_start = int(scene.frame_start)
+            frame_end = int(scene.frame_end)
+        else:
+            frame_start = int(self.frame_start)
+            frame_end = int(self.frame_end)
+        if frame_start > frame_end:
+            self.report({'ERROR'}, "Start frame must be before or equal to end frame.")
+            return {'CANCELLED'}
+
+        if self.source_scope == "SCENE":
+            candidates = list(scene.objects)
+        else:
+            candidates = list(getattr(context, "selected_objects", []))
+            if self.include_descendants:
+                candidates = _expand_object_descendants(candidates)
+
+        if not candidates:
+            self.report({'ERROR'}, "No source objects found.")
+            return {'CANCELLED'}
+
+        scene_objects = {obj.name: obj for obj in scene.objects}
+        pairs = []
+        missing_targets = 0
+        for source in candidates:
+            target_name = _replace_name_token(source.name, self.source_token, self.target_token)
+            if not target_name or target_name == source.name:
+                continue
+            target = scene_objects.get(target_name)
+            if target is None:
+                missing_targets += 1
+                continue
+
+            action = getattr(getattr(source, "animation_data", None), "action", None)
+            source_paths = {
+                curve.data_path
+                for curve in _legacy_transform_fcurves(action, include_scale=self.include_scale)
+            }
+            source_rotation_paths = source_paths.intersection(
+                {"rotation_euler", "rotation_quaternion", "rotation_axis_angle"}
+            )
+            if not (
+                (self.include_location and "location" in source_paths)
+                or (self.include_rotation and source_rotation_paths)
+                or (self.include_scale and "scale" in source_paths)
+            ):
+                continue
+
+            frames = _legacy_action_keyframes(
+                action,
+                frame_start=frame_start,
+                frame_end=frame_end,
+                include_scale=self.include_scale,
+            )
+            if not frames:
+                continue
+            pairs.append((source, target, action, frames, source_paths))
+
+        if not pairs:
+            detail = " Matching targets were missing." if missing_targets else ""
+            self.report({'ERROR'}, "No matching animated source/target pairs were found." + detail)
+            return {'CANCELLED'}
+
+        keyed_paths = set()
+        if self.include_location:
+            keyed_paths.add("location")
+        if self.include_rotation:
+            keyed_paths.update({"rotation_euler", "rotation_quaternion", "rotation_axis_angle"})
+        if self.include_scale:
+            keyed_paths.add("scale")
+
+        previous_frame = scene.frame_current
+        previous_subframe = getattr(scene, "frame_subframe", 0.0)
+        active_obj = context.view_layer.objects.active
+        selected_objects = list(getattr(context, "selected_objects", []))
+        mirror_matrix = _axis_mirror_matrix(self.mirror_axis)
+
+        try:
+            scene.frame_set(int(self.rest_frame))
+            rest_matrices = {
+                (source.name, target.name): (source.matrix_basis.copy(), target.matrix_basis.copy())
+                for source, target, _action, _frames, _source_paths in pairs
+            }
+
+            for _source, target, _action, _frames, _source_paths in pairs:
+                target_action = _ensure_object_action(target)
+                if self.overwrite_target_keys:
+                    _delete_action_keys_in_range(target_action, keyed_paths, frame_start, frame_end)
+
+            inserted_frames = 0
+            for source, target, source_action, frames, source_paths in pairs:
+                source_rest, target_rest = rest_matrices[(source.name, target.name)]
+                mirrored_source_rest = mirror_matrix @ source_rest @ mirror_matrix
+                rest_inverse = mirrored_source_rest.inverted_safe()
+                copy_location = self.include_location and "location" in source_paths
+                copy_rotation = self.include_rotation and bool(
+                    source_paths.intersection({"rotation_euler", "rotation_quaternion", "rotation_axis_angle"})
+                )
+                copy_scale = self.include_scale and "scale" in source_paths
+
+                for frame in frames:
+                    _set_scene_frame_float(scene, frame)
+                    mirrored_source_basis = mirror_matrix @ source.matrix_basis.copy() @ mirror_matrix
+                    target_basis = target_rest @ (rest_inverse @ mirrored_source_basis)
+                    loc, quat, scale = target_basis.decompose()
+
+                    if copy_location:
+                        target.location = loc
+                        target.keyframe_insert(data_path="location", frame=frame)
+
+                    if copy_rotation:
+                        if target.rotation_mode == 'QUATERNION':
+                            target.rotation_quaternion = quat
+                            target.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+                        elif target.rotation_mode == 'AXIS_ANGLE':
+                            axis = quat.axis
+                            if axis.length < 0.000001:
+                                axis = mathutils.Vector((0.0, 0.0, 1.0))
+                            target.rotation_axis_angle = (quat.angle, axis.x, axis.y, axis.z)
+                            target.keyframe_insert(data_path="rotation_axis_angle", frame=frame)
+                        else:
+                            target.rotation_euler = quat.to_euler(target.rotation_mode)
+                            target.keyframe_insert(data_path="rotation_euler", frame=frame)
+
+                    if copy_scale:
+                        target.scale = scale
+                        target.keyframe_insert(data_path="scale", frame=frame)
+
+                    interpolation = _source_key_interpolation(
+                        source_action,
+                        frame,
+                        include_scale=self.include_scale,
+                    )
+                    _set_inserted_key_interpolation(
+                        target.animation_data.action,
+                        keyed_paths,
+                        frame,
+                        interpolation,
+                    )
+                    inserted_frames += 1
+        finally:
+            scene.frame_set(previous_frame, subframe=previous_subframe)
+            for obj in list(context.selected_objects):
+                obj.select_set(False)
+            for obj in selected_objects:
+                if bpy.data.objects.get(obj.name) is not None:
+                    obj.select_set(True)
+            if active_obj is not None and bpy.data.objects.get(active_obj.name) is not None:
+                context.view_layer.objects.active = active_obj
+
+        self.report(
+            {'INFO'},
+            f"Mirrored {inserted_frames} keyed frame(s) across {len(pairs)} pair(s).",
+        )
+        return {'FINISHED'}
+
 '''
 Operators
 Used for doing actions.
@@ -2352,7 +3140,7 @@ In this case used for creating a new animation element and removing one.
 class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
     """Generate VDF-style inner_col / outer_col collision meshes from selected mesh bounds"""
     bl_idname = "bz.generate_vdf_collision_meshes"
-    bl_label = "Generate VDF Collision Meshes"
+    bl_label = "Generate VDF COL Boxes"
     bl_description = (
         "Create stock-profiled inner_col and outer_col meshes from the combined bounding "
         "box of the selected mesh objects for use as VDF collision data "
@@ -2360,7 +3148,7 @@ class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
     )
 
     inner_scale: bpy.props.FloatProperty(
-        name="Inner Stock Scale",
+        name="Inner Scale",
         description="Overall multiplier for the stock inner collision profile; 1.0 matches stock VDF side insets",
         default=1.0,
         min=0.05,
@@ -2375,14 +3163,30 @@ class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
         max=1.0,
     )
 
+    profile: bpy.props.EnumProperty(
+        name="COL Profile",
+        description="Shape used for generated VDF inner/outer collision helpers",
+        items=(
+            ("SHAPED", "Shaped", "Use stock-like inner insets inside the outer box"),
+            ("SQUARE", "Square Only", "Use simple axis-aligned box helpers with no stock inner inset"),
+        ),
+        default="SHAPED",
+    )
+
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
 
     def draw(self, context):
         layout = self.layout
+        layout.prop(self, "profile")
         layout.prop(self, "inner_scale")
         layout.prop(self, "outer_margin")
-        layout.label(text="Inner uses stock VDF side insets: X 20%, Y 25%, Z 30%/20%.")
+        if self.profile == "SHAPED":
+            layout.label(text="Stock inner insets:")
+            layout.label(text="X 20%, Y 25%")
+            layout.label(text="Z 30% low, 20% high")
+        else:
+            layout.label(text="Square Only makes inner_col match the simple box profile.")
 
     def execute(self, context):
         import mathutils
@@ -2455,25 +3259,29 @@ class OPGenerateVDFCollisionMeshes(bpy.types.Operator):
         outer_min = center_w - outer_half
         outer_max = center_w + outer_half
 
-        stock_inner_insets = {
-            "x_min": 0.198,
-            "x_max": 0.197,
-            "y_min": 0.256,
-            "y_max": 0.245,
-            "z_min": 0.303,
-            "z_max": 0.197,
-        }
-        outer_size = outer_max - outer_min
-        inner_min = mathutils.Vector((
-            outer_min.x + (outer_size.x * stock_inner_insets["x_min"]),
-            outer_min.y + (outer_size.y * stock_inner_insets["y_min"]),
-            outer_min.z + (outer_size.z * stock_inner_insets["z_min"]),
-        ))
-        inner_max = mathutils.Vector((
-            outer_max.x - (outer_size.x * stock_inner_insets["x_max"]),
-            outer_max.y - (outer_size.y * stock_inner_insets["y_max"]),
-            outer_max.z - (outer_size.z * stock_inner_insets["z_max"]),
-        ))
+        if self.profile == "SQUARE":
+            inner_min = outer_min.copy()
+            inner_max = outer_max.copy()
+        else:
+            stock_inner_insets = {
+                "x_min": 0.198,
+                "x_max": 0.197,
+                "y_min": 0.256,
+                "y_max": 0.245,
+                "z_min": 0.303,
+                "z_max": 0.197,
+            }
+            outer_size = outer_max - outer_min
+            inner_min = mathutils.Vector((
+                outer_min.x + (outer_size.x * stock_inner_insets["x_min"]),
+                outer_min.y + (outer_size.y * stock_inner_insets["y_min"]),
+                outer_min.z + (outer_size.z * stock_inner_insets["z_min"]),
+            ))
+            inner_max = mathutils.Vector((
+                outer_max.x - (outer_size.x * stock_inner_insets["x_max"]),
+                outer_max.y - (outer_size.y * stock_inner_insets["y_max"]),
+                outer_max.z - (outer_size.z * stock_inner_insets["z_max"]),
+            ))
 
         if self.inner_scale < 1.0:
             inner_center = (inner_min + inner_max) * 0.5
@@ -2669,22 +3477,20 @@ class OPGenerateCockpitGeometry(bpy.types.Operator):
 
     source_lod: bpy.props.EnumProperty(
         name="Source LOD",
-        description="LOD marker to read from the 4th character of selected GEO names",
+        description="Redux uses LOD1 for primary geometry and LOD2 for cockpit geometry",
         items=(
-            ("1", "LOD1", "Create cockpit pieces from LOD1 source GEOs"),
-            ("2", "LOD2", "Create cockpit pieces from LOD2 source GEOs"),
-            ("3", "LOD3", "Create cockpit pieces from LOD3 source GEOs"),
+            ("1", "LOD1 Primary", "Create cockpit pieces from LOD1 primary GEOs"),
+            ("2", "LOD2 Cockpit", "Create cockpit pieces from LOD2 cockpit GEOs"),
         ),
         default="1",
     )
 
     target_lod: bpy.props.EnumProperty(
         name="Target LOD",
-        description="LOD marker to write into generated cockpit GEO names",
+        description="Redux uses LOD1 for primary geometry and LOD2 for cockpit geometry",
         items=(
-            ("1", "LOD1", "Generate LOD1 names"),
+            ("1", "LOD1 Primary", "Generate LOD1 primary names"),
             ("2", "LOD2 Cockpit", "Generate LOD2 cockpit names"),
-            ("3", "LOD3", "Generate LOD3 names"),
         ),
         default="2",
     )
@@ -4786,10 +5592,15 @@ GUIClasses = [
     BZ98TOOLS_OT_validate_scene,
     BZ98TOOLS_OT_select_validation_target,
     BZ98TOOLS_OT_fix_validation_name,
+    BZ98TOOLS_OT_select_by_object_type,
+    BZ98TOOLS_OT_quick_normals_fix,
+    BZ98TOOLS_OT_create_vehicle_geo_set,
     BZ98TOOLS_PT_validation,
     BZ98TOOLS_PT_import_diagnostics,
     BattlezoneGEOProperties,
     BZ98TOOLS_PT_view3d_selected_geo,
+    BZ98TOOLS_PT_view3d_quick_tools,
+    BZ98TOOLS_PT_view3d_animation_tools,
     BZ98TOOLS_PT_view3d_cockpit_tools,
     BZ98TOOLS_PT_geo_collision,
     BZ98TOOLS_PT_geo_sdf,
@@ -4804,6 +5615,7 @@ GUIClasses = [
     OPDuplicateElement,
     OPMoveElement,
     OPApplyAnimationPreset,
+    BZ98TOOLS_OT_mirror_legacy_animation_keys,
     BZ98TOOLS_OT_apply_export_preset,
     BZ98TOOLS_OT_save_export_preset,
     BZ98TOOLS_OT_delete_export_preset,

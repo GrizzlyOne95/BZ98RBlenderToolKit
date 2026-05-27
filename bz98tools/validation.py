@@ -33,6 +33,24 @@ LEGACY_ORIENTATION_MESSAGE = (
     "Direct Redux .mesh export expects Blender -Y; Legacy + Redux auto-port converts the legacy setup."
 )
 
+ANIMATION_VALIDATION_PRESETS = {
+    "PERSON": {
+        "label": "person",
+        "required": set(range(0, 12)),
+        "message": "Person-style exports normally need animation slots 0-11 defined.",
+    },
+    "WALKER": {
+        "label": "walker",
+        "required": set(range(0, 8)),
+        "message": "Walker exports normally need animation slots 0-7 defined.",
+    },
+    "TURRET": {
+        "label": "turret",
+        "required": {0, 1},
+        "message": "Deployable turret exports normally need deploy/undeploy animation slots 0 and 1 defined.",
+    },
+}
+
 
 def fixgeoname(name, lod):
     geofilename = list(name)
@@ -103,12 +121,12 @@ def sort_issues(issues):
     )
 
 
-def collect_legacy_validation_issues(context, export_mode="ALL"):
+def collect_legacy_validation_issues(context, export_mode="ALL", validation_preset="AUTO"):
     if export_mode == "GEO":
         issues = _collect_geo_export_issues(context)
         issues.append(_orientation_reference_issue({"GEO"}))
         return sort_issues(issues)
-    return sort_issues(_collect_scene_export_issues(context))
+    return sort_issues(_collect_scene_export_issues(context, validation_preset=validation_preset))
 
 
 def _make_issue(
@@ -219,7 +237,7 @@ def _collect_geo_export_issues(context):
     return issues
 
 
-def _collect_scene_export_issues(context):
+def _collect_scene_export_issues(context, validation_preset="AUTO"):
     scene = getattr(context, "scene", None)
     if scene is None:
         return [
@@ -321,6 +339,7 @@ def _collect_scene_export_issues(context):
             continue
 
         issues.extend(_collect_legacy_animation_limit_issues(obj))
+        issues.extend(_collect_transform_issues(obj))
         issues.extend(_collect_geotype_suffix_issues(obj))
         issues.extend(_collect_material_issues(obj, {"VDF", "SDF"}))
 
@@ -376,6 +395,8 @@ def _collect_scene_export_issues(context):
 
     issues.extend(_collect_collision_helper_issues(inner_helpers, "inner"))
     issues.extend(_collect_collision_helper_issues(outer_helpers, "outer"))
+    issues.extend(_collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_helpers))
+    issues.extend(_collect_animation_preset_issues(scene, named_candidates, validation_preset))
     issues.extend(_collect_turret_cockpit_issues(named_candidates))
     return issues
 
@@ -560,6 +581,57 @@ def _collect_legacy_animation_limit_issues(obj):
     return issues
 
 
+def _collect_transform_issues(obj):
+    issues = []
+    if getattr(obj, "type", None) != "MESH":
+        return issues
+
+    scale = getattr(obj, "scale", None)
+    if scale is not None and any(abs(float(value) - 1.0) > 0.0001 for value in scale):
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "Transform",
+                obj.name,
+                "Object has non-applied scale. Apply scale before final legacy export if this mesh should define raw GEO shape, collision, or Ogre normals.",
+                {"VDF", "SDF", "GEO"},
+                object_name=obj.name,
+                action="select_object",
+            )
+        )
+
+    rotation_mode = getattr(obj, "rotation_mode", "XYZ")
+    has_rotation = False
+    if rotation_mode == "QUATERNION":
+        quat = getattr(obj, "rotation_quaternion", None)
+        if quat is not None:
+            has_rotation = (
+                abs(float(quat.w) - 1.0) > 0.0001 or
+                abs(float(quat.x)) > 0.0001 or
+                abs(float(quat.y)) > 0.0001 or
+                abs(float(quat.z)) > 0.0001
+            )
+    else:
+        euler = getattr(obj, "rotation_euler", None)
+        if euler is not None:
+            has_rotation = any(abs(float(value)) > 0.0001 for value in euler)
+
+    if has_rotation:
+        issues.append(
+            _make_issue(
+                "INFO",
+                "Transform",
+                obj.name,
+                "Object has non-applied rotation. This can be intentional for animated or parented GEOs; apply rotation if the mesh itself should be exported in that orientation.",
+                {"VDF", "SDF", "GEO"},
+                object_name=obj.name,
+                action="select_object",
+            )
+        )
+
+    return issues
+
+
 def _collect_geotype_suffix_issues(obj):
     issues = []
     geo_props = getattr(obj, "GEOPropertyGroup", None)
@@ -624,6 +696,128 @@ def _geo_type(obj):
         return int(getattr(geo_props, "GEOType", 0))
     except Exception:
         return 0
+
+
+def _collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_helpers):
+    issues = []
+    candidates = [entry["object"] for entry in named_candidates]
+    has_exportable_geo = any(getattr(obj, "type", None) == "MESH" for obj in candidates)
+    if not has_exportable_geo:
+        return issues
+
+    if not any(_geo_type(obj) == 40 for obj in candidates):
+        issues.append(
+            _make_issue(
+                "ERROR",
+                "Scene",
+                "POV",
+                "VDF vehicle export has no exportable Type 40 POV GEO. Battlezone can crash when a vehicle has no POV/eyepoint.",
+                {"VDF"},
+            )
+        )
+
+    if not inner_helpers:
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "Scene",
+                "inner_col",
+                "VDF vehicle export has no inner_col collision mesh. Generate COL boxes before final vehicle export.",
+                {"VDF"},
+            )
+        )
+
+    if not outer_helpers:
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "Scene",
+                "outer_col",
+                "VDF vehicle export has no outer_col collision mesh. Generate COL boxes before final vehicle export.",
+                {"VDF"},
+            )
+        )
+
+    return issues
+
+
+def _scene_animation_indices(scene):
+    indices = set()
+    for item in getattr(scene, "AnimationCollection", []) or []:
+        try:
+            indices.add(int(getattr(item, "Index", -1)))
+        except Exception:
+            continue
+    return indices
+
+
+def _has_object_animation(obj):
+    if _has_action_fcurves(getattr(obj, "animation_data", None)):
+        return True
+
+    mesh = getattr(obj, "data", None)
+    shape_keys = getattr(mesh, "shape_keys", None)
+    if _has_action_fcurves(getattr(shape_keys, "animation_data", None)):
+        return True
+
+    return False
+
+
+def _collect_animation_preset_issues(scene, named_candidates, validation_preset):
+    issues = []
+    preset = (validation_preset or "AUTO").upper()
+    indices = _scene_animation_indices(scene)
+
+    if preset in ANIMATION_VALIDATION_PRESETS:
+        rule = ANIMATION_VALIDATION_PRESETS[preset]
+        missing = sorted(rule["required"] - indices)
+        if missing:
+            shown = ", ".join(str(index) for index in missing)
+            issues.append(
+                _make_issue(
+                    "WARNING",
+                    "Animation",
+                    rule["label"],
+                    f"{rule['message']} Missing slot(s): {shown}.",
+                    {"VDF", "SDF"},
+                )
+            )
+        return issues
+
+    if preset == "ANIMATED" and not indices:
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "Animation",
+                "animated object",
+                "Animated-object validation expects at least one Scene AnimationCollection entry.",
+                {"VDF", "SDF"},
+            )
+        )
+        return issues
+
+    animated_objects = [
+        entry["object"] for entry in named_candidates
+        if _has_object_animation(entry["object"])
+    ]
+    if animated_objects and not indices:
+        object_names = ", ".join(sorted(obj.name for obj in animated_objects[:4]))
+        if len(animated_objects) > 4:
+            object_names += ", ..."
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "Animation",
+                "scene",
+                (
+                    f"Exportable object animation exists ({object_names}) but no ANIM sequence entries are defined. "
+                    "Add animation elements before exporting animated VDF/SDF assets."
+                ),
+                {"VDF", "SDF"},
+            )
+        )
+
+    return issues
 
 
 def _is_turret_yaw_name(name):
