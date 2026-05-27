@@ -120,8 +120,8 @@ Everything is handled inside Blender:
   - Added `AbruptEOFError` for safer handling of truncated files.
 - **Expanded GEO class IDs**
   - Full set of 82 types (0-81) with descriptive labels shown in the UI.
-- **GEOFlags**
-  - 32-bit flag field implemented across all formats; editable in Blender properties.
+- **ObjectFlags / GEO flags**
+  - 32-bit VDF/SDF `ObjectFlags` field implemented across all formats; editable in Blender properties.
 - **Material and texture handling**
   - Generates a safe `.map` name if blank.
   - Converts `.map` to `.png` automatically and links it in materials.
@@ -148,7 +148,7 @@ Everything is handled inside Blender:
   - Fixed round-trip scale loss on re-imported objects.
 - **Parent/child hierarchy**
   - Preserved during import of nested GEOs and LODs.
-- **Overflow on GEOFlags**
+- **Overflow on ObjectFlags**
   - Explicit 32-bit min/max range prevents Blender registration errors.
 
 #### User Interface
@@ -173,7 +173,7 @@ Everything is handled inside Blender:
 | Geometry | Scale, collision, and UV safety |
 | Animation | Quaternion/Euler auto-conversion |
 | VDF | Robust ANIM/COLP parsing, visible collision boxes |
-| SDF | Correct GEOFlags/DDR fields, fixed struct layouts |
+| SDF | Correct ObjectFlags/DDR/Target/Time fields, fixed struct layouts |
 | Export | Explicit Legacy Only, Legacy + Redux, and Redux Only workflows |
 | UI | Organized panels, confirmed GEO type reference, clearer Redux labels |
 | Stability | Major crash and data-corruption fixes |

@@ -382,7 +382,7 @@ class SCPSSection:
     def __init__(self):
         self.binstring = '=4s4i'
         self.binlength = 20
-        self.headername = 'SCPS'
+        self.headername = 'SPCS'
         self.sectionlength = self.binlength
         self.data = [0, 0, 0]
 
@@ -398,7 +398,7 @@ class SCPSSection:
         d = list(self.data) if isinstance(self.data, (list, tuple)) else [0, 0, 0]
         while len(d) < 3:
             d.append(0)
-        struct.pack_into(self.binstring, buffer, 0, b'SCPS', self.binlength, int(d[0]), int(d[1]), int(d[2]))
+        struct.pack_into(self.binstring, buffer, 0, b'SPCS', self.binlength, int(d[0]), int(d[1]), int(d[2]))
         fileHandle.write(buffer)
         return position + self.binlength
 

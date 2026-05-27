@@ -356,14 +356,14 @@ class AnimationPropertyGroup(bpy.types.PropertyGroup):
     )
 
     UseCustomUnknownGeoMask: bpy.props.BoolProperty(
-        name="Use Custom GEO Slot Mask",
-        description="Use a custom 32-int ANIM element GEO slot mask instead of automatic defaults",
+        name="Use Custom Mesh Slot Mask",
+        description="Use a custom ANIM meshIndex[32] slot mask instead of automatic defaults",
         default=False,
     )
 
     UnknownGeoMask: bpy.props.IntVectorProperty(
-        name="GEO Slot Mask",
-        description="Raw 32-int ANIM element GEO slot mask",
+        name="Mesh Slot Mask",
+        description="Raw ANIM element meshIndex[32] values; stock files use 0/1 to mark affected GEO mesh slots",
         size=32,
         default=(0,) * 32,
     )
@@ -492,48 +492,48 @@ class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
 
     UseAdvancedAnimHeader: bpy.props.BoolProperty(
         name="Use Advanced ANIM Header",
-        description="Use custom ANIM header raw values (null2, unknown2, reserved ints)",
+        description="Use custom raw ANIM pointer-placeholder fields; stock exported files normally leave these as zero",
         default=False,
     )
 
     AnimNull2: bpy.props.IntProperty(
-        name="ANIM null2",
-        description="Raw ANIM header int at slot null2",
+        name="ANIM animPtr Placeholder",
+        description="Raw legacy ANIM header animPtr placeholder; stock disk files normally store 0",
         default=0,
         min=-2147483648,
         max=2147483647,
     )
 
     AnimUnknown2: bpy.props.IntProperty(
-        name="ANIM unknown2",
-        description="Raw ANIM header int at slot unknown2",
+        name="ANIM meshPtr Placeholder",
+        description="Raw legacy ANIM header meshPtr placeholder; stock disk files normally store 0",
         default=0,
         min=-2147483648,
         max=2147483647,
     )
 
     AnimReserved: bpy.props.IntVectorProperty(
-        name="ANIM Reserved",
-        description="Five reserved ANIM header ints",
+        name="ANIM Key/Object Placeholders",
+        description="Raw legacy ANIM rotKey/sclKey/posKey/object/entity pointer placeholders",
         size=5,
         default=(0, 0, 0, 0, 0),
     )
 
     UseTranslation2Track: bpy.props.BoolProperty(
-        name="Use Translation2 Track",
-        description="Write object position keys to ANIM Translation2 instead of Position",
+        name="Use Scale Key Track",
+        description="Write object location keys into the legacy ANIM SCLKEY/Translation2 slot used by a few stock assets",
         default=False,
     )
 
     UseCustomSCPS: bpy.props.BoolProperty(
-        name="Use Custom SCPS",
-        description="Write custom SCPS raw ints (VDF export)",
+        name="Use Custom SPCS/SCPS",
+        description="Write custom raw VDF SPCS/SCPS compatibility ints; most stock VDFs omit this chunk",
         default=False,
     )
 
     SCPSData: bpy.props.IntVectorProperty(
-        name="SCPS Data",
-        description="Three raw SCPS ints",
+        name="SPCS/SCPS Data",
+        description="Three raw compatibility ints for the optional VDF shell/SCPS chunk path",
         size=3,
         default=(0, 0, 0),
     )
@@ -945,8 +945,8 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
     )
     
     GEOFlags: bpy.props.IntProperty(
-        name="GEO Flags",
-        description="Bitfield of GEO flags (32-bit). Each bit enables a specific Battlezone GEO behavior.",
+        name="Object Flags",
+        description="Raw VDF/SDF ObjectFlags field from the engine ObjectType/StructObjectType record; stock assets usually leave it at 0.",
         default=0,
         min=-2147483648,
         max=2147483647,
@@ -1000,8 +1000,8 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
 
     
     SDFDDR: bpy.props.IntProperty(
-        name = "SDF Behavior / Draw Distance",
-        description="Raw SDF DDR field. Stock structures commonly use 500000; some mines/powerups use smaller values such as 200.",
+        name = "DDR / Draw Distance",
+        description="Raw StructObjectType ddr field. Stock structures commonly use 500000; some mine/powerup SDFs use smaller values such as 200.",
         default = 50000,
         min = 0,
         max = 5000000
@@ -1009,56 +1009,56 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
 
     
     SDFX: bpy.props.FloatProperty(
-        name = "Behavior X",
-        description="Raw SDF behavior vector X. Used by some special structure helpers.",
+        name = "Target X",
+        description="Raw StructObjectType Target vector X. Used by some special structure helpers.",
         default = 0,
         min = -500000.0,
         max = 500000.0
     )
     
     SDFY: bpy.props.FloatProperty(
-        name = "Behavior Y / Spin Speed",
-        description="Raw SDF behavior vector Y. Stock type-15 structure spinners commonly use this as spin speed, such as 0.1 or 0.2.",
+        name = "Target Y / Spin Speed",
+        description="Raw StructObjectType Target vector Y. Stock type-15 structure spinners commonly use this as spin speed, such as 0.1 or 0.2.",
         default = 0,
         min = -500000.0,
         max = 500000.0
     )
 
     SDFZ: bpy.props.FloatProperty(
-        name = "Behavior Z",
-        description="Raw SDF behavior vector Z. Used by some special structure helpers.",
+        name = "Target Z",
+        description="Raw StructObjectType Target vector Z. Used by some special structure helpers.",
         default = 0,
         min = -500000.0,
         max = 500000.0
     )
     
     SDFTime: bpy.props.FloatProperty(
-        name = "Behavior Time / Value",
-        description="Raw SDF time/value field. Most stock structures leave this at 0; some mine/powerup-like SDFs use nonzero values.",
+        name = "Target Time / Value",
+        description="Raw StructObjectType Time field. Most stock structures leave this at 0; some mine/powerup-like SDFs use nonzero values.",
         default = 0.0,
         min = -500000.0,
         max = 500000.0
     )
 
     GEOHeaderUnknown: bpy.props.IntProperty(
-        name="GEO Header Unknown1",
-        description="Raw GEO header int (historically 69)",
+        name="GEO Header Raw1",
+        description="Raw second GEO header int. Stock values vary widely; exact engine role is still unconfirmed.",
         default=69,
         min=-2147483648,
         max=2147483647,
     )
 
     GEOHeaderUnknown2: bpy.props.IntProperty(
-        name="GEO Header Unknown2",
-        description="Raw GEO header trailing int",
+        name="GEO Header Flags",
+        description="Raw trailing GEO header int. Legacy editor references treat this as render flags; stock Redux assets are normally 0.",
         default=0,
         min=-2147483648,
         max=2147483647,
     )
 
     GEOFaceUnknownDefault: bpy.props.IntProperty(
-        name="Face Unknown Raw",
-        description="Default raw face int field used when per-face attributes are missing",
+        name="Face Reserved Raw",
+        description="Default raw face reserved int used when per-face attributes are missing; stock assets normally store 0",
         default=0,
         min=-2147483648,
         max=2147483647,
@@ -1617,7 +1617,7 @@ class BZ98TOOLS_PT_scene_vdf_raw(bpy.types.Panel):
         layout = self.layout
         props = context.scene.SDFVDFPropertyGroup
 
-        layout.label(text="SCPS Raw Override")
+        layout.label(text="SPCS/SCPS Raw Override")
         layout.prop(props, "UseCustomSCPS")
         if props.UseCustomSCPS:
             layout.prop(props, "SCPSData")
@@ -1933,7 +1933,7 @@ class BZ98TOOLS_PT_geo_sdf(bpy.types.Panel):
         if int(getattr(geo, "GEOType", 0)) == 15:
             hint = layout.box()
             hint.label(text="Type 15 SDF spinner helper", icon='INFO')
-            hint.label(text="Stock structures commonly use Behavior Y as spin speed.")
+            hint.label(text="Stock structures commonly use Target Y as spin speed.")
         layout.prop(geo, "SDFDDR")
         _draw_xyz_row(layout, geo, ("SDFX", "SDFY", "SDFZ"), ("X", "Y", "Z"))
         layout.prop(geo, "SDFTime")
@@ -2037,7 +2037,7 @@ class BZ98TOOLS_PT_geo_face_data(bpy.types.Panel):
             ("Translucent Byte", "bz_face_xluscent_type", geo.GEOFaceXluscentTypeDefault),
             ("Face Parent", "bz_face_parent", geo.GEOFaceParentDefault),
             ("Face Node", "bz_face_node", geo.GEOFaceNodeDefault),
-            ("Unknown Raw", "bz_face_unknown_raw", geo.GEOFaceUnknownDefault),
+            ("Reserved Raw", "bz_face_unknown_raw", geo.GEOFaceUnknownDefault),
         )
         for label, attr_name, default_value in rows:
             row = data_box.row()
@@ -2624,7 +2624,7 @@ class AnimationPanel(bpy.types.Panel):
             timing.prop(item, "Speed")
 
             advanced = editor.box()
-            advanced.label(text="Affected GEO Slots")
+            advanced.label(text="Affected Mesh/GEO Slots")
             advanced.prop(item, "UseCustomUnknownGeoMask")
             if item.UseCustomUnknownGeoMask:
                 advanced.label(text="One value per legacy GEO slot. Leave off for automatic defaults.", icon='INFO')

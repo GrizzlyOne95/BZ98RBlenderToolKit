@@ -219,16 +219,16 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
 
                     if position + SCPS.binlength <= len(fileContent):
                         scps_header = struct.unpack('4s', fileContent[position:position + 4])[0]
-                        if scps_header == b'SCPS':
+                        if scps_header in (b'SPCS', b'SCPS'):
                             position = SCPS.Read(fileContent, position)
                             scps_data = [int(v) for v in SCPS.data]
                             scps_found = True
                             _add_import_diagnostic(
                                 scene,
                                 "INFO",
-                                "SCPS",
+                                SCPS.headername or "SPCS",
                                 "raw data",
-                                f"SCPS raw ints: {scps_data[0]}, {scps_data[1]}, {scps_data[2]}.",
+                                f"SPCS/SCPS raw ints: {scps_data[0]}, {scps_data[1]}, {scps_data[2]}.",
                             )
                 else:
                     # No valid COLP – use an empty collision box.
