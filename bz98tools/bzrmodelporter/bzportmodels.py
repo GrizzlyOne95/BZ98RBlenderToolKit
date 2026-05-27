@@ -8,6 +8,7 @@
 import os
 import sys
 import math
+import io
 from collections import namedtuple
 import traceback
 import numpy as np    # TODO: Make better use of numpy
@@ -1659,9 +1660,9 @@ def _bzmap_to_rgba_bytes(map_source, asset_resolver, map_dir=None):
 
 
 
-def _write_dds_uncompressed_rgba(width, height, rgba_bytes, out_path):
+def _dds_uncompressed_rgba_bytes(width, height, rgba_bytes):
     """
-    Write uncompressed 32-bit RGBA DDS (A8R8G8B8 layout).
+    Build uncompressed 32-bit RGBA DDS (A8R8G8B8 layout).
     - width, height: image size
     - rgba_bytes: len == width * height * 4, in RGBA order (R,G,B,A per pixel)
     """
@@ -1736,10 +1737,17 @@ def _write_dds_uncompressed_rgba(width, height, rgba_bytes, out_path):
     header.extend(dword(caps4))
     header.extend(dword(0))            # dwReserved2
 
+    return bytes(header) + bytes(bgra)
+
+
+def _write_dds_uncompressed_rgba(width, height, rgba_bytes, out_path):
+    """
+    Write uncompressed 32-bit RGBA DDS (A8R8G8B8 layout).
+    """
+    data = _dds_uncompressed_rgba_bytes(width, height, rgba_bytes)
     out_path = os.fspath(out_path)
     with open(out_path, "wb") as f:
-        f.write(header)
-        f.write(bgra)
+        f.write(data)
         
 
 def create_material_string(mat_name, super_mat_name, tex_name):
@@ -1869,8 +1877,13 @@ def write_ogre(mesh, skeleton, mesh_filename, asset_resolver, suppress_write=Fal
 			if(suppress_write):
 				print(f"*File write suppressed* {mesh_filepath}")
 			else:
-				with open(mesh_filepath, 'wb') as stream:
-					MeshSerializer(stream).write(mesh)
+				stream = io.BytesIO()
+				MeshSerializer(stream).write(mesh)
+				asset_resolver.write_bytes_if_changed(
+					mesh_filepath,
+					stream.getvalue(),
+					label="mesh",
+				)
 		except OSError:
 			print(f"Failed to write mesh file {mesh_filepath} for mesh {mesh_filename}")
 			print(traceback.format_exc())
@@ -1883,8 +1896,13 @@ def write_ogre(mesh, skeleton, mesh_filename, asset_resolver, suppress_write=Fal
 			if(suppress_write):
 				print(f"*File write suppressed* {skeleton_filepath}")
 			else:
-				with open(skeleton_filepath, 'wb') as stream:
-					SkeletonSerializer(stream).write(skeleton)
+				stream = io.BytesIO()
+				SkeletonSerializer(stream).write(skeleton)
+				asset_resolver.write_bytes_if_changed(
+					skeleton_filepath,
+					stream.getvalue(),
+					label="skeleton",
+				)
 		except OSError:
 			print(f"Failed to write skeleton file {skeleton_filepath} for skeleton {skeleton_filename}")
 			print(traceback.format_exc())
@@ -2442,11 +2460,16 @@ def write_material(imodel, asset_resolver, suppress_write):
 					print(f"Material: {mat_info.name}, {mat_info.super_name}, {mat_info.tex_name}")
 				print(f"*File write suppressed* {material_filepath}")
 			else:
-				with open(material_filepath, 'wt') as stream:
-					stream.write("import * from \"BZBase.material\"\n\n")
-					for mat_info in imodel.get_materials():
-						print(f"Material: {mat_info.name}, {mat_info.super_name}, {mat_info.tex_name}")
-						stream.write(create_material_string(mat_info.name, mat_info.super_name, mat_info.tex_name))
+				material_text = "import * from \"BZBase.material\"\n\n"
+				for mat_info in imodel.get_materials():
+					print(f"Material: {mat_info.name}, {mat_info.super_name}, {mat_info.tex_name}")
+					material_text += create_material_string(mat_info.name, mat_info.super_name, mat_info.tex_name)
+				written = asset_resolver.write_text_if_changed(
+					material_filepath,
+					material_text,
+					label="material",
+				)
+				if written:
 					print(f"Written to {material_filepath}")
 		except OSError:
 			print(f"Failed to write material file {material_filepath} for material {material_filename}")
@@ -2531,7 +2554,11 @@ def write_textures(imodel, asset_resolver, suppress_write):
             print(f"  Using existing PNG '{png_path}' for '{tex_name}'")
             width, height, rgba_bytes = _png_to_rgba_bytes(png_path)
             if width is not None and rgba_bytes is not None:
-                _write_dds_uncompressed_rgba(width, height, rgba_bytes, dds_path)
+                asset_resolver.write_bytes_if_changed(
+                    dds_path,
+                    _dds_uncompressed_rgba_bytes(width, height, rgba_bytes),
+                    label="texture",
+                )
                 continue
             else:
                 print(f"  Failed to load PNG '{png_path}', "
@@ -2547,7 +2574,11 @@ def write_textures(imodel, asset_resolver, suppress_write):
             img = imodel.flat_img.convert("RGBA")
             width, height = img.size
             rgba_bytes = img.tobytes()
-            _write_dds_uncompressed_rgba(width, height, rgba_bytes, dds_path)
+            asset_resolver.write_bytes_if_changed(
+                dds_path,
+                _dds_uncompressed_rgba_bytes(width, height, rgba_bytes),
+                label="texture",
+            )
             continue
 
         # ----------------------------------------------------
@@ -2576,7 +2607,11 @@ def write_textures(imodel, asset_resolver, suppress_write):
                   f"skipping DDS write")
             continue
 
-        _write_dds_uncompressed_rgba(width, height, rgba_bytes, dds_path)
+        asset_resolver.write_bytes_if_changed(
+            dds_path,
+            _dds_uncompressed_rgba_bytes(width, height, rgba_bytes),
+            label="texture",
+        )
 
 
 
@@ -2747,5 +2782,10 @@ def port_map(filepath, asset_resolver, settings):
     if settings.suppress_write():
         print(f"*File write suppressed* {output_filepath}")
     else:
-        _write_dds_uncompressed_rgba(width, height, rgba_bytes, dds_path)
-        print(f"Written to {output_filepath}")
+        written = asset_resolver.write_bytes_if_changed(
+            output_filepath,
+            _dds_uncompressed_rgba_bytes(width, height, rgba),
+            label="texture",
+        )
+        if written:
+            print(f"Written to {output_filepath}")

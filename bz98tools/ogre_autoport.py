@@ -6,6 +6,7 @@
 # See the LICENSE file or <https://www.gnu.org/licenses/>.
 
 from pathlib import Path
+import time
 import traceback
 
 from .bzrmodelporter import port_models
@@ -72,6 +73,7 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
     Common options (all file types):
       name, suffix, flat_colors, bounds_mult, act_path, config_path,
       only_once, nowrite, dest_dir
+      skip_unchanged, profile_export
 
     VDF-only extras:
       headlights, person_mode, turret_mode, cockpit_mode, skeletalanims_mode,
@@ -109,6 +111,8 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
         resource_dir_list=resource_dir_list,
         act_path=act_path,
     )
+    asset_resolver.skip_unchanged_outputs = bool(options.get("skip_unchanged", False))
+    asset_resolver.profile_enabled = bool(options.get("profile_export", False))
 
     # ----- SettingsController core fields -----
 
@@ -185,6 +189,7 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
     )
 
     print(f"[bz98tools] Ogre auto-port: {filepath.name}")
+    start = time.perf_counter()
 
     try:
         if ext in {".vdf", ".sdf"}:
@@ -195,7 +200,9 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
     except Exception:
         print("[bz98tools] Ogre auto-port FAILED:")
         print(traceback.format_exc())
+        asset_resolver.print_profile(time.perf_counter() - start)
         return {'CANCELLED'}
 
+    asset_resolver.print_profile(time.perf_counter() - start)
     print("[bz98tools] Ogre auto-port complete.")
     return {'FINISHED'}

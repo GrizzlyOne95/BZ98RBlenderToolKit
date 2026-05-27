@@ -7,6 +7,7 @@
 
 import sys
 import os
+import time
 import traceback
 import argparse
 from argparse import ArgumentParser
@@ -91,27 +92,130 @@ class AssetResolver():
 		self.overwrite_skeleton = True #   they already exist.
 		
 		self.walk_directory_tree = True
-		
+		self.skip_unchanged_outputs = False
+		self.profile_enabled = False
+		self._resource_cache = {}
+		self._resource_index = None
+		self._profile = {
+			"resource_hits": 0,
+			"resource_misses": 0,
+			"resource_lookup_sec": 0.0,
+			"resource_index_sec": 0.0,
+			"resource_index_files": 0,
+			"output_write_sec": 0.0,
+			"output_written": 0,
+			"output_unchanged": 0,
+			"output_skipped": 0,
+		}
+
 		# TODO: Pull from a config file
 		self.act_path = act_path
-	
+
+	def _profile_add(self, key, value):
+		if self.profile_enabled:
+			self._profile[key] += value
+
+	def _get_resource_index(self):
+		if self._resource_index is not None:
+			return self._resource_index
+
+		start = time.perf_counter()
+		index = {}
+		for dirpath, dirlist, filelist in os.walk(self.input_dirpath):
+			for filename in filelist:
+				index.setdefault(filename.lower(), Path(dirpath, filename))
+
+		self._resource_index = index
+		self._profile_add("resource_index_sec", time.perf_counter() - start)
+		self._profile_add("resource_index_files", len(index))
+		return index
+
 	def get_resource_path(self, basename):
+		cache_key = os.fspath(basename).lower()
+		if cache_key in self._resource_cache:
+			self._profile_add("resource_hits", 1)
+			return self._resource_cache[cache_key]
+
+		start = time.perf_counter()
+		result = None
 		if(self.walk_directory_tree):
-			for dirpath, dirlist, filelist in os.walk(self.input_dirpath):
-				filepath = Path(dirpath, basename)
-				if(filepath.exists()):
-					return filepath
+			result = self._get_resource_index().get(cache_key)
 		else:
 			filepath = Path(self.input_dirpath, basename)
 			if(filepath.exists()):
-				return filepath
-		
-		for resource_dir in self.resource_dir_list:
-			filepath = Path(resource_dir , basename)
-			if(filepath.exists()):
-				return filepath
-		print(f"Could not find {basename}")
-		return None
+				result = filepath
+
+		if result is None:
+			for resource_dir in self.resource_dir_list:
+				filepath = Path(resource_dir , basename)
+				if(filepath.exists()):
+					result = filepath
+					break
+
+		self._resource_cache[cache_key] = result
+		self._profile_add("resource_misses", 1)
+		self._profile_add("resource_lookup_sec", time.perf_counter() - start)
+		if result is None:
+			print(f"Could not find {basename}")
+		return result
+
+	def write_bytes_if_changed(self, path, data, label="file"):
+		if path is None:
+			self._profile_add("output_skipped", 1)
+			return False
+
+		path = Path(path)
+		start = time.perf_counter()
+		try:
+			if self.skip_unchanged_outputs and path.exists():
+				try:
+					if path.read_bytes() == data:
+						print(f"  [unchanged] {label}: {path}")
+						self._profile_add("output_unchanged", 1)
+						return False
+				except OSError:
+					pass
+
+			with open(path, "wb") as stream:
+				stream.write(data)
+			self._profile_add("output_written", 1)
+			return True
+		finally:
+			self._profile_add("output_write_sec", time.perf_counter() - start)
+
+	def write_text_if_changed(self, path, text, label="file"):
+		return self.write_bytes_if_changed(
+			path,
+			text.encode("utf-8"),
+			label=label,
+		)
+
+	def print_profile(self, total_sec=None):
+		if not self.profile_enabled:
+			return
+
+		print("[bz98tools] Redux export profile:")
+		if total_sec is not None:
+			print(f"  total: {total_sec:.3f}s")
+		print(
+			"  resource lookups: "
+			f"{self._profile['resource_misses']} resolved, "
+			f"{self._profile['resource_hits']} cached, "
+			f"{self._profile['resource_lookup_sec']:.3f}s"
+		)
+		if self._profile["resource_index_files"]:
+			print(
+				"  resource index: "
+				f"{self._profile['resource_index_files']} files, "
+				f"{self._profile['resource_index_sec']:.3f}s"
+			)
+		print(
+			"  output writes: "
+			f"{self._profile['output_written']} written, "
+			f"{self._profile['output_unchanged']} unchanged, "
+			f"{self._profile['output_skipped']} skipped, "
+			f"{self._profile['output_write_sec']:.3f}s"
+		)
 	
 	def get_vdf_path(self, name):
 		return self.get_resource_path(name+".vdf")

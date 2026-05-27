@@ -1,4 +1,5 @@
 import importlib
+import importlib.machinery
 import os
 import platform
 import sys
@@ -23,6 +24,35 @@ def _prepare_native_import():
             os.environ["PATH"] = _NATIVE_ROOT + os.pathsep + os.environ.get("PATH", "")
 
 
+def _has_runtime_extension():
+    if not os.path.isdir(_NATIVE_ROOT):
+        return False, "native Ogre backend files are missing"
+
+    abi_suffixes = tuple(
+        suffix for suffix in importlib.machinery.EXTENSION_SUFFIXES
+        if suffix != ".pyd"
+    )
+    generic_suffix = ".pyd"
+    for filename in os.listdir(_NATIVE_ROOT):
+        if filename.startswith("Kenshi_blender_tool") and filename.endswith(abi_suffixes):
+            return True, None
+        if filename == f"Kenshi_blender_tool{generic_suffix}":
+            return True, None
+
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    found = sorted(
+        filename
+        for filename in os.listdir(_NATIVE_ROOT)
+        if filename.startswith("Kenshi_blender_tool") and filename.endswith(".pyd")
+    )
+    expected = ", ".join(abi_suffixes)
+    return (
+        False,
+        f"native Ogre backend has no Python {version} extension; "
+        f"expected suffix {expected}; found {found or 'none'}",
+    )
+
+
 def probe_native_backend(force=False):
     global _PROBE_RESULT
 
@@ -37,9 +67,9 @@ def probe_native_backend(force=False):
         _PROBE_RESULT = (False, "native Ogre backend requires a 64-bit Python runtime")
         return _PROBE_RESULT
 
-    if sys.version_info[:2] != (3, 11):
-        version = f"{sys.version_info.major}.{sys.version_info.minor}"
-        _PROBE_RESULT = (False, f"native Ogre backend requires Python 3.11, found {version}")
+    has_extension, reason = _has_runtime_extension()
+    if not has_extension:
+        _PROBE_RESULT = (False, reason)
         return _PROBE_RESULT
 
     try:

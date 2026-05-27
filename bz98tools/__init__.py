@@ -122,6 +122,8 @@ EXPORT_PRESET_PROPERTY_NAMES = {
         "ogre_config_path",
         "ogre_only_once",
         "ogre_nowrite",
+        "ogre_skip_unchanged",
+        "ogre_profile_export",
         "ogre_dest_dir",
     ),
     "VDF": (
@@ -136,6 +138,8 @@ EXPORT_PRESET_PROPERTY_NAMES = {
         "ogre_config_path",
         "ogre_only_once",
         "ogre_nowrite",
+        "ogre_skip_unchanged",
+        "ogre_profile_export",
         "ogre_dest_dir",
         "ogre_headlights",
         "ogre_person_mode",
@@ -163,6 +167,8 @@ EXPORT_PRESET_PROPERTY_NAMES = {
         "ogre_config_path",
         "ogre_only_once",
         "ogre_nowrite",
+        "ogre_skip_unchanged",
+        "ogre_profile_export",
         "ogre_dest_dir",
     ),
 }
@@ -179,6 +185,8 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_config_path": "",
             "ogre_only_once": False,
             "ogre_nowrite": False,
+            "ogre_skip_unchanged": True,
+            "ogre_profile_export": False,
             "ogre_dest_dir": "",
         }),
         ("geo_port", "Legacy GEO + Redux", {
@@ -191,6 +199,8 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_config_path": "",
             "ogre_only_once": False,
             "ogre_nowrite": False,
+            "ogre_skip_unchanged": True,
+            "ogre_profile_export": False,
             "ogre_dest_dir": "",
         }),
     ),
@@ -207,6 +217,8 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_config_path": "",
             "ogre_only_once": False,
             "ogre_nowrite": False,
+            "ogre_skip_unchanged": True,
+            "ogre_profile_export": False,
             "ogre_dest_dir": "",
             "ogre_headlights": False,
             "ogre_person_mode": "AUTO",
@@ -237,6 +249,8 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_config_path": "",
             "ogre_only_once": False,
             "ogre_nowrite": False,
+            "ogre_skip_unchanged": True,
+            "ogre_profile_export": False,
             "ogre_dest_dir": "",
             "ogre_headlights": False,
             "ogre_person_mode": "AUTO",
@@ -269,6 +283,8 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_config_path": "",
             "ogre_only_once": False,
             "ogre_nowrite": False,
+            "ogre_skip_unchanged": True,
+            "ogre_profile_export": False,
             "ogre_dest_dir": "",
         }),
         ("structure_sdf_port", "Legacy Structure + Redux", {
@@ -283,6 +299,8 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_config_path": "",
             "ogre_only_once": False,
             "ogre_nowrite": False,
+            "ogre_skip_unchanged": True,
+            "ogre_profile_export": False,
             "ogre_dest_dir": "",
         }),
     ),
@@ -1233,6 +1251,8 @@ def _draw_shared_autoport_options(layout, operator):
     adv = layout.box()
     adv.label(text="Advanced")
     adv.prop(operator, "ogre_only_once")
+    adv.prop(operator, "ogre_skip_unchanged")
+    adv.prop(operator, "ogre_profile_export")
     adv.prop(operator, "ogre_nowrite")
 
 
@@ -2951,6 +2971,21 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
         default=False,
     )
 
+    ogre_skip_unchanged: BoolProperty(
+        name="Skip Unchanged Outputs",
+        description=(
+            "Compare generated Redux .dds/.material/.mesh/.skeleton data with existing files "
+            "and leave matching files untouched."
+        ),
+        default=True,
+    )
+
+    ogre_profile_export: BoolProperty(
+        name="Profile Redux Export",
+        description="Print Redux export timing, resource cache, and output write statistics to the console.",
+        default=False,
+    )
+
     ogre_dest_dir: StringProperty(
         name="Output Folder",
         description="Porter --dest. Destination directory for Redux files; leave blank to use export folder.",
@@ -2993,6 +3028,8 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
             "ogre_config_path",
             "ogre_only_once",
             "ogre_nowrite",
+            "ogre_skip_unchanged",
+            "ogre_profile_export",
             "ogre_dest_dir",
         ))
 
@@ -3008,6 +3045,8 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
                 "config_path": self.ogre_config_path.strip() or None,
                 "only_once": self.ogre_only_once,
                 "nowrite": self.ogre_nowrite,
+                "skip_unchanged": self.ogre_skip_unchanged,
+                "profile_export": self.ogre_profile_export,
                 "dest_dir": self.ogre_dest_dir.strip() or None,
             }
             ogre_autoport.auto_port_bz98_to_ogre(self.filepath, opts)
@@ -3121,6 +3160,21 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
     ogre_nowrite: BoolProperty(
         name="Dry Run",
         description="Porter --nowrite. Suppress file writing for testing.",
+        default=False,
+    )
+
+    ogre_skip_unchanged: BoolProperty(
+        name="Skip Unchanged Outputs",
+        description=(
+            "Compare generated Redux .dds/.material/.mesh/.skeleton data with existing files "
+            "and leave matching files untouched."
+        ),
+        default=True,
+    )
+
+    ogre_profile_export: BoolProperty(
+        name="Profile Redux Export",
+        description="Print Redux export timing, resource cache, and output write statistics to the console.",
         default=False,
     )
 
@@ -3264,6 +3318,8 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
             "ogre_config_path",
             "ogre_only_once",
             "ogre_nowrite",
+            "ogre_skip_unchanged",
+            "ogre_profile_export",
             "ogre_dest_dir",
             "ogre_headlights",
             "ogre_person_mode",
@@ -3293,6 +3349,8 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
                 "config_path": self.ogre_config_path.strip() or None,
                 "only_once": self.ogre_only_once,
                 "nowrite": self.ogre_nowrite,
+                "skip_unchanged": self.ogre_skip_unchanged,
+                "profile_export": self.ogre_profile_export,
                 "dest_dir": self.ogre_dest_dir.strip() or None,
 
                 # VDF-only
@@ -3438,6 +3496,21 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         default=False,
     )
 
+    ogre_skip_unchanged: BoolProperty(
+        name="Skip Unchanged Outputs",
+        description=(
+            "Compare generated Redux .dds/.material/.mesh/.skeleton data with existing files "
+            "and leave matching files untouched."
+        ),
+        default=True,
+    )
+
+    ogre_profile_export: BoolProperty(
+        name="Profile Redux Export",
+        description="Print Redux export timing, resource cache, and output write statistics to the console.",
+        default=False,
+    )
+
     ogre_dest_dir: StringProperty(
         name="Output Folder",
         description="Porter --dest. Destination directory for Redux files; leave blank to use export folder.",
@@ -3489,6 +3562,8 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
             "ogre_config_path",
             "ogre_only_once",
             "ogre_nowrite",
+            "ogre_skip_unchanged",
+            "ogre_profile_export",
             "ogre_dest_dir",
         ))
 
@@ -3504,6 +3579,8 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
                 "config_path": self.ogre_config_path.strip() or None,
                 "only_once": self.ogre_only_once,
                 "nowrite": self.ogre_nowrite,
+                "skip_unchanged": self.ogre_skip_unchanged,
+                "profile_export": self.ogre_profile_export,
                 "dest_dir": self.ogre_dest_dir.strip() or None,
             }
             ogre_autoport.auto_port_bz98_to_ogre(self.filepath, opts)
