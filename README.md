@@ -73,6 +73,20 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
+**v1.4.3 - Organic Redux Skin Helper**
+
+#### Added
+- Added **Create Organic Redux Skin From VDF Hierarchy** in the 3D View Battlezone sidebar.
+- Generates Redux armature bones from legacy GEO control pivots with matching names and `OGREID` values.
+- Binds a selected continuous mesh to the generated armature and creates starter vertex weights with optional blend zones.
+- Added an Organic Redux Skin walkthrough covering setup, export, troubleshooting, and the `fvsentry` ship test.
+
+#### Clarified
+- Runtime-driven ships such as `fvsentry` should export a static skeleton with `Export Animations` off; Redux drives matching GEO-named bones procedurally.
+- Blender actions are only useful as local preview aids while checking or painting weights.
+
+---
+
 **v1.4.2 - Legacy Binary Field Corrections and Collision UI**
 
 #### Changed

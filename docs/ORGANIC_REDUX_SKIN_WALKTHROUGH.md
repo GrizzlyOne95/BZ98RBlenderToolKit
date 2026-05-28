@@ -90,19 +90,42 @@ Use Blender's normal weight paint tools after generation to refine:
 
 Use `Nearest Single Control` when you want rigid starter weights and plan to paint blends manually.
 
-## Animating The Result
+## Runtime Motion
 
-Animate the generated armature bones using the same motion rules the GEO controls would use: rotation and location on the control part. The visible Redux mesh deforms between weighted bones, while the original GEO hierarchy remains available for legacy rigid export.
+For vehicle parts that move naturally at runtime, such as organic fins, nacelles, wings, rotors, or recoil-like control pieces, do **not** rely on exported skeleton actions. Redux should drive the generated bones from the same GEO-style runtime movement rules that would have moved the legacy control pieces.
+
+The important requirement is that generated bone names match the legacy GEO control names. The mesh then deforms through vertex weights when Redux moves those matching controls.
+
+Use Blender actions only as optional local previews while weight painting. For example, you can temporarily key a fin bone to inspect bending, but that action is not needed for ships such as `fvsentry` where the engine drives control motion procedurally.
 
 For direct Redux export:
 
 1. Select the weighted continuous mesh.
 2. Use `File > Export > Redux Mesh Only (.mesh)`.
 3. Enable `Export Skeleton`.
-4. Enable `Export Animations` if the generated armature has animation actions.
+4. Leave `Export Animations` off for runtime-driven ship/control motion.
 5. Export the `.mesh` and `.skeleton`.
 
 The exporter maps vertex groups by bone name, and the generated bones already have `OGREID` values.
+
+## Example: fvsentry Organic Ship Test
+
+The `fvsentry` test case uses the real VDF/GEO controls and a joined Redux mesh:
+
+- Imported `fvsentry.vdf` with its `fse*.geo` files.
+- Imported `fvsentry.mesh`.
+- Joined the imported Redux submesh objects into one visible mesh.
+- Removed the old imported armature modifier and vertex groups.
+- Created an Organic Redux Skin using the LOD1 `fse11*` GEO controls.
+- Exported a static `.mesh/.skeleton` with `Export Animations` off.
+
+Expected result:
+
+- one visible mesh object
+- static skeleton with bones named after the VDF controls
+- all vertices weighted to those bones
+- no skeleton action required
+- Redux runtime control motion bends the weighted mesh instead of moving rigid chunks
 
 ## Legacy Export Limitation
 
