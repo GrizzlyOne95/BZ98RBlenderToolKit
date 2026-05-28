@@ -27,6 +27,7 @@ This plugin targets the **Blender 4.5 LTS** and **Blender 5.1** lines, with **qu
 - ✅ **Automatic `.MAP` → `.PNG` conversion** for textures on import
 - ✅ **Automatic `.PNG` or `.MAP` → `.DDS` conversion** for textures on export
 - ✅ **Clear export modes** for Legacy Only, Legacy + Redux, and Redux Only workflows
+- ✅ **Organic Redux skin helper** for turning legacy GEO control hierarchies into weighted Redux armatures (see `docs/ORGANIC_REDUX_SKIN_WALKTHROUGH.md`)
 - ✅ **Hardpoint/turret GEO suffix and hierarchy validation** for common `gc`, `gr`, `gm`, `gs`, `tx`, `ty`, and turret cockpit conventions
 - ✅ **Cockpit GEO generator** for cloning selected LOD1 faces into matching LOD2 cockpit objects with matching origins
 - ✅ **Safe material name auto-generation**  
@@ -65,6 +66,7 @@ Everything is handled inside Blender:
 - Import or export `.GEO`, `.VDF`, and `.SDF` directly  
 - Auto-convert `.MAP` textures to `.PNG`  
 - Export or Import Redux `.mesh`, `.skeleton`, and `.material` automatically, complete with animations
+- Build organic Redux skins from legacy GEO control pivots for continuous weighted meshes
 - Correct scaling, collisions, and flags preserved  
 - No CLI tools or Python installs needed  
 

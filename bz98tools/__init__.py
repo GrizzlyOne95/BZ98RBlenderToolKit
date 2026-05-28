@@ -2130,6 +2130,119 @@ class BZ98TOOLS_OT_quick_normals_fix(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BZ98TOOLS_OT_create_organic_redux_skin(bpy.types.Operator):
+    bl_idname = "bz.create_organic_redux_skin"
+    bl_label = "Create Organic Redux Skin From VDF Hierarchy"
+    bl_description = "Create a Redux armature and starter mesh weights from legacy GEO control pivots"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    control_source: EnumProperty(
+        name="Control Source",
+        items=(
+            ("SELECTED", "Selected GEO Controls", "Use selected valid GEO controls other than the active target mesh"),
+            ("HIERARCHY", "Active GEO Hierarchy", "Use the active mesh's nearest valid GEO ancestor and its valid GEO descendants"),
+        ),
+        default="SELECTED",
+    )
+
+    keep_controls_visible: BoolProperty(
+        name="Keep GEO Controls Visible",
+        description="Leave legacy GEO control objects visible after creating the Redux rig",
+        default=False,
+    )
+
+    weight_mode: EnumProperty(
+        name="Weight Mode",
+        items=(
+            ("BLENDS", "Nearest Controls With Joint Blends", "Create starter blended weights near parent/child control joints"),
+            ("NEAREST", "Nearest Single Control", "Assign each vertex fully to its nearest control pivot"),
+        ),
+        default="BLENDS",
+    )
+
+    blend_radius: FloatProperty(
+        name="Blend Radius",
+        description="Distance around parent/child control segments where starter blend weights are added",
+        default=0.35,
+        min=0.0,
+        soft_max=10.0,
+    )
+
+    max_influences: IntProperty(
+        name="Max Influences",
+        description="Maximum weighted bones per vertex; Redux native export keeps at most three",
+        default=3,
+        min=1,
+        max=3,
+    )
+
+    replace_existing: BoolProperty(
+        name="Replace Existing Rig Data",
+        description="Clear matching generated vertex groups and the generated armature modifier before rebinding",
+        default=True,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        obj = getattr(context, "object", None)
+        return getattr(obj, "type", None) == 'MESH'
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def execute(self, context):
+        target_obj = context.view_layer.objects.active
+        if getattr(target_obj, "type", None) != 'MESH':
+            self.report({'ERROR'}, "Active object must be the continuous Redux mesh target.")
+            return {'CANCELLED'}
+
+        try:
+            if getattr(context, "mode", "OBJECT") != 'OBJECT':
+                bpy.ops.object.mode_set(mode='OBJECT')
+        except Exception:
+            pass
+
+        try:
+            from . import organic_redux_skin
+
+            armature_obj, controls = organic_redux_skin.create_organic_redux_skin(
+                context,
+                target_obj,
+                control_source=self.control_source,
+                keep_controls_visible=self.keep_controls_visible,
+                weight_mode=self.weight_mode,
+                blend_radius=self.blend_radius,
+                max_influences=self.max_influences,
+                replace_existing=self.replace_existing,
+            )
+        except Exception as exc:
+            self.report({'ERROR'}, str(exc))
+            return {'CANCELLED'}
+
+        for obj in list(context.selected_objects):
+            obj.select_set(False)
+        target_obj.select_set(True)
+        armature_obj.select_set(True)
+        context.view_layer.objects.active = armature_obj
+
+        self.report(
+            {'INFO'},
+            f"Created '{armature_obj.name}' with {len(controls)} control bone(s) for '{target_obj.name}'.",
+        )
+        return {'FINISHED'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "control_source")
+        layout.prop(self, "keep_controls_visible")
+        layout.separator()
+        layout.prop(self, "weight_mode")
+        if self.weight_mode == "BLENDS":
+            layout.prop(self, "blend_radius")
+        layout.prop(self, "max_influences")
+        layout.prop(self, "replace_existing")
+
+
 class BZ98TOOLS_OT_create_vehicle_geo_set(bpy.types.Operator):
     bl_idname = "bz.create_vehicle_geo_set"
     bl_label = "Create Vehicle GEO Set"
@@ -2411,6 +2524,41 @@ class BZ98TOOLS_PT_view3d_quick_tools(bpy.types.Panel):
             row.label(text=f"I {counts['INFO']}")
             if _validation_results_are_stale(context.scene):
                 validation_box.label(text="Results may be stale.", icon='ERROR')
+
+
+class BZ98TOOLS_PT_view3d_organic_redux_skin(bpy.types.Panel):
+    bl_idname = "VIEW3D_PT_BZ_ORGANIC_REDUX_SKIN"
+    bl_label = "Organic Redux Skin"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "Battlezone"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context, "object", None) is not None
+
+    def draw(self, context):
+        layout = self.layout
+        box = layout.box()
+        box.label(text="Redux Mesh Skinning", icon='ARMATURE_DATA')
+        box.operator(
+            "bz.create_organic_redux_skin",
+            text="Create Organic Redux Skin",
+            icon='MOD_ARMATURE',
+        )
+        obj = context.object
+        if getattr(obj, "type", None) == 'MESH':
+            selected_controls = [
+                item for item in context.selected_objects
+                if item != obj
+                and getattr(item, "GEOPropertyGroup", None) is not None
+                and bz_validation.parse_legacy_geo_name(getattr(item, "name", "")).get("valid")
+                and not bz_validation.is_collision_helper_name(getattr(item, "name", ""))
+            ]
+            box.label(text=f"Selected GEO controls: {len(selected_controls)}", icon='OBJECT_DATA')
+        else:
+            box.label(text="Select the continuous mesh target first.", icon='INFO')
 
 
 class BZ98TOOLS_PT_view3d_animation_tools(bpy.types.Panel):
@@ -5594,12 +5742,14 @@ GUIClasses = [
     BZ98TOOLS_OT_fix_validation_name,
     BZ98TOOLS_OT_select_by_object_type,
     BZ98TOOLS_OT_quick_normals_fix,
+    BZ98TOOLS_OT_create_organic_redux_skin,
     BZ98TOOLS_OT_create_vehicle_geo_set,
     BZ98TOOLS_PT_validation,
     BZ98TOOLS_PT_import_diagnostics,
     BattlezoneGEOProperties,
     BZ98TOOLS_PT_view3d_selected_geo,
     BZ98TOOLS_PT_view3d_quick_tools,
+    BZ98TOOLS_PT_view3d_organic_redux_skin,
     BZ98TOOLS_PT_view3d_animation_tools,
     BZ98TOOLS_PT_view3d_cockpit_tools,
     BZ98TOOLS_PT_geo_collision,
