@@ -83,7 +83,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "GrizzlyOne95, Commando950, DivisionByZero, Business Lawyer, Kindrad; inspired by Lucius64",
-    "version": (1, 4, 1),
+    "version": (1, 4, 2),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -412,15 +412,15 @@ class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
     #VDF Properties
     VehicleSize: bpy.props.IntProperty(
         name = "Vehicle Size",
-        description="",
+        description="Legacy VDF vehicle size/class field. Stock vehicles normally use 2; pilots, powerups, camera/repair helpers, and similar small objects commonly use 1.",
         default = 2,
         min = 0,
         max = 10
     )
-    
+
     VehicleType: bpy.props.IntProperty(
         name = "Vehicle Type",
-        description="Seems to be set to 1 on most VDFs",
+        description="Legacy VDF vehicle type field. Stock assets examined so far use 1; preserve imported values for compatibility.",
         default = 1,
         min = 0,
         max = 10
@@ -452,19 +452,19 @@ class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
     
     StructureType: bpy.props.IntProperty(
         name = "Structure Type",
-        description="Seems to be set to 1 on most VDFs",
+        description="Legacy SDF structure type field. Stock assets examined so far use 1; preserve imported values for compatibility.",
         default = 1,
         min = 0,
         max = 10
     )
-    
+
     #SDF Properties here!
-    Defensive: bpy.props.FloatProperty(
-        name = "Defensive",
-        description = "Unknown exactly what this does",
-        default = 0.0,
-        min = 0.0,
-        max = 34028234.0
+    Defensive: bpy.props.IntProperty(
+        name = "SDFC DDR",
+        description = "Raw SDFC DDR integer after the LOD distances. Stock structures commonly use 500000; mine/powerup-like SDFs commonly use smaller values such as 200.",
+        default = 500000,
+        min = 0,
+        max = 2147483647
     )
     
     DeathExplosion: bpy.props.StringProperty(
@@ -552,8 +552,8 @@ class SDFVDFPropertyGroup(bpy.types.PropertyGroup):
     )
 
     UseTranslation2Track: bpy.props.BoolProperty(
-        name="Use Scale Key Track",
-        description="Write object location keys into the legacy ANIM SCLKEY/Translation2 slot used by a few stock assets",
+        name="Export Scale Keys to SCLKEY",
+        description="Write object scale animation into the legacy ANIM SCLKEY/Translation2 slot used by a few stock assets; location keys remain in POSKEY",
         default=False,
     )
 
@@ -1132,8 +1132,8 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
     )
 
     GEOHeaderUnknown: bpy.props.IntProperty(
-        name="GEO Header Raw1",
-        description="Raw second GEO header int. Stock values vary widely; exact engine role is still unconfirmed.",
+        name="GEO Header Checksum",
+        description="Raw second GEO header int. Stock values behave like a legacy checksum/signature; preserve imported values because generated meaning is still unconfirmed.",
         default=69,
         min=-2147483648,
         max=2147483647,
@@ -1157,7 +1157,7 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
 
     GEOFaceShadeTypeDefault: bpy.props.IntProperty(
         name="Face Shade Type",
-        description="Default face shade type byte (see GEO editor references)",
+        description="Default face shade byte: 4 is flat shaded, 5 is Gouraud shaded. Gouraud opaque faces commonly use bytes 05 01 00.",
         default=4,
         min=0,
         max=255,
@@ -1165,7 +1165,7 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
 
     GEOFaceTextureTypeDefault: bpy.props.IntProperty(
         name="Face Texture Type",
-        description="Default face texture flags byte",
+        description="Default face texture flags byte. Stock opaque perspective faces commonly use 1 as the middle byte.",
         default=0,
         min=0,
         max=255,
@@ -1173,7 +1173,7 @@ class GEOPropertyGroup(bpy.types.PropertyGroup):
 
     GEOFaceXluscentTypeDefault: bpy.props.IntProperty(
         name="Face Xluscent Type",
-        description="Default face translucency byte",
+        description="Default face translucency byte: 0 opaque, 1 one-third translucent, 2 two-thirds translucent.",
         default=0,
         min=0,
         max=255,
@@ -2463,7 +2463,7 @@ class BZ98TOOLS_PT_geo_collision(bpy.types.Panel):
             return
 
         layout.prop(geo, "GenerateCollision")
-        if not geo.GenerateCollision:
+        if geo.GenerateCollision:
             return
 
         layout.label(text="GEO Center")

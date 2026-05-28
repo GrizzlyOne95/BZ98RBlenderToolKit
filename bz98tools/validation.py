@@ -534,7 +534,7 @@ def _collect_legacy_animation_limit_issues(obj):
     unsupported_paths = []
     anim = getattr(obj, "animation_data", None)
     action = getattr(anim, "action", None) if anim is not None else None
-    supported_paths = {"location", "rotation_euler", "rotation_quaternion"}
+    supported_paths = {"location", "rotation_euler", "rotation_quaternion", "scale"}
     if action is not None:
         for curve in _iter_action_fcurves(action):
             data_path = getattr(curve, "data_path", "")

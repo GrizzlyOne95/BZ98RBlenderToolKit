@@ -153,7 +153,8 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
     SDFC.lod3dist = context.scene.SDFVDFPropertyGroup.LOD3
     SDFC.lod4dist = context.scene.SDFVDFPropertyGroup.LOD4
     SDFC.lod5dist = context.scene.SDFVDFPropertyGroup.LOD5
-    SDFC.defensive = context.scene.SDFVDFPropertyGroup.Defensive
+    SDFC.ddr = int(context.scene.SDFVDFPropertyGroup.Defensive)
+    SDFC.defensive = SDFC.ddr
     SDFC.explosioneffect = context.scene.SDFVDFPropertyGroup.DeathExplosion
     SDFC.explosionsound = context.scene.SDFVDFPropertyGroup.DeathSound
     
@@ -265,6 +266,10 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
                         if keyframe not in bo.posanim:
                             bo.posanim[keyframe] = [0.0, 0.0, 0.0]
                         bo.posanim[keyframe][curve.array_index] = keyvalue
+                    elif data_path == 'scale':
+                        if keyframe not in bo.scaleanim:
+                            bo.scaleanim[keyframe] = [float(v) for v in blobject.scale]
+                        bo.scaleanim[keyframe][curve.array_index] = keyvalue
 
             # Convert collected quaternions to Euler XYZ and store just like the original Euler path.
             if quat_anim:
@@ -288,6 +293,10 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
                         if keyframe not in bo.posanim:
                             bo.posanim[keyframe] = [0.0, 0.0, 0.0]
                         bo.posanim[keyframe][curve.array_index] = keyvalue
+                    if curve.data_path == 'scale':
+                        if keyframe not in bo.scaleanim:
+                            bo.scaleanim[keyframe] = [float(v) for v in blobject.scale]
+                        bo.scaleanim[keyframe][curve.array_index] = keyvalue
 
     '''
     Read the element data in blender and get it ready for writing later.
@@ -324,16 +333,11 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
         neworientation.matrix1 = [1.00,0.0,0.0,1.00,0.0,0.0,1.00,0.0,0.0,1.00,0.0,0.0]
         neworientation.matrix2 = object.geo.matrix
         pos_count = len(object.posanim)
-        if use_translation2:
-            neworientation.translation2index = trans2_index if pos_count > 0 else 0
-            neworientation.translation2count = pos_count
-            neworientation.positionindex = 0
-            neworientation.positioncount = 0
-        else:
-            neworientation.positionindex = pos_index if pos_count > 0 else 0
-            neworientation.positioncount = pos_count
-            neworientation.translation2index = 0
-            neworientation.translation2count = 0
+        scale_count = len(object.scaleanim) if use_translation2 else 0
+        neworientation.positionindex = pos_index if pos_count > 0 else 0
+        neworientation.positioncount = pos_count
+        neworientation.translation2index = trans2_index if scale_count > 0 else 0
+        neworientation.translation2count = scale_count
         if len(object.rotanim) > 0:
             neworientation.rotationindex = rot_index
         else:
@@ -358,18 +362,18 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
                 ty = ObjectInverse.z + array[2]
                 tz = ObjectInverse.y + array[1]
 
-            if use_translation2:
+            newposition = sdf_classes.ANIMPosition()
+            newposition.frame = key
+            newposition.translate = tx, ty, tz
+            pos_index = pos_index + 1
+            ANIMPositions.append(newposition)
+        if use_translation2:
+            for key, array in object.scaleanim.items():
                 newtranslation = sdf_classes.ANIMTranslation2()
                 newtranslation.frame = key
-                newtranslation.translate = tx, ty, tz
+                newtranslation.translate = array[0], array[2], array[1]
                 trans2_index = trans2_index + 1
                 ANIMTranslations.append(newtranslation)
-            else:
-                newposition = sdf_classes.ANIMPosition()
-                newposition.frame = key
-                newposition.translate = tx, ty, tz
-                pos_index = pos_index + 1
-                ANIMPositions.append(newposition)
     
     '''
     Reorder objects based on parenting and lods. If they are the wrong order, everything will blow up! 

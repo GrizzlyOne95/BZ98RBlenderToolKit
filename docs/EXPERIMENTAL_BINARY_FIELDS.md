@@ -26,7 +26,7 @@ The PDB names `ANIMElement.unknowngeoflag[32]` as `meshIndex[32]`. Stock files u
 
 The PDB names `ANIMOrientation.unknown` as `tagANIMOBJ_MESH.flags`. Stock files scanned so far store `0`.
 
-`UseTranslation2Track` writes keys to the legacy `SCLKEY` slot (`tagANIMOBJ_SCLKEY`). The toolkit still uses the historical internal class name `ANIMTranslation2`, but engine symbols identify this as the scale-key track. A few stock assets use it for special motion.
+`UseTranslation2Track` writes Blender scale keys to the legacy `SCLKEY` slot (`tagANIMOBJ_SCLKEY`). The toolkit still uses the historical internal class name `ANIMTranslation2`, but engine symbols identify this as the scale-key track. A few stock assets use it for special motion.
 
 ## VDF SPCS / SCPS
 
@@ -40,6 +40,7 @@ Confirmed names:
 
 - `GEOFlags` is `ObjectFlags`.
 - `SDFDDR` is `ddr`.
+- The SDFC header field formerly labeled `Defensive` is also a raw integer DDR-style value.
 - `SDFX`, `SDFY`, `SDFZ` are the `Target` vector.
 - `SDFTime` is `Time`.
 
@@ -53,7 +54,7 @@ Stock scan notes:
 ## GEO Header (`=4si16siii`)
 
 Toolkit fields:
-- `GEOHeaderUnknown` = second int in header. This is still unconfirmed; stock values vary widely and do not match vertex or face counts.
+- `GEOHeaderUnknown` = second int in header. This behaves like a legacy checksum/signature field in stock assets; preserve imported values for round-trip compatibility.
 - `GEOHeaderUnknown2` = trailing int in header.
 
 Stock scan notes:

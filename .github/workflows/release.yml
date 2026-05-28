@@ -18,21 +18,24 @@ jobs:
       - name: Zip addon
         run: zip -r bz98tools.zip bz98tools/
 
+      - name: Resolve release notes
+        id: notes
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          notes_file="docs/RELEASE_NOTES_v${version}.md"
+          if [[ -f "$notes_file" ]]; then
+            echo "body_path=$notes_file" >> "$GITHUB_OUTPUT"
+          else
+            echo "body_path=README.md" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: bz98tools.zip
           name: Release ${{ github.ref_name }}
-          body: |
-            ## Battlezone Blender Toolkit ${{ github.ref_name }}
-            
-            ### Installation
-            1. Download `bz98tools.zip` from this release.
-            2. In Blender, go to **Edit > Preferences > Add-ons**.
-            3. Click **Install...** and select the downloaded `.zip` file.
-            4. Ensure **Battlezone GEO/VDF/SDF Formats** is enabled.
-            
-            See the [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for full documentation and features.
+          body_path: ${{ steps.notes.outputs.body_path }}
           draft: false
           prerelease: false
         env:

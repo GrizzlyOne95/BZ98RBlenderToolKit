@@ -42,7 +42,7 @@ class SDFHeader:
         
 class SDFCHeader:
     def __init__(self):
-        self.binstring = '=4si16si5ff13s13s'
+        self.binstring = '=4si16si5fI13s13s'
         self.binlength = 78
     def Read (self, fileContent, position):
         array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
@@ -55,18 +55,20 @@ class SDFCHeader:
         self.lod3dist = array[6]
         self.lod4dist = array[7]
         self.lod5dist = array[8]
-        self.defensive = array[9]
+        self.ddr = int(array[9])
+        self.defensive = self.ddr
         self.explosioneffect = safe_decode_ascii(array[10])
         self.explosionsound = safe_decode_ascii(array[11])
         return position + self.binlength
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, 
-        b'SDFC', self.binlength, 
-        bytes(self.name, 'ascii', errors='ignore'), 
-        self.structuretype, 
+        ddr = int(getattr(self, "ddr", getattr(self, "defensive", 0)))
+        struct.pack_into(self.binstring, buffer, 0,
+        b'SDFC', self.binlength,
+        bytes(self.name, 'ascii', errors='ignore'),
+        self.structuretype,
         self.lod1dist, self.lod2dist, self.lod3dist, self.lod4dist, self.lod5dist,
-        self.defensive,
+        ddr,
         bytes(self.explosioneffect, 'ascii', errors='ignore'), bytes(self.explosionsound, 'ascii', errors='ignore'))
         fileHandle.write(buffer)
         return position + self.binlength
@@ -284,6 +286,8 @@ class ANIMRotation:
 
 #TODO: Figure out what this even does...
 class ANIMTranslation2:
+    # Historical toolkit name for the legacy ANIM SCLKEY slot.
+    # Engine symbols and stock assets identify this as a scale-key track.
     def __init__(self):
         self.binstring = '=i3f'
         self.binlength = 16
@@ -390,3 +394,4 @@ class BlenderObject:
         self.parent = geodata.parent
         self.posanim = {}
         self.rotanim = {}
+        self.scaleanim = {}

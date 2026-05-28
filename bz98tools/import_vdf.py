@@ -565,12 +565,12 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                     if modelanim.translation2count > 0:
                         for index in range(modelanim.translation2index,
                                            modelanim.translation2index + modelanim.translation2count):
-                            Model.object.location = (
+                            Model.object.scale = (
                                 ANIMtranslations2[index].translate[0],
                                 ANIMtranslations2[index].translate[2],
                                 ANIMtranslations2[index].translate[1]
                             )
-                            Model.object.keyframe_insert(data_path="location",
+                            Model.object.keyframe_insert(data_path="scale",
                                                          frame=ANIMtranslations2[index].frame)
                             if ANIMtranslations2[index].frame > EndFrame:
                                 EndFrame = ANIMtranslations2[index].frame

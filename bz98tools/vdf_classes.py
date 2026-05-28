@@ -299,6 +299,8 @@ class ANIMRotation:
 
 
 class ANIMTranslation2:
+    # Historical toolkit name for the legacy ANIM SCLKEY slot.
+    # Engine symbols and stock assets identify this as a scale-key track.
     def __init__(self):
         self.binstring = '=i3f'
         self.binlength = 16
@@ -436,3 +438,4 @@ class BlenderObject:
         self.parent = geodata.parent
         self.posanim = {}
         self.rotanim = {}
+        self.scaleanim = {}

@@ -333,7 +333,7 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
         scene.SDFVDFPropertyGroup['LOD3'] = SDFC.lod3dist
         scene.SDFVDFPropertyGroup['LOD4'] = SDFC.lod4dist
         scene.SDFVDFPropertyGroup['LOD5'] = SDFC.lod5dist
-        scene.SDFVDFPropertyGroup['Defensive'] = SDFC.defensive
+        scene.SDFVDFPropertyGroup['Defensive'] = int(getattr(SDFC, "ddr", SDFC.defensive))
         scene.SDFVDFPropertyGroup['DeathExplosion'] = SDFC.explosioneffect
         scene.SDFVDFPropertyGroup['DeathSound'] = SDFC.explosionsound
         
@@ -381,8 +381,8 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
 
                     if modelanim.translation2count > 0:
                         for index in range(modelanim.translation2index,modelanim.translation2index+modelanim.translation2count):
-                            Model.object.location = ANIMtranslations2[index].translate[0],ANIMtranslations2[index].translate[2],ANIMtranslations2[index].translate[1]
-                            Model.object.keyframe_insert(data_path="location", frame=ANIMtranslations2[index].frame)
+                            Model.object.scale = ANIMtranslations2[index].translate[0],ANIMtranslations2[index].translate[2],ANIMtranslations2[index].translate[1]
+                            Model.object.keyframe_insert(data_path="scale", frame=ANIMtranslations2[index].frame)
                             if ANIMtranslations2[index].frame > EndFrame:
                                 EndFrame = ANIMtranslations2[index].frame
             

@@ -32,6 +32,7 @@ This plugin targets the **Blender 4.5 LTS** and **Blender 5.1** lines, with **qu
 - ✅ **Safe material name auto-generation**  
 - ✅ **Auto UV unwrap** when missing  
 - ✅ **Accurate GEO scaling and GEOFlags**  
+- ✅ **Legacy SCLKEY scale-key animation import/export**
 - ✅ **TRO/Red Odyssey VDF support**  
 - ✅ **COLP collision import safety checks**  
 - ✅ **No external dependencies required**
@@ -70,6 +71,20 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
+**v1.4.2 - Legacy Binary Field Corrections and Collision UI**
+
+#### Changed
+- `SCLKEY` / `ANIMTranslation2` now maps to Blender scale animation, matching Redux engine symbols and stock asset behavior.
+- POSKEY location animation remains independent when scale-key export is enabled.
+- SDF `Defensive` is now exposed as the raw integer `SDFC DDR` field.
+- VDF vehicle size/type, SDF structure type, GEO header checksum, and GEO face byte descriptions were updated with reverse-engineered stock asset notes.
+
+#### Fixed
+- The GEO Collision panel now hides manual GEO center, projectile box, sphere radius, and manual generation controls when **Automatically Generate Collisions** is checked.
+- Legacy validation now accepts scale f-curves for VDF/SDF animation export.
+
+---
+
 **Blender 5.1 Compatibility, Map Tooling, Export UX, and Validation Updates**
 
 #### Added
@@ -180,7 +195,7 @@ Everything is handled inside Blender:
 | Maps | Integrated BZMapIO `.HG2` terrain, texture, and playback tools |
 | Materials | `.MAP → .PNG` conversion and name auto-fill |
 | Geometry | Scale, collision, and UV safety |
-| Animation | Quaternion/Euler auto-conversion |
+| Animation | Quaternion/Euler auto-conversion, SCLKEY scale-key support |
 | VDF | Robust ANIM/COLP parsing, visible collision boxes |
 | SDF | Correct ObjectFlags/DDR/Target/Time fields, fixed struct layouts |
 | Export | Explicit Legacy Only, Legacy + Redux, and Redux Only workflows |
