@@ -18,12 +18,12 @@
 
 bl_info = {
 	"name": "Battlezone Map IO",
-	"description": "Imports and exports Battlezone Redux map terrain, texture, object, path, and playback data.",
+	"description": "Imports and exports Battlezone Redux map terrain, texture, object, and path data.",
 	"author": "Business Lawyer; integrated in BZ98R Blender Toolkit by GrizzlyOne95; HG2 converter by DivisionByZero",
 	"blender": (4, 5, 0),
 	"location": "VIEW_3D > Battlezone > Map Tools",
 	"category": "Import-Export",
-	"version": (1, 6, 0),
+	"version": (1, 6, 1),
 }
 
 import bpy
@@ -45,10 +45,192 @@ import struct
 import csv
 import sys
 from pathlib import Path
+import re
 
 
 ADDON_DIR = Path(__file__).resolve().parent
 MAP_TEMPLATE_PATH = ADDON_DIR / "map_assets" / "BZMapIO.blend"
+VARIANT_LABELS = "ABCDEFGHIJK"
+
+
+def _strip_inline_comment(value):
+	return value.split("//", 1)[0].strip()
+
+
+def _read_trn_material_name(trn_path):
+	try:
+		with open(trn_path, "r", encoding="utf-8", errors="ignore") as handle:
+			for line in handle:
+				clean = _strip_inline_comment(line)
+				if "=" not in clean:
+					continue
+				key, value = clean.split("=", 1)
+				if key.strip().lower() == "materialname":
+					return value.strip()
+	except OSError:
+		return ""
+	return ""
+
+
+def _find_case_insensitive_file(folder, filename):
+	if not folder or not filename:
+		return ""
+	target = filename.lower()
+	try:
+		for entry in os.listdir(folder):
+			if entry.lower() == target:
+				return os.path.join(folder, entry)
+	except OSError:
+		return ""
+	return ""
+
+
+def _find_first_matching_file(folder, suffix):
+	try:
+		for entry in os.listdir(folder):
+			if entry.lower().endswith(suffix.lower()):
+				return os.path.join(folder, entry)
+	except OSError:
+		return ""
+	return ""
+
+
+def _variant_label_from_token(token):
+	token = (token or "0").strip().upper()
+	if token.isdigit():
+		index = int(token)
+		if 0 <= index < len(VARIANT_LABELS):
+			return VARIANT_LABELS[index]
+		return VARIANT_LABELS[0]
+	if token in VARIANT_LABELS:
+		return token
+	return VARIANT_LABELS[0]
+
+
+def _tile_code_from_texture_name(texture_name):
+	stem = os.path.splitext(os.path.basename(texture_name or ""))[0].lower()
+	match = re.search(r"([0-9a-f])([0-9a-f])([scd])([0-9a-k])$", stem)
+	if match is None:
+		return ""
+	base_tile, transition_tile, tile_type, variant_token = match.groups()
+	return base_tile + transition_tile + tile_type.upper() + _variant_label_from_token(variant_token)
+
+
+def _read_custom_atlas_csv(csv_path):
+	rows = []
+	with open(csv_path, "r", encoding="utf-8-sig", errors="ignore", newline="") as handle:
+		reader = csv.reader(handle)
+		for row in reader:
+			if len(row) < 5:
+				continue
+			texture_name = row[0].strip()
+			if not texture_name:
+				continue
+			tile_code = _tile_code_from_texture_name(texture_name)
+			if not tile_code:
+				continue
+			try:
+				coords = [str(float(row[index].strip())) for index in range(1, 5)]
+			except (TypeError, ValueError):
+				continue
+			rows.append(["ZZ" + tile_code + "0.MAP", *coords])
+	return rows
+
+
+def _read_material_aliases(material_path):
+	aliases = {}
+	if not material_path:
+		return aliases
+	try:
+		with open(material_path, "r", encoding="utf-8", errors="ignore") as handle:
+			for line in handle:
+				clean = _strip_inline_comment(line)
+				parts = clean.split()
+				if len(parts) >= 3 and parts[0].lower() == "set_texture_alias":
+					aliases[parts[1]] = parts[2].strip('"')
+	except OSError:
+		pass
+	return aliases
+
+
+def _ensure_custom_world_material(material_name, texture_path):
+	material = bpy.data.materials.get(material_name)
+	if material is None:
+		material = bpy.data.materials.new(material_name)
+	material.use_nodes = True
+	if not texture_path or not os.path.isfile(texture_path):
+		return material
+
+	try:
+		image = bpy.data.images.load(texture_path, check_existing=True)
+	except RuntimeError:
+		return material
+
+	nodes = material.node_tree.nodes
+	principled = nodes.get("Principled BSDF")
+	texture_node = nodes.get("BZ Custom World Atlas")
+	if texture_node is None:
+		texture_node = nodes.new(type="ShaderNodeTexImage")
+		texture_node.name = "BZ Custom World Atlas"
+	texture_node.image = image
+	if principled is not None:
+		base_color = principled.inputs.get("Base Color")
+		color_output = texture_node.outputs.get("Color")
+		if base_color is not None and color_output is not None:
+			for link in list(base_color.links):
+				material.node_tree.links.remove(link)
+			material.node_tree.links.new(color_output, base_color)
+	return material
+
+
+def _load_custom_world_definition(world_folder, preferred_material_name=""):
+	world_folder = os.path.abspath(world_folder or "")
+	if not os.path.isdir(world_folder):
+		raise ValueError("Choose a folder containing a custom world .trn and atlas files.")
+
+	material_name = (preferred_material_name or "").strip()
+	if not material_name:
+		trn_path = _find_first_matching_file(world_folder, ".trn")
+		material_name = _read_trn_material_name(trn_path)
+	if not material_name:
+		raise ValueError("Could not find MaterialName in a .trn file. Pick the custom world folder that contains the .trn.")
+
+	csv_path = _find_case_insensitive_file(world_folder, material_name + ".csv")
+	if not csv_path:
+		csv_path = _find_first_matching_file(world_folder, "_detail_atlas.csv")
+	if not csv_path:
+		raise ValueError("Could not find a matching *_detail_atlas.csv file.")
+
+	csv_data = _read_custom_atlas_csv(csv_path)
+	if not csv_data:
+		raise ValueError(f"No usable tile rows were found in {os.path.basename(csv_path)}.")
+
+	material_path = _find_case_insensitive_file(world_folder, material_name + ".material")
+	aliases = _read_material_aliases(material_path)
+	texture_name = aliases.get("DetailMap") or aliases.get("DiffuseMap") or ""
+	texture_path = _find_case_insensitive_file(world_folder, texture_name) if texture_name else ""
+	return {
+		"folder": world_folder,
+		"material_name": material_name,
+		"csv_path": csv_path,
+		"material_path": material_path,
+		"texture_path": texture_path,
+		"csv_data": csv_data,
+	}
+
+
+def _scene_custom_world_definition(scene):
+	folder = getattr(scene, "BZCustomWorldFolder", "")
+	material_name = getattr(scene, "BZCustomWorldMaterial", "")
+	if not folder or not material_name:
+		return None
+	try:
+		definition = _load_custom_world_definition(folder, material_name)
+	except ValueError:
+		return None
+	if definition["material_name"].lower() != material_name.lower():
+		return None
+	return definition
 
 
 def _hide_view_clear_compat():
@@ -2859,6 +3041,19 @@ class bzbutton_loadtextures(bpy.types.Operator):
 					]
 
 
+				CustomAtlas = _scene_custom_world_definition(context.scene)
+				if CustomAtlas is not None:
+					active_material = (CSVFile or "").strip().lower()
+					custom_material = CustomAtlas["material_name"].lower()
+					if active_material == custom_material or CSVData is None:
+						CSVMaterial = CustomAtlas["material_name"]
+						CSVData = CustomAtlas["csv_data"]
+						_ensure_custom_world_material(CSVMaterial, CustomAtlas["texture_path"])
+
+				if CSVData is None or CSVMaterial is None:
+					self.report({"ERROR"}, "BZMapIO: Unknown terrain atlas. Import a custom world or use a stock world atlas.")
+					return {'CANCELLED'}
+
 
 				# STEP 3) Move every polygon's UV on TextureTiles to match user's map.
 
@@ -4330,12 +4525,6 @@ class BZMapIO_Toggles(PropertyGroup):
 		default = "20"
 		)
 
-	GameNumber: StringProperty(
-		name="",
-		description=" If the game log file has multiple games in it, this number determines which it should use. Leave blank if only 1 recorded game is in the log file.",
-		default = ""
-		)
-
 
 	# TEXTURE TOOLS OPTIONS #
 
@@ -4363,1010 +4552,54 @@ class BZMapIO_Toggles(PropertyGroup):
 		default = True
 		)
 
-# GAME RECORDING PLAYBACK FUNCTIONS
 
-class bzgameimport(Operator, ImportHelper):
-	bl_idname = "bzgameimport.data"
-	bl_label = "Import Game Recording (.txt)"
+class BZMAPIO_OT_import_custom_world(Operator):
+	bl_idname = "bzmapio.import_custom_world"
+	bl_label = "Import Custom World"
+	bl_description = "Load a custom world folder containing a .trn, *_detail_atlas.csv, material, and atlas texture"
 
-	# ImportHelper mixin class uses this
-	filename_ext = "*.txt"
-
-	filter_glob: StringProperty(
-		default="*.txt",
-		options={'HIDDEN'},
-		maxlen=255,  # Max internal buffer length, longer would be clamped.
+	filepath: StringProperty(
+		name="World Folder",
+		subtype='DIR_PATH',
+		default="",
 	)
 
+	def invoke(self, context, event):
+		if not self.filepath:
+			self.filepath = getattr(context.scene, "BZCustomWorldFolder", "")
+		context.window_manager.fileselect_add(self)
+		return {'RUNNING_MODAL'}
+
 	def execute(self, context):
-		# Get the file and folder user picked
-		folder, file = os.path.split(self.filepath)
-		context.scene.BZGameFile = self.filepath
-
-		# TEAM NUMBERS, REPRESENTED BY COLOR
-		TeamColors = [
-		(1.0,  1.0,  1.0,  1.0),
-		(0.0,  1.0,  0.0,  1.0),
-		(1.0,  0.0,  0.0,  1.0),
-		(0.0,  0.0,  1.0,  1.0),
-		(1.0,  1.0,  0.0,  1.0),
-		(0.0,  1.0,  1.0,  1.0),
-		(1.0,  0.0,  1.0,  1.0),
-		(1.0,  0.5,  0.5,  1.0),
-		(0.5,  0.5,  1.0,  1.0),
-		(1.0,  0.5,  1.0,  1.0),
-		(0.5,  1.0,  0.5,  1.0)
-		]
-
-		# Make sure the user's map is selected
-		bpy.ops.object.select_all(action='DESELECT')
-		for ob in bpy.data.objects:
-			if ".hg2_" in ob.name.lower():
-				bpy.data.objects[ob.name].select_set(True)
-				bpy.data.objects[ob.name].hide_select = False # The map must be selectable because this script depends on selections to function.
-				bpy.context.view_layer.objects.active = ob
-				UserMap = ob
-			if "killedindicator" in ob.name.lower():
-				KilledIndicator = ob
-
-		# If nothing is selected, for some stupid reason blender assumes
-		# you want to delete hidden objects, so I reveal them temporarily.
-		_hide_view_clear_compat()
-
-		# Clear any existing meshes from the scene except for the template and references
-		for obj in bpy.context.selected_objects:
-			obj.select_set(False)
-		for ob in bpy.data.objects:
-			if ob.name != "BZMapGenerator" and ob.users_collection[0].name != "ReferenceVisuals" and ob.users_collection[0].name != "BZ_Unit_Models" and ob.name != UserMap.name:
-				bpy.context.view_layer.objects.active = ob
-				bpy.data.objects[ob.name].select_set(True)
-				bpy.ops.object.delete(use_global=False, confirm=False)
-				bpy.ops.object.select_all(action='DESELECT')
-
-		# Clean up unused data blocks after deleting, because Blender is dumb and doesn't clean up after itself.
-		bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
-
-
-		# DATA STRUCTURE FOR ACTIVE GAME OBJECTS
-		HEADER  = 0
-		HANDLE = 1
-		ODF_FILE = 2
-		UNIT_NAME = 3
-		TEAM_NUMBER = 4
-		POSIT_X = 5
-		POSIT_Y = 6
-		POSIT_Z = 7
-		RIGHT_X = 8
-		RIGHT_Y = 9
-		RIGHT_Z = 10
-		UP_X =  11
-		UP_Y =  12
-		UP_Z =  13
-		FRONT_X =  14
-		FRONT_Y =  15
-		FRONT_Z =  16
-		HULL =  17
-		AMMO =  18
-		TIMESTAMP =  19
-		TIMEATTACKED = 20
-		WHOSHOTME = 21
-		WHOSHOTMETEAM = 22
-		ISDEPLOYED = 23
-		FOOTER =  24
-
-		# DATA STRUCTURE FOR DESTROYED GAME OBJECTS
-		HEADER = 0
-		HANDLE = 1
-		TIMEDESTROYED = 2
-
-		# DATA STRUCTURE FOR MISC GAME INFO
-		HEADER = 0
-		TEAM_NUMBER_MISC = 1
-		SCRAP = 2
-		PILOTS = 3
-		PLAYERTARGET = 4
-		TIMEMISC = 5
-
-		# DATA STRUCTURE FOR PLAYER INFO
-		HEADER = 0
-		PLAYERNAME = 1
-		PLAYERTEAM = 2
-
-		# TOTAL STATISTICS TRACKERS, FOR THINGS LIKE TOTAL SCRAP COLLECTED, VEHICLES DESTROYED, ETC.
-		Player1CollectedScrap = 0
-		Player1PrevScrap = 20
-		Player1CurrentScrap = 0
-		Player1BuiltUnits = []
-		Player1ScrapInfo = []
-
-		Player2CollectedScrap = 0
-		Player2PrevScrap = 20
-		Player2CurrentScrap = 0
-		Player2BuiltUnits = []
-		Player2ScrapInfo = []
-
-		Player3CollectedScrap = 0
-		Player3PrevScrap = 20
-		Player3CurrentScrap = 0
-		Player3BuiltUnits = []
-		Player3ScrapInfo = []
-
-		Player4CollectedScrap = 0
-		Player4PrevScrap = 20
-		Player4CurrentScrap = 0
-		Player4BuiltUnits = []
-		Player4ScrapInfo = []
-
-		RecyclerVariants = [
-
-		"1vremp",
-		"1vrempL",
-		"1vrempW",
-
-		"2vremp",
-		"2vrempL",
-		"2vrempW",
-
-		"3vremp",
-		"3vrempL",
-		"3vrempW",
-
-		"avrecy",
-		"avrecyl",
-		"avremp",
-		"avrempl",
-		"avrempw",
-
-		"bvrecy",
-		"bvrecyl",
-		"bvremp",
-		"bvrempl",
-		"bvrempw",
-		"bvrempnm",
-
-		"svrecy",
-		"svrecyl",
-		"svrecyw",
-		"svremp",
-		"svrempl",
-		"svrempw",
-
-		"cvrecy",
-		"cvrecyl",
-		"cvrecyw",
-		"cvremp",
-		"cvrempl",
-		"cvrempw",
-		]
-
-
-		# Clear keyframes for player stats bars
-		bpy.data.objects["PlayerStats_Target_Player1_Holder"].animation_data_clear()
-		bpy.data.objects["PlayerStats_Target_Player2_Holder"].animation_data_clear()
-		bpy.data.objects["PlayerStats_Target_Player3_Holder"].animation_data_clear()
-		bpy.data.objects["PlayerStats_Target_Player4_Holder"].animation_data_clear()
-
-
-		# Make sure the user's map is selected
-		bpy.ops.object.select_all(action='DESELECT')
-		for ob in bpy.data.objects:
-			if ".hg2_" in ob.name.lower():
-				bpy.data.objects[ob.name].select_set(True)
-				bpy.data.objects[ob.name].hide_select = False # The map must be selectable because this script depends on selections to function.
-				bpy.context.view_layer.objects.active = ob
-
-
-
-		GameObjects = [] # we need to track every single unique entity in the game.
-		PointData = []  # Where all the info gets stored
-		MiscData = []
-		DestroyedObjects = []
-		PlayerInfo = []
-		fps = bpy.context.scene.render.fps
-		# Get all the objects within BZ_Unit_Models collection. Needed to apply 3d models to placed objects.
-		BZ_Unit_Models = []
-		for collection in bpy.data.collections:
-			if collection.name == "BZ_Unit_Models":
-				for obj in collection.all_objects:
-					BZ_Unit_Models.append(obj)
-
-
-		# ACQUIRE BATTLEFIELD DATA
-		NumberOfTeams = 0
-		FirstDamageTime = 0
-		f = open(context.scene.BZGameFile, "r")
-		RecorderData = f.readlines()
-
-
-		# BEFORE DOING ANYTHING, CHECK TO SEE WHETHER OR NOT
-		# THIS FILE CONTAINS MULTIPLE SESSIONS!
-
-		NumOfGames = 0
-		GameNumber = bpy.context.scene.BZMapIO_Toggles.GameNumber
-		for line in RecorderData:
-			if "[SBP RECORD BEGIN]" in line:
-				NumOfGames += 1
-
-		# IF THE FILE DOES HAVE MULTIPLE SESSIONS, CHECK FOR PRESENCE OF
-		# GAME NUMBER THEN ISOLATE THE DATA TO JUST THAT GAME
-
-		RecordDataRead = []
-
-		if GameNumber == "" and NumOfGames == 1:
-			RecordDataRead = RecorderData
-		if GameNumber == "1" and NumOfGames == 1:
-			RecordDataRead = RecorderData
-
-		IsolateData = 0
-		if NumOfGames > 1 and GameNumber != "":
-			for x in range(0, len(RecorderData)):
-				if "[SBP RECORD BEGIN]" in RecorderData[x]:
-					IsolateData += 1
-				if IsolateData > int(GameNumber):
-					break
-				if IsolateData == int(GameNumber):
-					RecordDataRead.append(RecorderData[x])
-
-		if RecordDataRead != []:
-			for line in RecordDataRead:
-				if "[RECORD START]" in line:
-					PointData.append(line.split("::"))
-
-					# Get # of teams involved in this game
-					if int(PointData[len(PointData)-1][TEAM_NUMBER]) > NumberOfTeams:
-						NumberOfTeams = int(PointData[len(PointData)-1][TEAM_NUMBER])
-
-					# Get first time any vehicle was damaged
-					if FirstDamageTime == 0:
-						if PointData[len(PointData)-1][WHOSHOTME] != "nil":
-							FirstDamageTime = float(PointData[len(PointData)-1][TIMESTAMP])
-
-				if "[OBJECT DESTROYED]" in line:
-					DestroyedObjects.append(line.split("::"))
-
-				# Collect info about player's scrap, pilots, targeting, etc.
-				if "[OTHER INFO START]" in line:
-					MiscData.append(line.split("::"))
-
-				if "[PLAYER INFO START]" in line:
-					PlayerInfo.append(line.split("::"))
-
-			MarkIN = 0
-			MarkOUT = 2
-
-			# Enable the geometry nodes switches equal to the number of teams present.
-			# This is done to optimize viewport playback as we don't want to dynamically
-			# compute the resources of teams not present.
-
-			for q in range(0, NumberOfTeams):
-				if q == 0:bpy.data.node_groups["Geometry Nodes.001"].nodes["Switch"].inputs[1].default_value = True
-				if q == 1:bpy.data.node_groups["Geometry Nodes.001"].nodes["Switch.001"].inputs[1].default_value = True
-				if q == 2:bpy.data.node_groups["Geometry Nodes.001"].nodes["Switch.002"].inputs[1].default_value = True
-				if q == 3:bpy.data.node_groups["Geometry Nodes.001"].nodes["Switch.003"].inputs[1].default_value = True
-
-			# Read TRN file data. We need this because the TRN can be set to offset the position of objects placed in the game's editor.
-			f = open(context.scene.BZMapFile.lower().replace(".hg2", ".trn"), 'r')
-			TRNData = f.readlines()
-
-
-			MinX = 0
-			MinZ = 0
-			MinHeight = 0
-
-			# I don't know why, but for whatever reason some people's maps will have duplicate
-			# entries of minx/minz/height... these flags make sure only the first instance of these are considered.
-			MinXFound = False
-			MinZFound = False
-			HeightFound = False
-			for x in range(0, len(TRNData)):
-				if "MinX" in TRNData[x]:
-					if MinXFound == False:
-						MinXValue = TRNData[x].find("=")
-						MinX = TRNData[x][MinXValue+1:].replace("\n", "")
-						MinXFound = True
-				if "MinZ" in TRNData[x]:
-					if MinZFound == False:
-						MinZValue = TRNData[x].find("=")
-						MinZ = TRNData[x][MinZValue+1:].replace("\n", "")
-						MinZFound = True
-				if TRNData[x][:6].lower() == "height" and x < 10: # I only check the first 10 lines of BZN file, theres no "clean" way to check this reliably.
-					if HeightFound == False:
-						MinHeightValue = TRNData[x].find("=")
-						MinHeight = TRNData[x][MinHeightValue+1:].replace("\n", "")
-						HeightFound = True
-
-
-			# INSERT PLAYER'S NAME INTO THE PILOT/SCRAP TRACKERS
-			# We only track this for the first 4 players for the time being.
-
-			for v in range(0, len(PlayerInfo)):
-				if PlayerInfo[v][PLAYERTEAM] == "1":
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["String.008"].string = PlayerInfo[v][PLAYERNAME]
-				if PlayerInfo[v][PLAYERTEAM] == "2":
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["String.009"].string = PlayerInfo[v][PLAYERNAME]
-				if PlayerInfo[v][PLAYERTEAM] == "3":
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["String.010"].string = PlayerInfo[v][PLAYERNAME]
-				if PlayerInfo[v][PLAYERTEAM] == "4":
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["String.011"].string = PlayerInfo[v][PLAYERNAME]
-
-			# INSERT DATA FOR CREATED/ALIVE OBJECTS
-
-			LastDestroyedTime = 0
-			bpy.ops.object.select_all(action='DESELECT')
-			for x in range(0, len(PointData)):
-
-
-				# Get start and end time
-				if x == 0:
-					MarkIN = int(float(PointData[x][TIMESTAMP])*fps)
-				if x == len(PointData)-1:
-					MarkOUT = int(float(PointData[x][TIMESTAMP])*fps)
-
-				def ApplyData(TargetObject, loop):
-
-					m = [(float(PointData[loop][RIGHT_X]),   float(PointData[loop][RIGHT_Z]),   float(PointData[loop][RIGHT_Y])  ,1),
-						 (float(PointData[loop][UP_X   ]),   float(PointData[loop][UP_Z   ]),   float(PointData[loop][UP_Y   ]),  0),
-						 (float(PointData[loop][FRONT_X]),   float(PointData[loop][FRONT_Z]),   float(PointData[loop][FRONT_Y])  ,0),
-						 (0,							  0,							  0,							 1)]
-
-					objrot = Matrix(m)
-					TargetObject.matrix_world = m
-
-
-					# We need to account for the MINX and MINZ settings in the TRN file.
-					TargetObject.location[0] = float(PointData[loop][POSIT_Z]) - float(MinZ)
-					TargetObject.location[1] = (float(PointData[loop][POSIT_X])*-1) - float(MinX)
-					TargetObject.location[2] = (float(PointData[loop][POSIT_Y])) - float(MinHeight)
-
-					# the transform matrix flips all objects to -1 scale for whatever reason.
-					# This adjustment at least makes sure units aren't mirrored on the X axis.
-					TargetObject.scale[0] = 1
-
-					# Apply corrections to rotation
-					TargetObject.rotation_euler[0]-= 1.57
-					TargetObject.rotation_euler[2]-= 1.57
-
-					TargetObject.keyframe_insert(data_path='location', frame = float(PointData[loop][TIMESTAMP])*fps)
-					TargetObject.keyframe_insert(data_path='rotation_euler', frame = float(PointData[loop][TIMESTAMP])*fps)
-
-					# Determine if this is a recycler and who's team its on, we move the stats display directly over it if it exists.
-					if PointData[loop][ODF_FILE] in RecyclerVariants:
-						if int(PointData[loop][TEAM_NUMBER]) < 5:
-							bpy.data.objects["PlayerStats_Target_Player" + PointData[loop][TEAM_NUMBER] + "_Holder"].location[0] = float(PointData[loop][POSIT_Z]) - float(MinZ)
-							bpy.data.objects["PlayerStats_Target_Player" + PointData[loop][TEAM_NUMBER] + "_Holder"].location[1] = (float(PointData[loop][POSIT_X])*-1) - float(MinX)
-							bpy.data.objects["PlayerStats_Target_Player" + PointData[loop][TEAM_NUMBER] + "_Holder"].location[2] = (float(PointData[loop][POSIT_Y])) - float(MinHeight) + 75
-							bpy.data.objects["PlayerStats_Target_Player" + PointData[loop][TEAM_NUMBER] + "_Holder"].keyframe_insert(data_path='location', frame = (float(PointData[loop][TIMESTAMP])*fps))
-
-
-
-					# Deployable craft have a blendshape applied to them. Gradually
-					# move their blendshape from 0 to 1 relative to the true/false reading from the data file.
-					if PointData[loop][ISDEPLOYED] == "false":
-						try:
-							DeployableUnit = bpy.data.objects[TargetObject.name]
-							DeployableAnim = DeployableUnit.data.shape_keys.key_blocks["Key 1"].value
-							if DeployableAnim != 0:
-								DeployableUnit.data.shape_keys.key_blocks["Key 1"].value = DeployableAnim-0.25
-								if DeployableAnim < 0:
-									DeployableAnim = 0 # Make sure the value doesn't overshoot
-							DeployableUnit.data.shape_keys.key_blocks["Key 1"].keyframe_insert("value",frame = float(PointData[loop][TIMESTAMP])*fps)
-						except (KeyError, AttributeError): pass
-
-					if PointData[loop][ISDEPLOYED] == "true":
-						try:
-							DeployableUnit = bpy.data.objects[TargetObject.name]
-							DeployableAnim = DeployableUnit.data.shape_keys.key_blocks["Key 1"].value
-							if DeployableAnim != 1:
-								DeployableUnit.data.shape_keys.key_blocks["Key 1"].value = DeployableAnim+0.25
-								if DeployableAnim > 1:
-									DeployableAnim = 1 # Make sure the value doesn't overshoot
-							DeployableUnit.data.shape_keys.key_blocks["Key 1"].keyframe_insert("value",frame = float(PointData[loop][TIMESTAMP])*fps)
-						except (KeyError, AttributeError): pass
-
-				NewObject = 0
-				UseCustomModel = 0
-				UpdateObject = True
-				if PointData[x][HANDLE] not in GameObjects:
-					GameObjects.append(PointData[x][HANDLE])
-					NewObject = 1
-
-				# if this is a new object, it needs to be copied from asset
-				# library (if possible) and added to the battlefield
-				if NewObject == 1:
-
-					# Here, we account for the NSDF team colors present in SBP, which always have a number
-					# in the first character of their name. We replace the number with an "a"
-					ODF = PointData[x][ODF_FILE].lower()
-					if PointData[x][ODF_FILE][0].isdigit() == True:
-						ODF = "a" + ODF[1:]
-
-
-					if PointData[x][TEAM_NUMBER] == "1":
-						Player1BuiltUnits.append([PointData[x][TEAM_NUMBER], PointData[x][UNIT_NAME]])
-
-					if PointData[x][TEAM_NUMBER] == "2":
-						Player2BuiltUnits.append([PointData[x][TEAM_NUMBER], PointData[x][UNIT_NAME]])
-
-					if PointData[x][TEAM_NUMBER] == "3":
-						Player3BuiltUnits.append([PointData[x][TEAM_NUMBER], PointData[x][UNIT_NAME]])
-
-					if PointData[x][TEAM_NUMBER] == "4":
-						Player4BuiltUnits.append([PointData[x][TEAM_NUMBER], PointData[x][UNIT_NAME]])
-
-					# Locate visual object within BZ_Unit_Models collection.
-					for y in range(0, len(BZ_Unit_Models)):
-
-						# Unfortunately I have to account for the TONS of recycler variants.
-						if(BZ_Unit_Models[y].name.lower() in ODF or
-						((BZ_Unit_Models[y].name.lower()[:2] + "c" + BZ_Unit_Models[y].name.lower()[3:]) == ODF) or
-						(BZ_Unit_Models[y].name.lower() == "avrecy" and ODF == "avremp") or
-						(BZ_Unit_Models[y].name.lower() == "avrecy" and ODF == "avrecyl") or
-						(BZ_Unit_Models[y].name.lower() == "avrecy" and ODF == "avrecyw") or
-
-						(BZ_Unit_Models[y].name.lower() == "bvrecy" and ODF == "bvremp") or
-						(BZ_Unit_Models[y].name.lower() == "bvrecy" and ODF == "bvrecyl") or
-						(BZ_Unit_Models[y].name.lower() == "bvrecy" and ODF == "bvrecyw") or
-						(BZ_Unit_Models[y].name.lower() == "bvrecy" and ODF == "bvrempnm") or
-
-						(BZ_Unit_Models[y].name.lower() == "svrecy" and ODF == "svremp") or
-						(BZ_Unit_Models[y].name.lower() == "svrecy" and ODF == "svrecyl") or
-						(BZ_Unit_Models[y].name.lower() == "svrecy" and ODF == "svrecyw") or
-
-						(BZ_Unit_Models[y].name.lower() == "cvrecy" and ODF == "cvremp") or
-						(BZ_Unit_Models[y].name.lower() == "cvrecy" and ODF == "cvrecyl") or
-						(BZ_Unit_Models[y].name.lower() == "cvrecy" and ODF == "cvrecyw") or
-						(BZ_Unit_Models[y].name.lower() == "cvrecy" and ODF == "cvrempl")
-						): # we account for the fact many of my map units replace the 3rd letter with "c"
-							UpdateObject = False
-							UseCustomModel = 1
-
-							# Select and duplicate the model.
-							bpy.ops.object.select_all(action='DESELECT')
-							bpy.context.view_layer.objects.active = BZ_Unit_Models[y]
-							bpy.data.objects[BZ_Unit_Models[y].name].select_set(True)
-							bpy.ops.object.duplicate_move(OBJECT_OT_duplicate={"linked":False, "mode":'TRANSLATION'})
-							bpy.ops.constraint.delete(constraint="Shrinkwrap", owner='OBJECT') # We don't want shrinkwrap on the object.
-							bpy.ops.object.move_to_collection(collection_index=2)
-							# We need to keyframe the object so that its not visible before it should exist in the game.
-							bpy.context.selected_objects[0].location[0] = 0
-							bpy.context.selected_objects[0].location[1] = 5000
-							bpy.context.selected_objects[0].location[2] = 0
-							bpy.context.selected_objects[0].keyframe_insert(data_path='location', frame = (float(PointData[x][TIMESTAMP])*fps)-1)
-							ApplyData(bpy.context.selected_objects[0], x)
-							bpy.context.selected_objects[0].name = PointData[x][HANDLE]
-
-					# If we fail to find the model, represent the object with a cube instead.
-					if UseCustomModel != 1:
-						UpdateObject = False
-						bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
-						bpy.ops.object.move_to_collection(collection_index=2)
-						# We need to keyframe the object so that its not visible before it should exist in the game.
-						bpy.context.selected_objects[0].location[0] = 0
-						bpy.context.selected_objects[0].location[1] = 5000
-						bpy.context.selected_objects[0].location[2] = 0
-						bpy.context.selected_objects[0].keyframe_insert(data_path='location', frame = (float(PointData[x][TIMESTAMP])*fps)-1)
-						ApplyData(bpy.context.selected_objects[0], x)
-						bpy.context.selected_objects[0].name = PointData[x][HANDLE]
-
-					# To optimize performance, key keyframe visibility so that the unit is only visible
-					# while active on the battlefield.
-					bpy.context.object.hide_viewport = True
-					bpy.context.object.keyframe_insert(data_path='hide_viewport', frame = 0)
-					bpy.context.object.hide_viewport = False
-					bpy.context.object.keyframe_insert(data_path='hide_viewport', frame = float(PointData[x][TIMESTAMP])*fps)
-
-				# If this isn't a new object, then scan the GAMEOBJECTS collection
-				# for the unit and update its information for the next frame.
-				UpdateObject = None
-				if NewObject == 0:
-					for collection in bpy.data.collections:
-						if collection.name == "GAMEOBJECTS":
-							for obj in collection.all_objects:
-								if obj.name == PointData[x][HANDLE]:
-									UpdateObject = obj
-									break
-
-				if UpdateObject != None:
-					ApplyData(UpdateObject, x)
-
-					bpy.data.objects[UpdateObject.name].keyframe_insert("color", frame=float(PointData[x][TIMESTAMP]) * fps)
-					bpy.data.objects[UpdateObject.name].color = (TeamColors[int(PointData[x][TEAM_NUMBER])][0]*float(PointData[x][HULL]),TeamColors[int(PointData[x][TEAM_NUMBER])][1]*float(PointData[x][HULL]),TeamColors[int(PointData[x][TEAM_NUMBER])][2]*float(PointData[x][HULL]),1)
-
-
-			# REMOVE DESTROYED STUFF FROM THE BATTLEFIELD!
-			for x in range(0, len(DestroyedObjects)):
-				for y in range(0, len(GameObjects)):
-					if DestroyedObjects[x][HANDLE] in GameObjects[y]:
-
-						bpy.ops.object.select_all(action='DESELECT')
-						bpy.data.objects[DestroyedObjects[x][HANDLE]].select_set(True)
-						bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
-
-						# Before moving the object, we key its current location just before removal.
-						# This prevents loosely evaluated objects from flying off the board prematurely.
-						KillPositionX = bpy.context.selected_objects[0].location[0]
-						KillPositionY = bpy.context.selected_objects[0].location[1]
-						KillPositionZ = bpy.context.selected_objects[0].location[2]
-						bpy.context.selected_objects[0].keyframe_insert(data_path='location', frame = ((float(DestroyedObjects[x][TIMEDESTROYED])-0.01)*fps))
-
-						bpy.context.selected_objects[0].location[0] = 0
-						bpy.context.selected_objects[0].location[1] = 0
-						bpy.context.selected_objects[0].location[2] = -5000
-
-						# Because vehicles take about 3 seconds to be considered "deleted", we add a 2nd keyframe to prevent units "flying" off the board
-						bpy.context.selected_objects[0].keyframe_insert(data_path='location', frame = (float(DestroyedObjects[x][TIMEDESTROYED])*fps))
-
-						# We only want to keyframe killposition if the entity is not scrap.
-						IsScrap = False
-						for key, value in bpy.context.object.data.items():
-							if ("npscr1" in value
-							or "npscr2" in value
-							or "npscr3" in value
-							or "sscr_1" in value):
-								IsScrap = True
-								break
-
-						if IsScrap == False:
-							# Move killposition object so that we know this unit died instead of it just popping out of existence.
-							KilledIndicator.keyframe_insert(data_path='location', frame = ((float(DestroyedObjects[x][TIMEDESTROYED])-3.01)*fps))
-							KilledIndicator.location[0] = KillPositionX
-							KilledIndicator.location[1] = KillPositionY
-							KilledIndicator.location[2] = KillPositionZ
-							KilledIndicator.keyframe_insert(data_path='location', frame = ((float(DestroyedObjects[x][TIMEDESTROYED])-3)*fps))
-						LastDestroyedTime = float(DestroyedObjects[x][TIMEDESTROYED])
-
-
-						# Optimize viewport performance by making the recently destroyed object hidden.
-						bpy.data.objects[DestroyedObjects[x][HANDLE]].hide_viewport = True
-						bpy.data.objects[DestroyedObjects[x][HANDLE]].keyframe_insert(data_path='hide_viewport', frame = float(DestroyedObjects[x][TIMEDESTROYED])*fps)
-
-
-
-			# All dynamic text objects are pre-setup, only the first 4 teams are actually tracked despite the data existing for more.
-			# DELETE ANY EXISTING KEYFRAMES. We do this by blindly deleting 100,000 keyframes.
-			# Sorry this is ugly... but... sometimes you just can't have nice things in Blender.
-			for x in range(0, 100000):
-				try: bpy.data.node_groups['Geometry Nodes.001'].keyframe_delete(data_path='nodes["Value to String"].inputs[0].default_value', frame=x)
-				except RuntimeError: break
-			for x in range(0, 100000):
-				try: bpy.data.node_groups['Geometry Nodes.001'].keyframe_delete(data_path='nodes["Value to String.001"].inputs[0].default_value', frame=x)
-				except RuntimeError: break
-			for x in range(0, 100000):
-				try: bpy.data.node_groups['Geometry Nodes.001'].keyframe_delete(data_path='nodes["Value to String.002"].inputs[0].default_value', frame=x)
-				except RuntimeError: break
-			for x in range(0, 100000):
-				try: bpy.data.node_groups['Geometry Nodes.001'].keyframe_delete(data_path='nodes["Value to String.003"].inputs[0].default_value', frame=x)
-				except RuntimeError: break
-			for x in range(0, 100000):
-				try: bpy.data.node_groups['Geometry Nodes.001'].keyframe_delete(data_path='nodes["Value to String.004"].inputs[0].default_value', frame=x)
-				except RuntimeError: break
-			for x in range(0, 100000):
-				try: bpy.data.node_groups['Geometry Nodes.001'].keyframe_delete(data_path='nodes["Value to String.005"].inputs[0].default_value', frame=x)
-				except RuntimeError: break
-			for x in range(0, 100000):
-				try: bpy.data.node_groups['Geometry Nodes.001'].keyframe_delete(data_path='nodes["Value to String.006"].inputs[0].default_value', frame=x)
-				except RuntimeError: break
-			for x in range(0, 100000):
-				try: bpy.data.node_groups['Geometry Nodes.001'].keyframe_delete(data_path='nodes["Value to String.007"].inputs[0].default_value', frame=x)
-				except RuntimeError: break
-
-			# erase keyframes for player target trackers too.
-			bpy.data.objects["PlayerStats_Target_Player1"].animation_data_clear()
-			bpy.data.objects["PlayerStats_Target_Player2"].animation_data_clear()
-			bpy.data.objects["PlayerStats_Target_Player3"].animation_data_clear()
-			bpy.data.objects["PlayerStats_Target_Player4"].animation_data_clear()
-
-
-			# SET UP DISPLAYS FOR MISC DATA (scrap count, pilots, player target, etc.)
-			for x in range(0, len(MiscData)):
-
-				# For every [OTHER INFO START] data piece, we need to update the following
-				# SCRAP
-				# PILOTS
-				# PLAYERTARGET
-				# According to the team number.
-
-				# You might be asking youself "Gee, why doesn't this guy represent these long pieces of code with variables??"
-				# ... well, its blender. Try it, it won't work here.
-
-				def KeyTargetLocRotScale(PlayerStats_Target):
-					if MiscData[x][PLAYERTARGET] != "nil":
-
-						# We assume the players are reasonably synced up, so as long as the timestamp is within half a second second we're fine
-						# with pulling from PointData to get our position values. If blender had a GOOD api i'd just query the position of the
-						# object at a specific frame... but we don't get that benefit without 8 trillion fucking lines of code so... meh.
-						CurrentTargetOfPlayer = None
-						for q in range(0, len(PointData)):
-							if PointData[q][HANDLE] == MiscData[x][PLAYERTARGET] and (float(MiscData[x][TIMEMISC])-0.25 < float(PointData[q][TIMESTAMP])):
-
-								bpy.data.objects[PlayerStats_Target].location[0] = float(PointData[q][POSIT_Z]) - float(MinZ)
-								bpy.data.objects[PlayerStats_Target].location[1] = (float(PointData[q][POSIT_X])*-1) - float(MinX)
-								bpy.data.objects[PlayerStats_Target].location[2] = (float(PointData[q][POSIT_Y])) - float(MinHeight)
-
-								bpy.data.objects[PlayerStats_Target].keyframe_insert(data_path='location', frame = float(MiscData[x][TIMEMISC])*fps)
-
-								## I also scale the targeting box to be the same as the bounds of the target object.
-								bpy.data.objects[PlayerStats_Target].scale.x = bpy.data.objects[MiscData[x][PLAYERTARGET]].dimensions.x
-								bpy.data.objects[PlayerStats_Target].scale.y = bpy.data.objects[MiscData[x][PLAYERTARGET]].dimensions.y
-								bpy.data.objects[PlayerStats_Target].scale.z = bpy.data.objects[MiscData[x][PLAYERTARGET]].dimensions.z
-								bpy.data.objects[PlayerStats_Target].keyframe_insert(data_path='scale', frame = float(MiscData[x][TIMEMISC])*fps)
-								break
-
-					if MiscData[x][PLAYERTARGET] == "nil":
-						bpy.data.objects[PlayerStats_Target].location.x = 0
-						bpy.data.objects[PlayerStats_Target].location.y = 0
-						bpy.data.objects[PlayerStats_Target].location.z = -5000
-						bpy.data.objects[PlayerStats_Target].keyframe_insert(data_path='location', frame = ((float(MiscData[x][TIMEMISC])*fps)))
-						bpy.data.objects[PlayerStats_Target].keyframe_insert(data_path='rotation_euler', frame = ((float(MiscData[x][TIMEMISC])*fps)))
-
-				# PLAYER 1-4 SCRAP/PILOTS/TARGET
-				if MiscData[x][TEAM_NUMBER_MISC] == "1":
-					Player1CurrentScrap = float(MiscData[x][SCRAP])
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["Value to String"].inputs[0].default_value = float(MiscData[x][SCRAP])
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["Value to String.001"].inputs[0].default_value = float(MiscData[x][PILOTS])
-					bpy.data.node_groups['Geometry Nodes.001'].keyframe_insert(data_path='nodes["Value to String"].inputs[0].default_value', frame=int(float(MiscData[x][TIMEMISC])*fps))
-					bpy.data.node_groups['Geometry Nodes.001'].keyframe_insert(data_path='nodes["Value to String.001"].inputs[0].default_value', frame=int(float(MiscData[x][TIMEMISC])*fps))
-					KeyTargetLocRotScale("PlayerStats_Target_Player1")
-					if Player1PrevScrap + 6 == Player1CurrentScrap:
-						Player1CollectedScrap += 6
-					Player1PrevScrap = float(MiscData[x][SCRAP])
-					Player1ScrapInfo.append([Player1CollectedScrap, float(MiscData[x][TIMEMISC]), Player1CurrentScrap, float(MiscData[x][PILOTS])])
-
-				if MiscData[x][TEAM_NUMBER_MISC] == "2":
-					Player2CurrentScrap = float(MiscData[x][SCRAP])
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["Value to String.002"].inputs[0].default_value = float(MiscData[x][SCRAP])
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["Value to String.003"].inputs[0].default_value = float(MiscData[x][PILOTS])
-					bpy.data.node_groups['Geometry Nodes.001'].keyframe_insert(data_path='nodes["Value to String.002"].inputs[0].default_value', frame=int(float(MiscData[x][TIMEMISC])*fps))
-					bpy.data.node_groups['Geometry Nodes.001'].keyframe_insert(data_path='nodes["Value to String.003"].inputs[0].default_value', frame=int(float(MiscData[x][TIMEMISC])*fps))
-					KeyTargetLocRotScale("PlayerStats_Target_Player2")
-					if Player2PrevScrap + 6 == Player2CurrentScrap:
-						Player2CollectedScrap += 6
-					Player2PrevScrap = float(MiscData[x][SCRAP])
-					Player2ScrapInfo.append([Player2CollectedScrap, float(MiscData[x][TIMEMISC]), Player2CurrentScrap, float(MiscData[x][PILOTS])])
-
-
-				if MiscData[x][TEAM_NUMBER_MISC] == "3":
-					Player3CurrentScrap = float(MiscData[x][SCRAP])
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["Value to String.004"].inputs[0].default_value = float(MiscData[x][SCRAP])
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["Value to String.005"].inputs[0].default_value = float(MiscData[x][PILOTS])
-					bpy.data.node_groups['Geometry Nodes.001'].keyframe_insert(data_path='nodes["Value to String.004"].inputs[0].default_value', frame=int(float(MiscData[x][TIMEMISC])*fps))
-					bpy.data.node_groups['Geometry Nodes.001'].keyframe_insert(data_path='nodes["Value to String.005"].inputs[0].default_value', frame=int(float(MiscData[x][TIMEMISC])*fps))
-					KeyTargetLocRotScale("PlayerStats_Target_Player3")
-					if Player3PrevScrap + 6 == Player3CurrentScrap:
-						Player3CollectedScrap += 6
-					Player3PrevScrap = float(MiscData[x][SCRAP])
-					Player3ScrapInfo.append([Player3CollectedScrap, float(MiscData[x][TIMEMISC]), Player3CurrentScrap, float(MiscData[x][PILOTS])])
-
-				if MiscData[x][TEAM_NUMBER_MISC] == "4":
-					Player4CurrentScrap = float(MiscData[x][SCRAP])
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["Value to String.006"].inputs[0].default_value = float(MiscData[x][SCRAP])
-					bpy.data.node_groups["Geometry Nodes.001"].nodes["Value to String.007"].inputs[0].default_value = float(MiscData[x][PILOTS])
-					bpy.data.node_groups['Geometry Nodes.001'].keyframe_insert(data_path='nodes["Value to String.006"].inputs[0].default_value', frame=int(float(MiscData[x][TIMEMISC])*fps))
-					bpy.data.node_groups['Geometry Nodes.001'].keyframe_insert(data_path='nodes["Value to String.007"].inputs[0].default_value', frame=int(float(MiscData[x][TIMEMISC])*fps))
-					KeyTargetLocRotScale("PlayerStats_Target_Player4")
-					if Player4PrevScrap + 6 == Player4CurrentScrap:
-						Player4CollectedScrap += 6
-					Player4PrevScrap = float(MiscData[x][SCRAP])
-					Player4ScrapInfo.append([Player4CollectedScrap, float(MiscData[x][TIMEMISC]), Player4CurrentScrap, float(MiscData[x][PILOTS])])
-
-
-			# Because all the objects are likely hidden at the last frame,
-			# we need to temporarily reveal them so that the euler filter can
-			# do its work.
-			for x in range(0, len(GameObjects)):
-				bpy.data.objects[GameObjects[x]].hide_viewport = False
-
-			# Clean up the animation by applying an euler filter to every object. This gets rid of a lot of twitchyness.
-			bpy.ops.object.select_all(action='DESELECT')
-			for obj in bpy.data.collections["GAMEOBJECTS"].all_objects:
-				obj.select_set(True)
-
-			bpy.context.area.ui_type = 'FCURVES'
-			bpy.ops.graph.euler_filter()
-			bpy.context.area.ui_type = 'VIEW_3D'
-
-			# Fit the timeline range to the length of the match for the user. Otherwise they'll have to scroll around
-			# like crazy every time they load something. It's also crazy how much code it requires to do this.
-			bpy.context.scene.frame_start = MarkIN
-			bpy.context.scene.frame_end = MarkOUT
-			bpy.context.scene.frame_current = MarkIN
-
-			for area in bpy.context.screen.areas:
-				if area.type == 'DOPESHEET_EDITOR':
-					for region in area.regions:
-						if region.type == 'WINDOW':
-							ctx = bpy.context.copy()
-							ctx['area'] = area
-							ctx['region'] = region
-							bpy.ops.action.view_all(ctx)
-							break
-					break
-
-			# Adjust the viewport visuals. We need to make sure the user is in flat shaded mode
-			# and the terrain should be darkened. Unfortunately I cannot display textures and
-			# dynamically color the tanks simultaneously (the alternative would require a unique
-			# material per object, which is too inefficient to be usable).
-
-			bpy.context.space_data.shading.type = 'SOLID'
-			bpy.ops.object.select_all(action='DESELECT')
-			UserMap.select_set(True)
-			bpy.context.view_layer.objects.active = UserMap
-			bpy.context.object.color = (0.02, 0.02, 0.02, 1)
-			bpy.data.objects[UserMap.name].hide_select = True
-
-			# ASSEMBLE SCRAP COLLECTION LINE GRAPHS
-			# BuildChartFlag set to False only builds the line and not the backpanel and other stuff.
-
-			# We need the highest scrap count of the 4 players to compute comparative collection line charts.
-			HighestScrapYield = max(Player1CollectedScrap, Player2CollectedScrap, Player3CollectedScrap, Player4CollectedScrap)
-
-			# Measures cumulative scrap gains over the course of a match.
-			def MakeChart(PlayerScrapInfo, TeamColor, BuildChartFlag, LineHeight, ChartMax, Metric, ChartLabel):
-				if PlayerScrapInfo != []:
-					bpy.ops.curve.primitive_bezier_curve_add(enter_editmode=True, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
-					LineChart_Line = bpy.context.selected_objects[0]
-
-					bpy.ops.curve.delete(type='VERT')
-					bpy.ops.curve.delete(type='VERT')
-					bpy.ops.curve.vertex_add(location=(0, 0, 0))
-
-
-					# NOTE: We normalize the data to fit in the 0 to 1 range, this way the display
-					# can be scaled around predictably.
-					for x in range(0, len(PlayerScrapInfo)):
-						try:
-							bpy.ops.curve.vertex_add(location=(0, -PlayerScrapInfo[x][1]/(MarkOUT/fps), PlayerScrapInfo[x][Metric]/ChartMax))
-						except ZeroDivisionError:
-							bpy.ops.curve.vertex_add(location=(0, 0, 0))
-
-					bpy.context.object.data.bevel_resolution = 0
-					bpy.context.object.data.bevel_depth = 0.001
-					bpy.context.object.data.extrude = 0.003
-
-					bpy.ops.curve.spline_type_set(type='POLY')
-
-					# Smooth the curve, otherwise i'll look very angular
-					bpy.ops.curve.select_all(action='SELECT')
-					for x in range(0, 4):
-						bpy.ops.curve.smooth()
-
-					# Keyframe the linechart so that it corresponds with the playhead position.
-					bpy.context.object.data.bevel_factor_end = 0
-					bpy.data.curves[bpy.context.object.name].keyframe_insert(data_path='bevel_factor_end', frame = MarkIN)
-					bpy.context.object.data.bevel_factor_end = 1
-					bpy.data.curves[bpy.context.object.name].keyframe_insert(data_path='bevel_factor_end', frame = MarkOUT)
-					bpy.context.object.scale[1] = 3.5 # Make it rectangular instead of square.
-
-
-					# Set animation interpolation to linear, otherwise it won't mesh up with the actual events.
-					bpy.context.area.ui_type = 'FCURVES'
-					bpy.ops.graph.interpolation_type(type='LINEAR')
-					bpy.context.area.ui_type = 'VIEW_3D'
-
-					bpy.ops.object.mode_set(mode='OBJECT')
-					bpy.context.object.color = (TeamColor[0]*5, TeamColor[1]*5, TeamColor[2]*5, 1)
-
-					if BuildChartFlag == True:
-						bpy.ops.object.select_all(action='DESELECT')
-						# Create a frame to help visualize minimums/maximums of the chart
-						bpy.ops.mesh.primitive_plane_add(size=2, enter_editmode=False, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
-						global LineChart_BackPanel
-						LineChart_BackPanel = bpy.context.selected_objects[0]
-						bpy.ops.transform.rotate(value=-1.5708, orient_axis='Y', orient_type='LOCAL', orient_matrix=((1, 0, 0), (0, 1, 0), (0, 0, 1)), orient_matrix_type='LOCAL', constraint_axis=(False, True, False), mirror=False, use_proportional_edit=False, proportional_edit_falloff='SMOOTH', proportional_size=1, use_proportional_connected=False, use_proportional_projected=False, snap=False, snap_elements={'INCREMENT'}, use_snap_project=False, snap_target='CENTER', use_snap_self=True, use_snap_edit=True, use_snap_nonedit=True, use_snap_selectable=False, release_confirm=True)
-						bpy.context.object.scale[0] = 0.5
-						bpy.context.object.scale[1] = 0.5
-						bpy.context.object.location[1] = -0.5
-						bpy.context.object.location[2] = 0.5
-						bpy.context.object.color = (0, 0, 0, 0.5)
-						bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-						bpy.context.object.scale[1] = 3.5
-
-						# Text to establish what minimum/maximum of the chart is.
-						bpy.ops.object.text_add()
-						LineChart_Text_MinMax = bpy.context.selected_objects[0]
-						bpy.context.object.data.body = "                                   " + str(ChartMax) + "\n\n\n\n0 "
-						bpy.context.object.location[1] = 0.2
-						bpy.context.object.location[2] = 1.1
-						bpy.context.object.rotation_euler[0] = 1.5708
-						bpy.context.object.rotation_euler[2] = -1.5708
-						bpy.context.object.data.size = 0.35
-						bpy.ops.object.convert(target='MESH')
-						bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-
-						# Text to label the X/Y axis of the line chart.
-						bpy.ops.object.text_add()
-						LineChart_Text_Labels = bpy.context.selected_objects[0]
-						bpy.context.object.data.body = ChartLabel
-						bpy.context.object.rotation_euler[0] = 1.5708
-						bpy.context.object.rotation_euler[1] = -1.5708
-						bpy.context.object.rotation_euler[2] = -1.5708
-						bpy.context.object.data.size = 0.35
-						bpy.context.object.location[1] = 0.2
-						bpy.context.object.location[2] = 0.08
-						bpy.context.object.data.size = 0.13
-
-						# We now have the complete chart. Parent everything to the back panel.
-						bpy.ops.object.select_all(action='DESELECT')
-						LineChart_Line.select_set(True)
-						LineChart_Text_Labels.select_set(True)
-						LineChart_Text_MinMax.select_set(True)
-						LineChart_BackPanel.select_set(True)
-						bpy.context.view_layer.objects.active = LineChart_BackPanel
-						bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-
-					if BuildChartFlag == False:
-						bpy.ops.object.select_all(action='DESELECT')
-						LineChart_Line.select_set(True)
-						bpy.context.view_layer.objects.active = LineChart_BackPanel
-						bpy.ops.object.parent_set(type='OBJECT', keep_transform=True)
-
-					# Move linechart according to LineHeight argument, this prevents z-fighting.
-					bpy.ops.object.select_all(action='DESELECT')
-					LineChart_Line.select_set(True)
-					bpy.context.view_layer.objects.active = LineChart_BackPanel
-					bpy.context.object.location[0] = LineHeight
-
-
-			MakeChart(Player1ScrapInfo, TeamColors[1], True, -0.005, HighestScrapYield,0, "TOTAL SCRAP\nCOLLECTED")
-			MakeChart(Player2ScrapInfo, TeamColors[2], False, -0.010, HighestScrapYield,0, "TOTAL SCRAP\nCOLLECTED")
-			MakeChart(Player3ScrapInfo, TeamColors[3], False, -0.015, HighestScrapYield,0, "TOTAL SCRAP\nCOLLECTED")
-			MakeChart(Player4ScrapInfo, TeamColors[4], False, -0.020, HighestScrapYield,0, "TOTAL SCRAP\nCOLLECTED")
-
-
-			# With the scrap collected charts assembled, position it near the lower
-			# left corner of the map.
-			bpy.ops.object.select_all(action='DESELECT')
-			LineChart_BackPanel.select_set(True)
-			bpy.context.view_layer.objects.active = LineChart_BackPanel
-			bpy.context.object.location[0] = 28.9099
-			bpy.context.object.location[1] = 693.004
-			bpy.context.object.rotation_euler[0] = 0
-			bpy.context.object.rotation_euler[1] = 1.5708
-			bpy.context.object.rotation_euler[2] = 0
-			bpy.context.object.scale[0] = 185
-			bpy.context.object.scale[1] = 647
-			bpy.context.object.scale[2] = 185
-
-
-			MakeChart(Player1ScrapInfo, TeamColors[1], True, -0.005, 155,2, "SCRAP")
-			MakeChart(Player2ScrapInfo, TeamColors[2], False, -0.010, 155,2, "SCRAP")
-			MakeChart(Player3ScrapInfo, TeamColors[3], False, -0.015, 155,2, "SCRAP")
-			MakeChart(Player4ScrapInfo, TeamColors[4], False, -0.020, 155,2, "SCRAP")
-
-			# With the scrap Stored charts assembled, position it near the lower
-			# left corner of the map.
-			bpy.ops.object.select_all(action='DESELECT')
-			LineChart_BackPanel.select_set(True)
-			bpy.context.view_layer.objects.active = LineChart_BackPanel
-			bpy.context.object.location[0] = 360.874
-			bpy.context.object.location[1] = 693.004
-			bpy.context.object.rotation_euler[0] = 0
-			bpy.context.object.rotation_euler[1] = 1.5708
-			bpy.context.object.rotation_euler[2] = 0
-			bpy.context.object.scale[0] = 185
-			bpy.context.object.scale[1] = 647
-			bpy.context.object.scale[2] = 185
-
-
-			MakeChart(Player1ScrapInfo, TeamColors[1], True, -0.005, 40, 3, "PILOTS")
-			MakeChart(Player2ScrapInfo, TeamColors[2], False, -0.010, 40, 3, "PILOTS")
-			MakeChart(Player3ScrapInfo, TeamColors[3], False, -0.015, 40, 3, "PILOTS")
-			MakeChart(Player4ScrapInfo, TeamColors[4], False, -0.020, 40, 3, "PILOTS")
-
-			# With the scrap Stored charts assembled, position it near the lower
-			# left corner of the map.
-			bpy.ops.object.select_all(action='DESELECT')
-			LineChart_BackPanel.select_set(True)
-			bpy.context.view_layer.objects.active = LineChart_BackPanel
-			bpy.context.object.location[0] = 678.515
-			bpy.context.object.location[1] = 693.004
-			bpy.context.object.rotation_euler[0] = 0
-			bpy.context.object.rotation_euler[1] = 1.5708
-			bpy.context.object.rotation_euler[2] = 0
-			bpy.context.object.scale[0] = 185
-			bpy.context.object.scale[1] = 647
-			bpy.context.object.scale[2] = 185
-
-
-
-			# SECONDARY STATS: These are one-and-done bits of text info which don't require a line graph. It covers things like
-			# number of each unit built, number of kills, etc.
-
-
-			def MakeTextStats(PlayerStatsList, TeamColor, PosX, PosY, PosZ, PlayerName):
-				if PlayerStatsList != []:
-					# PRODS
-					Factory = 0
-					Armory = 0
-					Constructor = 0
-					Scav = 0
-					Tug = 0
-
-					# UNITS
-					Scout = 0
-					LightTank = 0
-					Tank = 0
-					Bomber = 0
-					RocketTank = 0
-					APC = 0
-					Walker = 0
-					Turret = 0
-					Howitzer = 0
-					Minelayer = 0
-					RedDevil = 0
-					HeavyTank = 0
-
-					for x in range(0, len(PlayerStatsList)):
-						if PlayerStatsList[x][1] == "Factory": Factory += 1
-						if PlayerStatsList[x][1] == "Armory": Armory += 1
-						if PlayerStatsList[x][1] == "Constructor": Constructor += 1
-						if PlayerStatsList[x][1] == "Scavenger": Scav += 1
-						if PlayerStatsList[x][1] == "Tug": Tug += 1
-						if PlayerStatsList[x][1] == "Scout" or PlayerStatsList[x][1] == "Fighter": Scout += 1
-						if PlayerStatsList[x][1] == "Light Tank": LightTank += 1
-						if PlayerStatsList[x][1] == "Tank": Tank += 1
-						if PlayerStatsList[x][1] == "Bomber": Bomber += 1
-						if PlayerStatsList[x][1] == "Rocket Tank": RocketTank += 1
-						if PlayerStatsList[x][1] == "APC": APC += 1
-						if PlayerStatsList[x][1] == "Walker": Walker += 1
-						if PlayerStatsList[x][1] == "Turret": Turret += 1
-						if PlayerStatsList[x][1] == "Howitzer": Howitzer += 1
-						if PlayerStatsList[x][1] == "Minelayer": Minelayer += 1
-						if PlayerStatsList[x][1] == "Heavy Tank": HeavyTank += 1
-						if PlayerStatsList[x][1] == "Red Devil": RedDevil += 1
-
-					# Build text stats display for player
-					bpy.ops.object.select_all(action='DESELECT')
-					bpy.ops.object.text_add()
-					TextStats = bpy.context.selected_objects[0]
-
-					# Yes I know there are better ways to format this but Blender throws errors if I try to make my code neat.
-					bpy.context.object.data.body = PlayerName + "\n\n" + "Factory: " + str(Factory) + "\nArmory: " + str(Armory) + "\nConstructor: " + str(Constructor) + "\nScavenger: " + str(Scav)	+ "\nTug: " + str(Tug) + "\n\nScout: " + str(Scout)	+ "\nLight Tank: " + str(LightTank)	+ "\nTank: " + str(Tank) + "\nBomber: " + str(Bomber) + "\nRocket Tank: " + str(RocketTank) + "\nAPC: " + str(APC) + "\nWalker: " + str(Walker) + "\nRed Devil: " + str(RedDevil) + "\nHeavy Tank: " + str(HeavyTank) + "\n\nTurret: " + str(Turret) + "\nMinelayer: " + str(Minelayer) + "\nHowitzer: " + str(Howitzer)
-
-					bpy.context.object.data.align_x = 'RIGHT'
-					bpy.context.object.color = (TeamColor[0]*5, TeamColor[1]*5, TeamColor[2]*5, 1)
-					bpy.context.object.rotation_euler[0] = 1.5708
-					bpy.context.object.rotation_euler[2] = -1.5708
-					bpy.context.object.scale[0] = 30
-					bpy.context.object.scale[1] = 30
-					bpy.context.object.scale[2] = 30
-
-					bpy.context.object.location[0] = PosX
-					bpy.context.object.location[1] = PosY
-					bpy.context.object.location[2] = PosZ
-
-			MakeTextStats(Player1BuiltUnits, TeamColors[1], 1150, 729, 600, bpy.data.node_groups["Geometry Nodes.001"].nodes["String.008"].string)
-			MakeTextStats(Player2BuiltUnits, TeamColors[2], 1150, 488, 600, bpy.data.node_groups["Geometry Nodes.001"].nodes["String.009"].string)
-			MakeTextStats(Player3BuiltUnits, TeamColors[3], 1150, 247, 600, bpy.data.node_groups["Geometry Nodes.001"].nodes["String.010"].string)
-			MakeTextStats(Player4BuiltUnits, TeamColors[4], 1150, 0, 600, bpy.data.node_groups["Geometry Nodes.001"].nodes["String.011"].string)
-
-			# Hide the BZMapGenerator template (this has to be revealed temporarily to circumvent blender bugs).
-			_hide_view_clear_compat()
-			for ob in bpy.data.objects:
-				if ob.name == "BZMapGenerator":
-					ob.hide_set(True)
-
-		else:
-			self.report({"WARNING"}, "Game Playback: Your log file contains " + str(NumOfGames) + " matches. Type in the game number you want to load.")
-
+		world_folder = self.filepath
+		if world_folder and os.path.isfile(world_folder):
+			world_folder = os.path.dirname(world_folder)
+
+		try:
+			definition = _load_custom_world_definition(world_folder)
+		except ValueError as exc:
+			self.report({"ERROR"}, f"BZMapIO: {exc}")
+			return {'CANCELLED'}
+
+		context.scene.BZCustomWorldFolder = definition["folder"]
+		context.scene.BZCustomWorldAtlasCSV = definition["csv_path"]
+		context.scene.BZCustomWorldMaterial = definition["material_name"]
+		context.scene.BZCustomWorldTexture = definition["texture_path"]
+		context.scene.BZCustomWorldStatus = (
+			f"{definition['material_name']} - {len(definition['csv_data'])} tiles"
+		)
+
+		try:
+			bpy.data.node_groups["Geometry Nodes"].nodes["String.005"].string = definition["material_name"]
+		except KeyError:
+			pass
+
+		_ensure_custom_world_material(definition["material_name"], definition["texture_path"])
+		self.report(
+			{"INFO"},
+			f"BZMapIO: Imported custom world '{definition['material_name']}' with {len(definition['csv_data'])} atlas tiles.",
+		)
 		return {'FINISHED'}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ######################################################################################################
@@ -5460,6 +4693,7 @@ class BZMAPIO_PT_map_object_tools(Panel):
 
 		respawn_box = layout.box()
 		respawn_box.label(text="Respawning")
+		respawn_box.label(text="Multiplayer only.", icon="INFO")
 		respawn_box.operator("button.bzsetrespawning", icon="PLUS")
 		respawn_box.prop(scene.BZMapIO_Toggles, "RespawnTime")
 
@@ -5482,6 +4716,9 @@ class BZMAPIO_PT_texture_tools(Panel):
 
 		file_box = layout.box()
 		file_box.label(text="Texture File")
+		file_box.operator("bzmapio.import_custom_world", icon="FILE_FOLDER")
+		if scene.BZCustomWorldStatus:
+			file_box.label(text=scene.BZCustomWorldStatus, icon="INFO")
 		file_box.operator("button.bzloadtextures")
 		file_box.operator("button.bzexportmat")
 
@@ -5503,30 +4740,8 @@ class BZMAPIO_PT_texture_tools(Panel):
 		paint_box.operator("button.bzclearpaint")
 
 
-class BZMAPIO_PT_game_playback(Panel):
-	bl_label = "Game Playback"
-	bl_idname = "BZMAPIO_PT_game_playback"
-	bl_space_type = "VIEW_3D"
-	bl_region_type = "UI"
-	bl_category = "Battlezone"
-	#bl_context = "objectmode"
-
-	@classmethod
-	def poll(cls, context):
-		return context.mode in {'OBJECT'}
-
-	def draw(self, context):
-		layout = self.layout
-		scene = context.scene
-		file_box = layout.box()
-		file_box.label(text="Recording File")
-		file_box.prop(scene, "BZGameFile", text="File")
-		file_box.operator("bzgameimport.data", icon="IMPORT")
-		file_box.prop(scene.BZMapIO_Toggles, "GameNumber")
-
 CLASSES = (
 	bzmapimport,
-	bzgameimport,
 	bzmapexport,
 	bzbutton_transform,
 	bzbutton_mapsizeup,
@@ -5546,11 +4761,11 @@ CLASSES = (
 	bzbutton_applytilepaint,
 	bzbutton_exportmat,
 	BZMapIO_Toggles,
+	BZMAPIO_OT_import_custom_world,
 	BZMAPIO_OT_open_template,
 	BZMAPIO_PT_map_import,
 	BZMAPIO_PT_map_object_tools,
 	BZMAPIO_PT_texture_tools,
-	BZMAPIO_PT_game_playback,
 )
 
 
@@ -5558,12 +4773,24 @@ def register():
 	for cls in CLASSES:
 		bpy.utils.register_class(cls)
 	bpy.types.Scene.BZMapFile = StringProperty(name="")
-	bpy.types.Scene.BZGameFile = StringProperty(name="")
+	bpy.types.Scene.BZCustomWorldFolder = StringProperty(name="Custom World Folder", subtype='DIR_PATH')
+	bpy.types.Scene.BZCustomWorldAtlasCSV = StringProperty(name="Custom World Atlas CSV", subtype='FILE_PATH')
+	bpy.types.Scene.BZCustomWorldMaterial = StringProperty(name="Custom World Material")
+	bpy.types.Scene.BZCustomWorldTexture = StringProperty(name="Custom World Atlas Texture", subtype='FILE_PATH')
+	bpy.types.Scene.BZCustomWorldStatus = StringProperty(name="Custom World Status")
 	bpy.types.Scene.BZMapIO_Toggles = PointerProperty(type=BZMapIO_Toggles)
 
 
 def unregister():
-	for attr in ("BZMapIO_Toggles", "BZMapFile", "BZGameFile"):
+	for attr in (
+		"BZMapIO_Toggles",
+		"BZMapFile",
+		"BZCustomWorldFolder",
+		"BZCustomWorldAtlasCSV",
+		"BZCustomWorldMaterial",
+		"BZCustomWorldTexture",
+		"BZCustomWorldStatus",
+	):
 		if hasattr(bpy.types.Scene, attr):
 			delattr(bpy.types.Scene, attr)
 	for cls in reversed(CLASSES):

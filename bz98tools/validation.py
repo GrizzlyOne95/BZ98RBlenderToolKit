@@ -298,6 +298,19 @@ def _collect_scene_export_issues(context, validation_preset="AUTO"):
         )
         normalized_names.setdefault(normalized_name, []).append(obj)
 
+        if not obj.name[0].isalpha():
+            issues.append(
+                _make_issue(
+                    "INFO",
+                    "Naming",
+                    obj.name,
+                    "Legacy guide best practice is for GEO names to start with a letter. Digit-prefixed names may work, but letter prefixes are safer for shared assets.",
+                    {"VDF", "SDF"},
+                    object_name=obj.name,
+                    action="select_object",
+                )
+            )
+
         if getattr(obj, "type", None) != "MESH":
             if spinner_like:
                 issues.append(
@@ -397,8 +410,11 @@ def _collect_scene_export_issues(context, validation_preset="AUTO"):
 
     issues.extend(_collect_collision_helper_issues(inner_helpers, "inner"))
     issues.extend(_collect_collision_helper_issues(outer_helpers, "outer"))
-    issues.extend(_collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_helpers))
+    issues.extend(_collect_lod_counterpart_issues(named_candidates))
+    issues.extend(_collect_multiple_root_issues(named_candidates))
+    issues.extend(_collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_helpers, validation_preset))
     issues.extend(_collect_animation_preset_issues(scene, named_candidates, validation_preset))
+    issues.extend(_collect_animation_guide_issues(scene, named_candidates))
     issues.extend(_collect_turret_cockpit_issues(named_candidates))
     return issues
 
@@ -733,7 +749,198 @@ def _geo_type(obj):
         return 0
 
 
-def _collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_helpers):
+def _lod_counterpart_key(obj):
+    return legacy_geo_base_prefix(obj.name) + legacy_geo_suffix(obj.name)
+
+
+def _object_vertex_count(obj):
+    mesh = getattr(obj, "data", None)
+    return len(getattr(mesh, "vertices", []) or [])
+
+
+def _object_has_assigned_material(obj):
+    mesh = getattr(obj, "data", None)
+    materials = getattr(mesh, "materials", None)
+    if not materials:
+        return False
+    return any(material is not None for material in materials)
+
+
+def _world_location_distance(a, b):
+    try:
+        return (a.matrix_world.to_translation() - b.matrix_world.to_translation()).length
+    except Exception:
+        return 0.0
+
+
+def _world_rotation_delta(a, b):
+    try:
+        return a.matrix_world.to_quaternion().rotation_difference(b.matrix_world.to_quaternion()).angle
+    except Exception:
+        return 0.0
+
+
+def _collect_lod_counterpart_issues(named_candidates):
+    issues = []
+    lod_by_key = {}
+    for entry in named_candidates:
+        obj = entry["object"]
+        lod_by_key.setdefault(_lod_counterpart_key(obj), {})[entry["lod"]] = obj
+
+    for entry in named_candidates:
+        obj = entry["object"]
+        lod = entry["lod"]
+        counterpart = lod_by_key.get(_lod_counterpart_key(obj), {}).get(1)
+
+        if lod == 2:
+            if counterpart is None:
+                issues.append(
+                    _make_issue(
+                        "WARNING",
+                        "LOD",
+                        obj.name,
+                        "LOD2 cockpit GEO has no matching LOD1 counterpart. Cockpit GEOs should mirror the LOD1 part name, parent relationship, and pivot/origin.",
+                        {"VDF", "SDF"},
+                        object_name=obj.name,
+                        action="select_object",
+                    )
+                )
+                continue
+
+            if getattr(obj, "parent", None) is not counterpart:
+                issues.append(
+                    _make_issue(
+                        "WARNING",
+                        "LOD",
+                        obj.name,
+                        f"LOD2 cockpit GEO should be parented directly to matching LOD1 GEO '{counterpart.name}' so first-person parts follow the same hierarchy.",
+                        {"VDF", "SDF"},
+                        object_name=obj.name,
+                        action="select_object",
+                    )
+                )
+
+            if _world_location_distance(obj, counterpart) > 0.001:
+                issues.append(
+                    _make_issue(
+                        "WARNING",
+                        "Pivot",
+                        obj.name,
+                        f"LOD2 cockpit GEO origin does not match matching LOD1 GEO '{counterpart.name}'. The guide expects identical pivots for matching cockpit parts.",
+                        {"VDF", "SDF"},
+                        object_name=obj.name,
+                        action="select_object",
+                    )
+                )
+
+            if _world_rotation_delta(obj, counterpart) > 0.01:
+                issues.append(
+                    _make_issue(
+                        "WARNING",
+                        "Pivot",
+                        obj.name,
+                        f"LOD2 cockpit GEO orientation does not match matching LOD1 GEO '{counterpart.name}'. Matching local axes are important for rotators, POV, and emitters.",
+                        {"VDF", "SDF"},
+                        object_name=obj.name,
+                        action="select_object",
+                    )
+                )
+
+        elif lod == 3:
+            if counterpart is None:
+                issues.append(
+                    _make_issue(
+                        "WARNING",
+                        "LOD",
+                        obj.name,
+                        "LOD3 GEO has no matching LOD1 counterpart. Redux does not need LOD3, but legacy fallback LODs should match a primary part.",
+                        {"VDF", "SDF"},
+                        object_name=obj.name,
+                        action="select_object",
+                    )
+                )
+            else:
+                lod3_vertices = _object_vertex_count(obj)
+                lod1_vertices = _object_vertex_count(counterpart)
+                if lod1_vertices > 0 and lod3_vertices >= lod1_vertices:
+                    issues.append(
+                        _make_issue(
+                            "WARNING",
+                            "LOD",
+                            obj.name,
+                            f"LOD3 GEO has {lod3_vertices} vertices versus {lod1_vertices} on LOD1 '{counterpart.name}'. LOD3 should be a lower-poly legacy fallback and is unneeded for Redux.",
+                            {"VDF", "SDF"},
+                            object_name=obj.name,
+                            action="select_object",
+                        )
+                    )
+
+            if _object_has_assigned_material(obj):
+                issues.append(
+                    _make_issue(
+                        "WARNING",
+                        "LOD",
+                        obj.name,
+                        "LOD3 GEO has assigned materials/textures. Legacy LOD3 parts are normally low-detail/untextured; Redux does not require them.",
+                        {"VDF", "SDF"},
+                        object_name=obj.name,
+                        action="select_object",
+                    )
+                )
+
+    return issues
+
+
+def _is_top_level_model_root(entry):
+    obj = entry["object"]
+    if entry["lod"] != 1 or entry.get("spinner_like"):
+        return False
+    if getattr(obj, "type", None) != "MESH":
+        return False
+    geo_type = _geo_type(obj)
+    if geo_type == 40 or geo_type in HARDPOINT_SUFFIX_RULES:
+        return False
+    parent = getattr(obj, "parent", None)
+    if parent is None:
+        return True
+    return not parse_legacy_geo_name(getattr(parent, "name", "")).get("valid")
+
+
+def _collect_multiple_root_issues(named_candidates):
+    roots = [entry["object"] for entry in named_candidates if _is_top_level_model_root(entry)]
+    if len(roots) < 2:
+        return []
+
+    shown = ", ".join(sorted(obj.name for obj in roots[:6]))
+    if len(roots) > 6:
+        shown += ", ..."
+    return [
+        _make_issue(
+            "WARNING",
+            "Scene",
+            "model roots",
+            (
+                f"Multiple top-level LOD1 model roots are exportable ({shown}). "
+                "The legacy guide warns that unrelated linked/exported models in one scene can corrupt output; keep one model hierarchy per export scene."
+            ),
+            {"VDF", "SDF"},
+        )
+    ]
+
+
+def _vdf_collision_helpers_required(named_candidates, validation_preset):
+    preset = (validation_preset or "AUTO").upper()
+    if preset == "VEHICLE":
+        return True
+
+    candidates = [entry["object"] for entry in named_candidates]
+    geo_types = {_geo_type(obj) for obj in candidates}
+    if 61 in geo_types:
+        return False
+    return 40 in geo_types or any(geo_type in HARDPOINT_SUFFIX_RULES for geo_type in geo_types)
+
+
+def _collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_helpers, validation_preset):
     issues = []
     candidates = [entry["object"] for entry in named_candidates]
     has_exportable_geo = any(getattr(obj, "type", None) == "MESH" for obj in candidates)
@@ -750,6 +957,9 @@ def _collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_
                 {"VDF"},
             )
         )
+
+    if not _vdf_collision_helpers_required(named_candidates, validation_preset):
+        return issues
 
     if not inner_helpers:
         issues.append(
@@ -796,6 +1006,131 @@ def _has_object_animation(obj):
         return True
 
     return False
+
+
+def _iter_object_transform_fcurves(obj):
+    animation_data = getattr(obj, "animation_data", None)
+    action = getattr(animation_data, "action", None) if animation_data is not None else None
+    if action is None:
+        return
+
+    transform_paths = {
+        "location",
+        "rotation_euler",
+        "rotation_quaternion",
+        "rotation_axis_angle",
+        "scale",
+    }
+    for fcurve in _iter_action_fcurves(action):
+        if getattr(fcurve, "data_path", "") in transform_paths:
+            yield fcurve
+
+
+def _fcurve_has_key_in_range(fcurve, start_frame, end_frame):
+    low = min(start_frame, end_frame)
+    high = max(start_frame, end_frame)
+    for keyframe in getattr(fcurve, "keyframe_points", []) or []:
+        try:
+            frame = float(keyframe.co[0])
+        except Exception:
+            continue
+        if low <= frame <= high:
+            return True
+    return False
+
+
+def _object_loop_transform_mismatch(obj, start_frame, end_frame, tolerance=0.0001):
+    for fcurve in _iter_object_transform_fcurves(obj):
+        if not _fcurve_has_key_in_range(fcurve, start_frame, end_frame):
+            continue
+        try:
+            start_value = float(fcurve.evaluate(start_frame))
+            end_value = float(fcurve.evaluate(end_frame))
+        except Exception:
+            continue
+        if abs(start_value - end_value) > tolerance:
+            return True
+    return False
+
+
+def _animation_item_int(item, attr, default=0):
+    try:
+        return int(getattr(item, attr, default))
+    except Exception:
+        return default
+
+
+def _collect_animation_guide_issues(scene, named_candidates):
+    issues = []
+    animated_objects = [
+        entry["object"] for entry in named_candidates
+        if _has_object_animation(entry["object"])
+    ]
+    if len(animated_objects) > 25:
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "Animation",
+                "animated GEO count",
+                (
+                    f"{len(animated_objects)} exportable GEOs have animation. The legacy guide warns that roughly more than 25 animated GEOs can glitch; "
+                    "larger Redux-era setups may work, but test in the target game."
+                ),
+                {"VDF", "SDF"},
+            )
+        )
+
+    for item in getattr(scene, "AnimationCollection", []) or []:
+        index = _animation_item_int(item, "Index", 0)
+        start = _animation_item_int(item, "Start", 0)
+        length = _animation_item_int(item, "Length", 0)
+        loop_count = _animation_item_int(item, "Loop", 0)
+        if length == 0:
+            continue
+
+        abs_length = abs(length)
+        if abs_length < 10 or abs_length > 20:
+            issues.append(
+                _make_issue(
+                    "INFO",
+                    "Animation",
+                    f"slot {index}",
+                    (
+                        f"ANIM slot {index} is {abs_length} frame(s). The legacy guide prefers 10-20 frame clips; "
+                        "longer clips can work, but verify in legacy BZ if supporting it."
+                    ),
+                    {"VDF", "SDF"},
+                )
+            )
+
+        if loop_count <= 0:
+            continue
+
+        end = start + length
+        mismatched = [
+            obj.name for obj in animated_objects
+            if _object_loop_transform_mismatch(obj, start, end)
+        ]
+        if not mismatched:
+            continue
+
+        shown = ", ".join(sorted(mismatched[:4]))
+        if len(mismatched) > 4:
+            shown += ", ..."
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "Animation",
+                f"slot {index}",
+                (
+                    f"Looping ANIM slot {index} starts and ends on different keyed transforms for {shown}. "
+                    "Legacy looping animations should return to the same pose at the first and last frame."
+                ),
+                {"VDF", "SDF"},
+            )
+        )
+
+    return issues
 
 
 def _collect_animation_preset_issues(scene, named_candidates, validation_preset):

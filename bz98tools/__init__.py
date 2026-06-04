@@ -31,6 +31,7 @@ import hashlib
 import json
 import mathutils
 import struct
+import textwrap
 
 from . import validation as bz_validation
 
@@ -106,7 +107,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "GrizzlyOne95, Commando950, DivisionByZero, Business Lawyer, Kindrad; inspired by Lucius64",
-    "version": (1, 4, 4),
+    "version": (1, 4, 5),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -695,6 +696,94 @@ GEO_TYPE_UI_HINTS = {
 }
 
 
+DUAL_COMPONENT_INFO_LINES = (
+    "Battlezone 98 Redux separates legacy gameplay data from rendered visuals.",
+    "",
+    "Physics / legacy component:",
+    "VDF files define vehicle physics, collision, hardpoints, and legacy animation behavior.",
+    "SDF files define structure physics, collision, effect points, and legacy animation behavior.",
+    "GEO files are the individual movable or animated legacy parts inside VDF/SDF files.",
+    "",
+    "Visual / animation component:",
+    "OGRE .mesh files define rendered vertices, faces, normals, UVs, skin weights, tangents, and colors.",
+    "OGRE .skeleton files define the visual bone hierarchy and animations.",
+    "Redux skeleton bones should use the same names, orientation, and pivots as matching GEO parts.",
+    "Material files define texture and shader assignments for the visual mesh.",
+)
+
+ADVANCED_VDF_INFO_LINES = (
+    "Advanced VDF editing support:",
+    "",
+    "Spinner helpers: create a dummy/helper GEO after the target, set it as a Spinner Helper, assign Spinner Target, Axis, and Speed. Export writes Type 15 behavior without manual hex editing.",
+    "Axis vector direction controls spin axis; vector magnitude times speed is angular speed in radians per second.",
+    "",
+    "Raw transform scaling: enable Use Raw VDF Matrix in Experimental, then edit the 12 floats in right, up, front, position order.",
+    "This exposes the same transform data normally edited in HxD for hardpoint or visual scaling experiments.",
+    "",
+    "Keep backups when experimenting with raw VDF transforms. Some scaled hardpoints or helpers can change gameplay behavior.",
+)
+
+PIVOT_DUMMYROOT_INFO_LINES = (
+    "Pivot and dummyroot notes:",
+    "",
+    "In Blender, the object origin is the Battlezone GEO pivot. Rotation, explosion behavior, cockpit alignment, POV direction, and emitters all depend on that origin and its local axes.",
+    "For rotators, gun barrels, wings, doors, and emitters, place the origin exactly on the intended hinge/emitter point and keep the object's local orientation deliberate.",
+    "LOD2 cockpit GEOs should have a matching LOD1 counterpart, be linked/parented to it, and share the same origin and orientation.",
+    "",
+    "Legacy dummyroot was a makeobj authoring convention. The addon does not require a Blender object named dummyroot.",
+    "Use one clean root model hierarchy per export scene. An unparented exportable root GEO writes as WORLD/root in the legacy hierarchy.",
+    "Author hover/sink offsets by placing the root/object origins at the intended model reference point, then moving the mesh geometry relative to that origin as needed.",
+    "Keep unrelated linked or exportable model hierarchies out of the scene before VDF/SDF export.",
+)
+
+VALIDATION_CHECK_LINES = (
+    "Validation coverage:",
+    "Active GEO export object is selected, is a mesh, and has vertices.",
+    "Legacy VDF/SDF names have valid length and LOD markers.",
+    "GEO first-character naming best practice is reported as info.",
+    "Normalized export names do not collide.",
+    "Parents resolve to exportable objects in the same LOD set.",
+    "Multiple top-level export roots are warned because unrelated linked models can corrupt legacy output.",
+    "LOD2 cockpit counterparts are checked for matching LOD1 part, parent, pivot, and orientation.",
+    "LOD3 parts are checked for matching LOD1, low-detail intent, and unneeded Redux usage.",
+    "Mesh face topology and material texture names are legacy-safe.",
+    "GEO type and common hardpoint suffix combinations are checked.",
+    "Armatures, skinning, shape keys, constraints, and unsupported animation channels are flagged.",
+    "VDF vehicle essentials are checked: POV/eyepoint and inner_col/outer_col helpers, with structure/producer-style exceptions.",
+    "Collision helper names and mesh presence are checked.",
+    "Animation presets check required slots for turret, walker, person, and animated workflows.",
+    "Animation guide checks report loop first/last pose mismatches, high animated-GEO counts, and preferred legacy frame ranges.",
+    "Turret and cockpit conventions are checked, including cockpit rotator matching.",
+)
+
+
+def _draw_wrapped_label(layout, text, icon='NONE', width=64, scale_y=0.9):
+    lines = textwrap.wrap(str(text), width=width) or [""]
+    for index, line in enumerate(lines):
+        row = layout.row()
+        row.scale_y = scale_y
+        if index == 0 and icon != 'NONE':
+            row.label(text=line, icon=icon)
+        else:
+            row.label(text=line)
+
+
+def _draw_wrapped_lines(layout, lines, icon='NONE', width=64):
+    for line in lines:
+        if line == "":
+            layout.separator()
+        else:
+            _draw_wrapped_label(layout, line, icon=icon if line == lines[0] else 'NONE', width=width)
+
+
+def _scene_has_headlight_geo(scene):
+    for obj in getattr(scene, "objects", []):
+        geo = getattr(obj, "GEOPropertyGroup", None)
+        if geo is not None and int(getattr(geo, "GEOType", 0)) == 38:
+            return True
+    return False
+
+
 def _fix_geo_export_name(name, lod):
     geofilename = list(name)
     if len(geofilename) > 8:
@@ -738,14 +827,38 @@ def _draw_geotype_hint(layout, geo_type_value):
         icon = 'WARNING'
     else:
         icon = 'INFO'
-    box.label(text=message, icon=icon)
+    _draw_wrapped_label(box, message, icon=icon, width=56)
 
 
 def _get_object_lod_label(obj):
     name = getattr(obj, "name", "")
     if len(name) >= 4 and name[3] in {'1', '2', '3'}:
-        return f"LOD {name[3]}"
+        if name[3] == '2':
+            return "LOD 2 - cockpit GEO"
+        if name[3] == '3':
+            return "LOD 3 - low-poly legacy GEO"
+        return "LOD 1 - primary GEO"
     return "LOD unknown"
+
+
+def _draw_lod_context_notes(layout, obj):
+    name = getattr(obj, "name", "")
+    if len(name) < 4:
+        return
+    if name[3] == '2':
+        _draw_wrapped_label(
+            layout,
+            "Cockpit GEO: Redux treats LOD 2 as cockpit/first-person geometry.",
+            icon='INFO',
+            width=56,
+        )
+    elif name[3] == '3':
+        _draw_wrapped_label(
+            layout,
+            "LOD 3 GEOs are unneeded for Redux and optional for legacy BZ 1.5.",
+            icon='WARNING',
+            width=56,
+        )
 
 
 def _sanitize_quick_geo_prefix(value):
@@ -882,9 +995,9 @@ def _summarize_face_float_values(mesh, face_indices, attr_name, default_value=0.
 def _draw_legacy_geo_naming_note(layout):
     box = layout.box()
     box.label(text="Legacy Naming Notes", icon='INFO')
-    box.label(text="Body/root GEOs export with parent WORLD when no exportable parent is found.")
-    box.label(text="Common suffixes: bd*, pov, gc*, gr*, gm*, gs*, tx*, ty*.")
-    box.label(text="Vehicle exports should include a Type 40 POV/eyepoint.")
+    _draw_wrapped_label(box, "Body/root GEOs export with parent WORLD when no exportable parent is found.", width=56)
+    _draw_wrapped_label(box, "Common suffixes: bd*, pov, gc*, gr*, gm*, gs*, tx*, ty*.", width=56)
+    _draw_wrapped_label(box, "Vehicle exports should include a Type 40 POV/eyepoint.", width=56)
 
 
 def _draw_geo_face_plane_export_box(layout, owner):
@@ -1007,6 +1120,70 @@ class BZ_OT_ShowAnimIndexReference(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BZ98TOOLS_OT_show_model_system_info(bpy.types.Operator):
+    """Show how legacy VDF/SDF/GEO data relates to Redux mesh output"""
+    bl_idname = "bz.show_model_system_info"
+    bl_label = "Redux Model System Info"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=560)
+
+    def draw(self, context):
+        layout = self.layout
+        _draw_wrapped_lines(layout, DUAL_COMPONENT_INFO_LINES, icon='INFO', width=76)
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_show_advanced_vdf_info(bpy.types.Operator):
+    """Show advanced VDF spinner and raw transform notes"""
+    bl_idname = "bz.show_advanced_vdf_info"
+    bl_label = "Advanced VDF Notes"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=560)
+
+    def draw(self, context):
+        layout = self.layout
+        _draw_wrapped_lines(layout, ADVANCED_VDF_INFO_LINES, icon='INFO', width=76)
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_show_pivot_dummyroot_info(bpy.types.Operator):
+    """Show Battlezone pivot/origin and dummyroot authoring notes"""
+    bl_idname = "bz.show_pivot_dummyroot_info"
+    bl_label = "Pivot / Dummyroot Info"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=560)
+
+    def draw(self, context):
+        layout = self.layout
+        _draw_wrapped_lines(layout, PIVOT_DUMMYROOT_INFO_LINES, icon='INFO', width=76)
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+
+class BZ98TOOLS_OT_show_validation_checks(bpy.types.Operator):
+    """Show the checks performed by Battlezone validation"""
+    bl_idname = "bz.show_validation_checks"
+    bl_label = "Validation Checks"
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self, width=560)
+
+    def draw(self, context):
+        layout = self.layout
+        _draw_wrapped_lines(layout, VALIDATION_CHECK_LINES, icon='CHECKMARK', width=76)
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+
 class BZ_PT_GeoTypeListPopover(bpy.types.Panel):
     bl_idname = "BZ_PT_GeoTypeListPopover"
     bl_label = "GEO Type Reference"
@@ -1037,8 +1214,8 @@ class BZ_PT_GeoTypeListPopover(bpy.types.Panel):
     
 class GEOPropertyGroup(bpy.types.PropertyGroup):
     GenerateCollision: bpy.props.BoolProperty(
-        name="Automatically Generate Collisions",
-        description="If enabled, will generate collisions for the selected object when exported. Does not generate Outer/Inner collisions, but does generate GEO Center, GEO Projectile Box, and the Sphere Radius. Extremely useful for structures, as they won't have collision otherwise. Everything entered in Blender will be ignored when this is enabled, not for users who want manual tweaking",
+        name="Auto Generate SDF Collision Data",
+        description="Generate GEO center, projectile box, and sphere radius for SDF/building collision data. This does not create VDF inner_col/outer_col vehicle collision helpers.",
         default=True
     )
 
@@ -1398,7 +1575,9 @@ def _get_validation_counts(scene, export_mode="ALL"):
 def _draw_validation_summary_box(layout, scene, export_mode="ALL"):
     box = layout.box()
     box.label(text="Validation", icon='CHECKMARK')
-    box.operator("bz.validate_scene", text="Validate Battlezone Scene", icon='VIEWZOOM')
+    row = box.row(align=True)
+    row.operator("bz.validate_scene", text="Validate Battlezone Scene", icon='VIEWZOOM')
+    row.operator("bz.show_validation_checks", text="", icon='INFO')
 
     issues = getattr(scene, "bz_validation_issues", None)
     if issues is None or len(issues) == 0:
@@ -1413,6 +1592,46 @@ def _draw_validation_summary_box(layout, scene, export_mode="ALL"):
     if _validation_results_are_stale(scene):
         box.label(text="Results may be stale after scene changes.", icon='ERROR')
     return box
+
+
+def _draw_validation_issue_report(layout, scene, export_mode="ALL", max_items=6):
+    issues = getattr(scene, "bz_validation_issues", None)
+    if issues is None or len(issues) == 0:
+        return
+
+    shown = 0
+    for item in issues:
+        export_modes = {
+            part.strip()
+            for part in (item.export_modes or "ALL").split(",")
+            if part.strip()
+        }
+        if "ALL" not in export_modes and export_mode not in export_modes:
+            continue
+        if shown >= max_items:
+            remaining = len(issues) - shown
+            layout.label(text=f"{remaining} more result(s) in Scene > Battlezone Export Validation.")
+            break
+
+        icon = 'INFO'
+        if item.severity == "ERROR":
+            icon = 'ERROR'
+        elif item.severity == "WARNING":
+            icon = 'WARNING'
+
+        row = layout.row(align=True)
+        target = item.scope
+        if item.target:
+            target += f": {item.target}"
+        row.label(text=f"{item.severity} {target}", icon=icon)
+        if item.object_name:
+            op = row.operator("bz.select_validation_target", text="", icon='RESTRICT_SELECT_OFF')
+            op.object_name = item.object_name
+        if item.action == "fix_name" and item.object_name:
+            op = row.operator("bz.fix_validation_name", text="", icon='SORTALPHA')
+            op.object_name = item.object_name
+        _draw_wrapped_label(layout, item.message, width=58, scale_y=0.8)
+        shown += 1
 
 
 def _draw_legacy_export_mode_box(layout, auto_port_enabled):
@@ -1438,9 +1657,9 @@ def _draw_redux_only_export_mode_box(layout):
 def _draw_legacy_animation_limits_box(layout):
     box = layout.box()
     box.label(text="Legacy Animation Limits", icon='INFO')
-    box.label(text="VDF/SDF ANIM exports object rotation and location only.")
-    box.label(text="Skeletal animation, skin weights, shape keys, and mesh bending are not written.")
-    box.label(text="Each moving legacy part must be a separate GEO object.")
+    _draw_wrapped_label(box, "VDF/SDF ANIM exports object rotation and location only.", width=62)
+    _draw_wrapped_label(box, "Skeletal animation, skin weights, shape keys, and mesh bending are not written.", width=62)
+    _draw_wrapped_label(box, "Each moving legacy part must be a separate GEO object.", width=62)
     return box
 
 
@@ -1475,10 +1694,17 @@ def _draw_shared_autoport_options(layout, operator):
     adv.prop(operator, "ogre_nowrite")
 
 
-def _draw_vdf_autoport_options(layout, operator):
+def _draw_vdf_autoport_options(layout, operator, scene=None):
     box = layout.box()
     box.label(text="VDF-Specific Redux Options")
     box.prop(operator, "ogre_headlights")
+    if operator.ogre_headlights and scene is not None and not _scene_has_headlight_geo(scene):
+        _draw_wrapped_label(
+            box,
+            "Headlights are enabled, but no GEO Type 38 HEADLIGHT_MASK object was found.",
+            icon='WARNING',
+            width=62,
+        )
     box.prop(operator, "ogre_person_mode")
     box.prop(operator, "ogre_turret_mode")
     box.prop(operator, "ogre_cockpit_mode")
@@ -1701,6 +1927,45 @@ def _ensure_object_action(obj, suffix="_mirrored"):
     return obj.animation_data.action
 
 
+def _legacy_mirror_similarity_warning(source, target):
+    if source is None or target is None:
+        return ""
+    if getattr(source, "type", None) != 'MESH' or getattr(target, "type", None) != 'MESH':
+        return "Mirror selections are not both mesh GEO objects; transform keys can still be copied."
+
+    source_mesh = getattr(source, "data", None)
+    target_mesh = getattr(target, "data", None)
+    source_vertices = len(getattr(source_mesh, "vertices", []))
+    target_vertices = len(getattr(target_mesh, "vertices", []))
+    source_edges = len(getattr(source_mesh, "edges", []))
+    target_edges = len(getattr(target_mesh, "edges", []))
+    source_faces = len(getattr(source_mesh, "polygons", []))
+    target_faces = len(getattr(target_mesh, "polygons", []))
+
+    if (
+        source_vertices == target_vertices
+        and source_edges == target_edges
+        and source_faces == target_faces
+    ):
+        return ""
+
+    source_dims = getattr(source, "dimensions", mathutils.Vector((0.0, 0.0, 0.0)))
+    target_dims = getattr(target, "dimensions", mathutils.Vector((0.0, 0.0, 0.0)))
+    max_dim = max(max(source_dims), max(target_dims), 0.000001)
+    dim_delta = (source_dims - target_dims).length / max_dim
+    vertex_delta = abs(source_vertices - target_vertices) / max(source_vertices, target_vertices, 1)
+    if dim_delta <= 0.1 and vertex_delta <= 0.1:
+        return (
+            "Mirror selections are similar but not identical "
+            f"({source_vertices}/{target_vertices} vertices, {source_faces}/{target_faces} faces)."
+        )
+
+    return (
+        "Mirror selections do not look like matching GEO parts "
+        f"({source_vertices}/{target_vertices} vertices, {source_faces}/{target_faces} faces)."
+    )
+
+
 def _set_scene_frame_float(scene, frame):
     frame_value = float(frame)
     frame_base = math.floor(frame_value)
@@ -1861,8 +2126,9 @@ class BattlezoneSDFVDFProperties(bpy.types.Panel):
 
         layout.prop(SDFVDFPropertyGroup, "Name", text="Internal Name")
         row = layout.row(align=True)
-        row.label(text=f"Animation Elements: {len(scene.AnimationCollection)}", icon='ANIM')
-        row.label(text=f"Validation Issues: {len(getattr(scene, 'bz_validation_issues', []))}", icon='CHECKMARK')
+        row.label(text=f"Animations: {len(scene.AnimationCollection)}", icon='ANIM')
+        row.label(text=f"Validation: {len(getattr(scene, 'bz_validation_issues', []))}", icon='CHECKMARK')
+        layout.operator("bz.show_model_system_info", text="Redux Model System Info", icon='INFO')
 
 
 class BZ98TOOLS_PT_scene_asset_properties(bpy.types.Panel):
@@ -1912,6 +2178,7 @@ class BZ98TOOLS_PT_scene_orientation_reference(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         _draw_orientation_reference_box(layout, mode="LEGACY")
+        layout.operator("bz.show_pivot_dummyroot_info", text="Pivot / Dummyroot Info", icon='INFO')
 
         redux = layout.box()
         redux.label(text="Redux Direct Mesh", icon='MESH_DATA')
@@ -2434,9 +2701,7 @@ class BZ98TOOLS_PT_validation(bpy.types.Panel):
                 op = row.operator("bz.fix_validation_name", text="Fix Name", icon='SORTALPHA')
                 op.object_name = item.object_name
 
-            msg_row = list_box.row()
-            msg_row.scale_y = 0.85
-            msg_row.label(text=item.message)
+            _draw_wrapped_label(list_box, item.message, width=72, scale_y=0.85)
             shown += 1
 
 
@@ -2503,7 +2768,8 @@ class BattlezoneGEOProperties(bpy.types.Panel):
             text="Show GEO Types",
             icon="INFO",
         )
-        layout.label(text=f"Selected Role: {_get_geotype_label(geo.GEOType)}")
+        _draw_wrapped_label(layout, f"Selected Role: {_get_geotype_label(geo.GEOType)}", width=58)
+        _draw_lod_context_notes(layout, obj)
         _draw_geotype_hint(layout, geo.GEOType)
         _draw_legacy_geo_naming_note(layout)
         if getattr(obj, "type", None) == 'MESH':
@@ -2536,7 +2802,7 @@ class BZ98TOOLS_PT_view3d_selected_geo(bpy.types.Panel):
         row = header.row(align=True)
         row.scale_y = 1.4
         row.label(text=f"GEO Type {int(geo.GEOType)}", icon='INFO')
-        header.label(text=_get_geotype_label(geo.GEOType))
+        _draw_wrapped_label(header, _get_geotype_label(geo.GEOType), width=54)
         _draw_geotype_hint(header, geo.GEOType)
 
         layout.prop(geo, "GEOTypeEnum", text="Type")
@@ -2546,6 +2812,7 @@ class BZ98TOOLS_PT_view3d_selected_geo(bpy.types.Panel):
         parent_name = obj.parent.name if obj.parent is not None else "WORLD"
         info.label(text=f"Parent: {parent_name}")
         info.label(text=_get_object_lod_label(obj))
+        _draw_lod_context_notes(info, obj)
         _draw_legacy_geo_naming_note(layout)
         if getattr(obj, "type", None) == 'MESH':
             info.label(text=f"Vertices: {len(obj.data.vertices)}", icon='MESH_DATA')
@@ -2598,6 +2865,7 @@ class BZ98TOOLS_PT_view3d_quick_tools(bpy.types.Panel):
         validate_op = validation_box.operator("bz.validate_scene", text="Validate Vehicle")
         validate_op.preset = "VEHICLE"
         validation_box.operator_menu_enum("bz.validate_scene", "preset", text="Validate Preset")
+        validation_box.operator("bz.show_validation_checks", text="What Gets Checked", icon='INFO')
         if len(getattr(context.scene, "bz_validation_issues", [])) > 0:
             counts = _get_validation_counts(context.scene, export_mode="ALL")
             row = validation_box.row(align=True)
@@ -2606,6 +2874,7 @@ class BZ98TOOLS_PT_view3d_quick_tools(bpy.types.Panel):
             row.label(text=f"I {counts['INFO']}")
             if _validation_results_are_stale(context.scene):
                 validation_box.label(text="Results may be stale.", icon='ERROR')
+            _draw_validation_issue_report(validation_box, context.scene, export_mode="ALL", max_items=5)
 
 
 class BZ98TOOLS_PT_view3d_organic_redux_skin(bpy.types.Panel):
@@ -2694,6 +2963,12 @@ class BZ98TOOLS_PT_geo_collision(bpy.types.Panel):
 
         layout.prop(geo, "GenerateCollision")
         if geo.GenerateCollision:
+            _draw_wrapped_label(
+                layout,
+                "Applies to SDF/building GEO collision data only. Use VDF COL helpers for vehicle inner_col/outer_col.",
+                icon='INFO',
+                width=56,
+            )
             return
 
         layout.label(text="GEO Center")
@@ -2751,7 +3026,8 @@ class BZ98TOOLS_PT_geo_vdf(bpy.types.Panel):
             layout.prop(geo, "SpinnerTarget")
             layout.prop(geo, "SpinnerAxis")
             layout.prop(geo, "SpinnerSpeed")
-            layout.label(text="Spinner helpers export as GEO Type 15.", icon='INFO')
+            _draw_wrapped_label(layout, "Spinner helpers export as GEO Type 15 and are written after their target slot.", icon='INFO', width=56)
+        layout.operator("bz.show_advanced_vdf_info", text="Advanced VDF Notes", icon='INFO')
 
 
 class BZ98TOOLS_PT_geo_advanced(bpy.types.Panel):
@@ -2775,7 +3051,7 @@ class BZ98TOOLS_PT_geo_advanced(bpy.types.Panel):
         raw_box.prop(geo, "UseRawVDFMatrix")
         raw_box.operator("bz.capture_raw_vdf_matrix", text="Capture From Current Transform")
         if geo.UseRawVDFMatrix:
-            raw_box.label(text="Order: right, up, front, position")
+            _draw_wrapped_label(raw_box, "Order: right, up, front, position. Use for VDF transform scaling experiments.", width=56)
             raw_box.prop(geo, "RawVDFMatrix")
 
         face_box = layout.box()
@@ -3078,6 +3354,18 @@ class BZ98TOOLS_OT_mirror_legacy_animation_keys(bpy.types.Operator):
     bl_description = "Copy mirrored object transform keyframes between matched legacy GEO parts"
     bl_options = {'REGISTER', 'UNDO'}
 
+    mirror_from: bpy.props.PointerProperty(
+        name="Mirror From",
+        description="Optional explicit source GEO object. When both selectors are set, name-token matching is skipped.",
+        type=bpy.types.Object,
+    )
+
+    mirror_to: bpy.props.PointerProperty(
+        name="Mirror To",
+        description="Optional explicit target GEO object. When both selectors are set, name-token matching is skipped.",
+        type=bpy.types.Object,
+    )
+
     source_token: StringProperty(
         name="Source Token",
         description="Text in source object names to replace when finding the target side",
@@ -3184,8 +3472,20 @@ class BZ98TOOLS_OT_mirror_legacy_animation_keys(bpy.types.Operator):
 
     def draw(self, context):
         layout = self.layout
+        explicit = layout.box()
+        explicit.label(text="Explicit Pair")
+        explicit.prop(self, "mirror_from")
+        explicit.prop(self, "mirror_to")
+        if self.mirror_from is not None and self.mirror_to is not None:
+            warning = _legacy_mirror_similarity_warning(self.mirror_from, self.mirror_to)
+            if warning:
+                _draw_wrapped_label(explicit, warning, icon='WARNING', width=62)
+            else:
+                _draw_wrapped_label(explicit, "Selected objects have matching mesh counts.", icon='CHECKMARK', width=62)
+
         naming = layout.box()
         naming.label(text="Matching")
+        naming.enabled = not (self.mirror_from is not None and self.mirror_to is not None)
         row = naming.row(align=True)
         row.prop(self, "source_token")
         row.prop(self, "target_token")
@@ -3211,7 +3511,11 @@ class BZ98TOOLS_OT_mirror_legacy_animation_keys(bpy.types.Operator):
         mirror.prop(self, "overwrite_target_keys")
 
     def execute(self, context):
-        if not self.source_token:
+        explicit_pair = self.mirror_from is not None or self.mirror_to is not None
+        if explicit_pair and (self.mirror_from is None or self.mirror_to is None):
+            self.report({'ERROR'}, "Set both Mirror From and Mirror To, or leave both blank for token matching.")
+            return {'CANCELLED'}
+        if not explicit_pair and not self.source_token:
             self.report({'ERROR'}, "Source token cannot be blank.")
             return {'CANCELLED'}
         if not (self.include_location or self.include_rotation or self.include_scale):
@@ -3229,7 +3533,9 @@ class BZ98TOOLS_OT_mirror_legacy_animation_keys(bpy.types.Operator):
             self.report({'ERROR'}, "Start frame must be before or equal to end frame.")
             return {'CANCELLED'}
 
-        if self.source_scope == "SCENE":
+        if explicit_pair:
+            candidates = [self.mirror_from]
+        elif self.source_scope == "SCENE":
             candidates = list(scene.objects)
         else:
             candidates = list(getattr(context, "selected_objects", []))
@@ -3244,13 +3550,16 @@ class BZ98TOOLS_OT_mirror_legacy_animation_keys(bpy.types.Operator):
         pairs = []
         missing_targets = 0
         for source in candidates:
-            target_name = _replace_name_token(source.name, self.source_token, self.target_token)
-            if not target_name or target_name == source.name:
-                continue
-            target = scene_objects.get(target_name)
-            if target is None:
-                missing_targets += 1
-                continue
+            if explicit_pair:
+                target = self.mirror_to
+            else:
+                target_name = _replace_name_token(source.name, self.source_token, self.target_token)
+                if not target_name or target_name == source.name:
+                    continue
+                target = scene_objects.get(target_name)
+                if target is None:
+                    missing_targets += 1
+                    continue
 
             action = getattr(getattr(source, "animation_data", None), "action", None)
             source_paths = {
@@ -3281,6 +3590,12 @@ class BZ98TOOLS_OT_mirror_legacy_animation_keys(bpy.types.Operator):
             detail = " Matching targets were missing." if missing_targets else ""
             self.report({'ERROR'}, "No matching animated source/target pairs were found." + detail)
             return {'CANCELLED'}
+
+        for source, target, _action, _frames, _source_paths in pairs:
+            warning = _legacy_mirror_similarity_warning(source, target)
+            if warning:
+                self.report({'WARNING'}, warning)
+                break
 
         keyed_paths = set()
         if self.include_location:
@@ -3983,12 +4298,7 @@ Animation Panel - Used to hold the UIList, buttons, and all the good stuff inclu
 class AnimationUIList(bpy.types.UIList):
     bl_idname = "SCENE_UL_Battlezone_ANIM_Element"
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        row = layout.row(align=True)
-        row.label(text=f"Index {item.Index}")
-        row.label(text=f"Start {item.Start}")
-        row.label(text=f"Length {item.Length}")
-        row.label(text=f"Loop {item.Loop}")
-        row.label(text=f"Speed {item.Speed:g}")
+        layout.label(text=f"Idx {item.Index} | Start {item.Start} | Len {item.Length} | Loop {item.Loop} | Spd {item.Speed:g}")
         
 # And now we can use this list everywhere in Blender. Here is a small example panel.
 class AnimationPanel(bpy.types.Panel):
@@ -4027,7 +4337,7 @@ class AnimationPanel(bpy.types.Panel):
         if len(scene.AnimationCollection) > 0 and scene.CurAnimation < len(scene.AnimationCollection):
             item = scene.AnimationCollection[scene.CurAnimation]
             editor.prop(item, "Index")
-            editor.label(text=_get_animation_index_hint(item.Index), icon='INFO')
+            _draw_wrapped_label(editor, _get_animation_index_hint(item.Index), icon='INFO', width=68)
             timing = editor.box()
             timing.label(text="Timing")
             timing.prop(item, "Start")
@@ -4056,7 +4366,7 @@ class AnimationPanel(bpy.types.Panel):
         # Animation index reference helper
         ref_box = layout.box()
         ref_box.label(text="Animation Index Reference")
-        ref_box.label(text="Index meaning depends on classLabel. Use this as a quick lookup.")
+        _draw_wrapped_label(ref_box, "Index meaning depends on classLabel. Use this as a quick lookup.", width=68)
         ref_box.operator(
             "bz.show_anim_index_reference",
             text="Show Animation Index Reference",
@@ -4764,6 +5074,11 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
                 {'WARNING'},
                 f"VDF export validation found {counts['WARNING']} warnings.",
             )
+        if self.auto_port_ogre and self.ogre_headlights and not _scene_has_headlight_geo(context.scene):
+            self.report(
+                {'WARNING'},
+                "Headlights are enabled for Redux export, but no GEO Type 38 HEADLIGHT_MASK object was found.",
+            )
 
         # Don't pass OGRE UI options to the VDF exporter
         keywords = self.as_keywords(ignore=(
@@ -4873,7 +5188,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         port.prop(self, "auto_port_ogre")
         if self.auto_port_ogre:
             _draw_shared_autoport_options(port, self)
-            _draw_vdf_autoport_options(port, self)
+            _draw_vdf_autoport_options(port, self, scene=scene)
 
 class ExportSDF(bpy.types.Operator, ExportHelper):
     """Exports a Battlezone SDF file"""
@@ -5440,7 +5755,6 @@ class BZ98TOOLS_MT_import_menu(bpy.types.Menu):
         layout.label(text="Map Tools")
         layout.operator("bzmapio.open_template", text="Open Map Template (.blend)")
         layout.operator("bzmapimport.data", text="Height Grid Terrain (.hg2)")
-        layout.operator("bzgameimport.data", text="Game Playback Log")
         layout.separator()
         layout.label(text="Archive Tools")
         layout.operator(BZ98TOOLS_OT_open_zfs.bl_idname, text="Open ZFS Archive (.zfs)")
@@ -5862,6 +6176,10 @@ GUIClasses = [
     BZ98TOOLS_MT_import_menu,
     BZ98TOOLS_MT_export_menu,
     BZ_OT_ShowAnimIndexReference,
+    BZ98TOOLS_OT_show_model_system_info,
+    BZ98TOOLS_OT_show_advanced_vdf_info,
+    BZ98TOOLS_OT_show_pivot_dummyroot_info,
+    BZ98TOOLS_OT_show_validation_checks,
     BZ_PT_GeoTypeListPopover,
     BattlezoneSDFVDFProperties,
     BZ98TOOLS_PT_scene_asset_properties,

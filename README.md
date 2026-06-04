@@ -22,13 +22,13 @@ This plugin targets the **Blender 4.5 LTS** and **Blender 5.1** lines, with **qu
 - ✅ Full **Blender 4.5 LTS** and **Blender 5.1** compatibility
 - ✅ **Auto Ogre Mesh/Skeleton/Material export** (Redux-ready)  
 - ✅ **Optional native Ogre mesh/skeleton fast path** on Windows Blender 4.5.x; Blender 5.1 falls back to XML conversion until a Python 3.13 native backend is available
-- ✅ **Integrated BZMapIO map tools** for `.HG2` terrain import/export, texture tools, and game playback data
+- ✅ **Integrated BZMapIO map tools** for `.HG2` terrain import/export, texture tools, path points, and custom world atlas terrain painting
 - ✅ **Quaternion animation** import/export  
 - ✅ **Automatic `.MAP` → `.PNG` conversion** for textures on import
 - ✅ **Automatic `.PNG` or `.MAP` → `.DDS` conversion** for textures on export
 - ✅ **Clear export modes** for Legacy Only, Legacy + Redux, and Redux Only workflows
 - ✅ **Organic Redux skin helper** for turning legacy GEO control hierarchies into weighted Redux armatures (see `docs/ORGANIC_REDUX_SKIN_WALKTHROUGH.md`)
-- ✅ **Hardpoint/turret GEO suffix and hierarchy validation** for common `gc`, `gr`, `gm`, `gs`, `tx`, `ty`, and turret cockpit conventions
+- ✅ **Expanded legacy modeling validation** for hardpoints, turret/cockpit hierarchy, LOD2/LOD3 conventions, pivots, animation loops, and scene root sanity
 - ✅ **Cockpit GEO generator** for cloning selected LOD1 faces into matching LOD2 cockpit objects with matching origins
 - ✅ **Experimental GEO face-plane preservation/recompute controls**, including a best-effort legacy `DX Normal Distance Fix`
 - ✅ **Experimental walker cockpit stabilizer** for separate Redux cockpit output
@@ -75,6 +75,27 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
+**v1.4.5 - Custom World Terrain Painting and Legacy Guide Validation**
+
+#### Added
+- Added **Import Custom World** for terrain texture painting, allowing custom world folders such as Polar Mars to provide their own atlas/material data.
+- Stock terrain painting worlds remain available and unchanged; custom atlas painting activates only when a custom world is loaded.
+- Added compact validation reports with a **What Gets Checked** info popup.
+- Added legacy guide validation for LOD2 cockpit counterparts, LOD3 fallback parts, multiple exportable roots, pivot/origin consistency, looping animation first/last poses, high animated-GEO counts, and legacy frame-range guidance.
+- Added **Pivot / Dummyroot Info**, Redux dual-component model notes, advanced VDF spinner/raw transform notes, and clearer GEO/animation side-panel text wrapping.
+- Added warnings for Redux headlights without a Type 38 headlight GEO.
+
+#### Changed
+- Mirror Legacy Animation Keys now supports explicit **Mirror From** and **Mirror To** object selectors with warning-only mesh similarity checks.
+- VDF collision-helper validation is less broad for structure/producer-style cases while preserving vehicle checks.
+- Automatic collision generation UI now clarifies that it applies to SDF/building GEO collision data, not VDF vehicle COL helpers.
+- Path point respawning UI now notes that it is multiplayer-only.
+
+#### Removed
+- Removed unsupported Game Playback UI and registration from the map tools.
+
+---
+
 **v1.4.4 - Experimental GEO Face Planes and Walker Cockpit Stabilizer**
 
 #### Added
@@ -125,7 +146,7 @@ Everything is handled inside Blender:
 - **Integrated BZMapIO**
   - Added Battlezone map panels in the 3D View sidebar.
   - Bundled the BZMapIO `.blend` template for one-click setup.
-  - Added `.HG2` terrain import/export, map texture tools, and game playback log tooling.
+  - Added `.HG2` terrain import/export and map texture tools.
 - **Blender 5.1 support**
   - Verified registration, model import/export, Redux mesh export, ZFS browsing, and HG2 map import under Blender 5.1.2.
   - Added compatibility for Blender 5.1 layered Action f-curves in VDF/SDF animation export.
@@ -226,7 +247,7 @@ Everything is handled inside Blender:
 | **ZFS** | **Directly browse and import from .ZFS archives** |
 | Compatibility | Full Blender 4.5 LTS and Blender 5.1 compliance |
 | File I/O | Safe ASCII decoding, EOF handling |
-| Maps | Integrated BZMapIO `.HG2` terrain, texture, and playback tools |
+| Maps | Integrated BZMapIO `.HG2` terrain, texture, path point, and custom world atlas tools |
 | Materials | `.MAP → .PNG` conversion and name auto-fill |
 | Geometry | Scale, collision, and UV safety |
 | Animation | Quaternion/Euler auto-conversion, SCLKEY scale-key support |
