@@ -107,7 +107,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "GrizzlyOne95, Commando950, DivisionByZero, Business Lawyer, Kindrad; inspired by Lucius64",
-    "version": (1, 4, 5),
+    "version": (1, 4, 6),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -1577,6 +1577,7 @@ def _draw_validation_summary_box(layout, scene, export_mode="ALL"):
     box.label(text="Validation", icon='CHECKMARK')
     row = box.row(align=True)
     row.operator("bz.validate_scene", text="Validate Battlezone Scene", icon='VIEWZOOM')
+    row.operator_context = 'INVOKE_DEFAULT'
     row.operator("bz.show_validation_checks", text="", icon='INFO')
 
     issues = getattr(scene, "bz_validation_issues", None)
@@ -2128,7 +2129,9 @@ class BattlezoneSDFVDFProperties(bpy.types.Panel):
         row = layout.row(align=True)
         row.label(text=f"Animations: {len(scene.AnimationCollection)}", icon='ANIM')
         row.label(text=f"Validation: {len(getattr(scene, 'bz_validation_issues', []))}", icon='CHECKMARK')
-        layout.operator("bz.show_model_system_info", text="Redux Model System Info", icon='INFO')
+        info_row = layout.row()
+        info_row.operator_context = 'INVOKE_DEFAULT'
+        info_row.operator("bz.show_model_system_info", text="Redux Model System Info", icon='INFO')
 
 
 class BZ98TOOLS_PT_scene_asset_properties(bpy.types.Panel):
@@ -2178,7 +2181,9 @@ class BZ98TOOLS_PT_scene_orientation_reference(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         _draw_orientation_reference_box(layout, mode="LEGACY")
-        layout.operator("bz.show_pivot_dummyroot_info", text="Pivot / Dummyroot Info", icon='INFO')
+        info_row = layout.row()
+        info_row.operator_context = 'INVOKE_DEFAULT'
+        info_row.operator("bz.show_pivot_dummyroot_info", text="Pivot / Dummyroot Info", icon='INFO')
 
         redux = layout.box()
         redux.label(text="Redux Direct Mesh", icon='MESH_DATA')
@@ -2865,7 +2870,9 @@ class BZ98TOOLS_PT_view3d_quick_tools(bpy.types.Panel):
         validate_op = validation_box.operator("bz.validate_scene", text="Validate Vehicle")
         validate_op.preset = "VEHICLE"
         validation_box.operator_menu_enum("bz.validate_scene", "preset", text="Validate Preset")
-        validation_box.operator("bz.show_validation_checks", text="What Gets Checked", icon='INFO')
+        checks_row = validation_box.row()
+        checks_row.operator_context = 'INVOKE_DEFAULT'
+        checks_row.operator("bz.show_validation_checks", text="What Gets Checked", icon='INFO')
         if len(getattr(context.scene, "bz_validation_issues", [])) > 0:
             counts = _get_validation_counts(context.scene, export_mode="ALL")
             row = validation_box.row(align=True)
@@ -3027,7 +3034,9 @@ class BZ98TOOLS_PT_geo_vdf(bpy.types.Panel):
             layout.prop(geo, "SpinnerAxis")
             layout.prop(geo, "SpinnerSpeed")
             _draw_wrapped_label(layout, "Spinner helpers export as GEO Type 15 and are written after their target slot.", icon='INFO', width=56)
-        layout.operator("bz.show_advanced_vdf_info", text="Advanced VDF Notes", icon='INFO')
+        info_row = layout.row()
+        info_row.operator_context = 'INVOKE_DEFAULT'
+        info_row.operator("bz.show_advanced_vdf_info", text="Advanced VDF Notes", icon='INFO')
 
 
 class BZ98TOOLS_PT_geo_advanced(bpy.types.Panel):

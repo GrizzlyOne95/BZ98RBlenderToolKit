@@ -75,6 +75,14 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
+**v1.4.6 - Popup Info Button Hotfix**
+
+#### Fixed
+- Fixed **What Gets Checked** so it opens the validation coverage report from Blender panels.
+- Fixed related popup info buttons for Redux model system notes, pivot/dummyroot notes, and advanced VDF notes.
+
+---
+
 **v1.4.5 - Custom World Terrain Painting and Legacy Guide Validation**
 
 #### Added
