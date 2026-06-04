@@ -107,7 +107,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "GrizzlyOne95, Commando950, DivisionByZero, Business Lawyer, Kindrad; inspired by Lucius64",
-    "version": (1, 4, 6),
+    "version": (1, 4, 7),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -2931,8 +2931,9 @@ class BZ98TOOLS_PT_view3d_animation_tools(bpy.types.Panel):
         layout = self.layout
         box = layout.box()
         box.label(text="Legacy Object Animation", icon='ANIM_DATA')
-        box.label(text="Copies mirrored transform keys between matched GEO parts.")
-        box.label(text="Default pairing: .L -> .R")
+        _draw_wrapped_label(box, "Copies mirrored transform keys between matched GEO parts.", width=58)
+        _draw_wrapped_label(box, "Default pairing: .L -> .R. Click to set Mirror From and Mirror To explicitly.", width=58)
+        box.operator_context = 'INVOKE_DEFAULT'
         box.operator("bz.mirror_legacy_animation_keys", text="Mirror Legacy Keys", icon='MOD_MIRROR')
 
 

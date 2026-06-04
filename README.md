@@ -75,6 +75,13 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
+**v1.4.7 - Animation Mirror Dialog Hotfix**
+
+#### Fixed
+- Fixed **Animation Tools > Mirror Legacy Keys** so it opens the settings dialog with explicit **Mirror From** and **Mirror To** object selectors.
+
+---
+
 **v1.4.6 - Popup Info Button Hotfix**
 
 #### Fixed
