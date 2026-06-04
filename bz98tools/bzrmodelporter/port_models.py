@@ -356,6 +356,7 @@ class SettingsController:
         skeletalanims=None, # TERNARY_OPTIONS
         scope=None,         # ScopeSettings
         no_pov_rots=False,  # Boolean
+        stabilize_walker_cockpit=False, # Boolean
         flat_colors=False,  # Boolean
         boundingbox_scale_factors=None,
         nowrite=False,      # Boolean
@@ -370,6 +371,7 @@ class SettingsController:
         self.skeletalanims = skeletalanims
         self.scope = scope or ScopeSettings()
         self.no_pov_rots = no_pov_rots
+        self.stabilize_walker_cockpit = stabilize_walker_cockpit
         self.flat_colors = flat_colors
 
         # Normalize boundingbox_scale_factors so callers can pass None,
@@ -447,6 +449,9 @@ class SettingsController:
     # POV/flat/verbosity flags
     def pov_movement_anim_rotations_disabled(self):
         return self.no_pov_rots
+
+    def walker_cockpit_stabilization_enabled(self):
+        return self.stabilize_walker_cockpit
 
     def only_flat_colors_enabled(self):
         return self.flat_colors
@@ -545,6 +550,10 @@ The first line of the config file should be a filepath to an .act color palette 
 	ap.add_argument("--nopovrots",
 		action='store_true',
 		help="If using skeletal person animations: All rotation keyframes for the POV are removed from the four directional movement animations only.",
+	)
+	ap.add_argument("--stabilizewalkercockpit",
+		action='store_true',
+		help="Experimental: root separate cockpit and POV bones at model-space transforms to reduce Redux walker cockpit jitter.",
 	)
 	ap.add_argument("--flatcolors",
 		action='store_true',
@@ -654,6 +663,7 @@ if(__name__=='__main__'):
 				texture=args.scopetexture,
 			),
 			no_pov_rots=args.nopovrots,
+			stabilize_walker_cockpit=args.stabilizewalkercockpit,
 			flat_colors=args.flatcolors,
 			boundingbox_scale_factors=BoundingBoxScaleFactors(*args.boundsmult) if args.boundsmult is not None else None,
 			nowrite=args.nowrite,

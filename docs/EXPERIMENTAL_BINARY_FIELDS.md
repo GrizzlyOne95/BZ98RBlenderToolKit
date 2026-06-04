@@ -7,6 +7,7 @@ Sources used:
 - Nielk1 `bz1-geo-editor` (`BZ1GeoEditor/Geo.cs`)
 - Battlezone 98 Redux PDB reference in `Battlezone98Redux_Shim`
 - Stock Redux assets in `Documents/Battlezone 98 Redux/Edit/stock` (1615 GEO, 98 VDF, 115 SDF scanned)
+- Blake "Dummy" Robinson legacy VDF/SDF/GEO viewers and 3D Studio Max import/export plugins
 
 ## VDF / SDF ANIM
 
@@ -81,6 +82,20 @@ Toolkit per-face attrs (import/export):
 - `bz_face_xluscent_type` (byte stored in int attr)
 - `bz_face_parent` (int)
 - `bz_face_node` (int)
+- `bz_face_plane_x` (float)
+- `bz_face_plane_y` (float)
+- `bz_face_plane_z` (float)
+- `bz_face_plane_d` (float)
+
+Direct GEO export has an experimental `Face Plane Export` mode:
+- `Current Toolkit Default` writes the older toolkit behavior: face center X/Y/Z and `D = 1.0`.
+- `Preserve Imported` writes imported `bz_face_plane_x/y/z/d` attributes when present.
+- `Recompute From Faces` writes a normalized face plane and distance from the exported GEO-coordinate vertices.
+- `DX Normal Distance Fix` currently uses the same recompute path as a best-effort recreation of the old Max GEO exporter workaround. The exact 2010 exporter formula still needs sample comparison or deeper reverse engineering before it should be treated as a byte-identical recreation.
+
+The old Max `GEOExport.dle` exposes a `DX normal distance fix` option. Its help text says the workaround addresses a Battlezone engine issue where triangles can disappear even though they should be visible. Ghidra analysis of that exporter shows it computes per-face plane data while writing faces, which is why the toolkit now preserves and can recompute these fields instead of always discarding them on import.
+
+The unpacked legacy GEO viewer stores each face in a 216-byte in-memory record: 56 bytes for fixed face data plus room for ten 16-byte polygon-vertex records. The on-disk format stores a variable vertex count, but faces over 10 vertices are now flagged by validation because they can overflow or break older tools.
 
 The PDB `FACE` structure confirms the three string-header bytes as:
 
@@ -117,6 +132,15 @@ Xluscent type (`bz_face_xluscent_type`):
 
 Node/tree branch (`bz_face_node`):
 - commonly treated as `0` back, `1` front.
+
+## Legacy VDF/SDF Viewer Rules
+
+The legacy VDF/SDF viewer CHM documents several rules now mirrored in validation/tooltips:
+
+- Type `40` is the POV/eyepoint; vehicles without an exportable POV can crash Battlezone when ejecting.
+- Body/root GEOs should resolve to parent `WORLD`.
+- VDF children must appear after parents in the object table; the toolkit exporter already orders object records from the Blender hierarchy.
+- Common naming suffixes include `bd*` body chunks, `pov`, `gc*` cannon hardpoints, `gr*` rocket hardpoints, `gm*` mortar hardpoints, `gs*` special hardpoints, `tx*` pitch rotators, and `ty*` yaw rotators.
 
 ## Safety
 

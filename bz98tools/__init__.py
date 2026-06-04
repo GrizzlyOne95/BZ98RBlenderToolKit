@@ -43,6 +43,29 @@ LEGACY_VEHICLE_FORWARD_LABEL = "Legacy VDF/SDF/GEO vehicle front: Blender +Y"
 REDUX_MESH_FORWARD_LABEL = "Direct Redux .mesh vehicle front: Blender -Y"
 AUTO_PORT_FORWARD_NOTE = "Legacy + Redux export uses the legacy +Y setup, then converts for Redux."
 
+GEO_FACE_PLANE_MODE_ITEMS = (
+    (
+        "CURRENT",
+        "Current Toolkit Default",
+        "Write the historical toolkit values: face center X/Y/Z and D = 1.0",
+    ),
+    (
+        "PRESERVE",
+        "Preserve Imported",
+        "Write imported bz_face_plane_x/y/z/d attributes when present; otherwise use the current default",
+    ),
+    (
+        "RECOMPUTE",
+        "Recompute From Faces",
+        "Write a normalized face plane and distance from the exported GEO-coordinate vertices",
+    ),
+    (
+        "DX_FIX",
+        "DX Normal Distance Fix",
+        "Best-effort recreation of the old Max GEO exporter workaround for disappearing triangles; currently recomputes face plane normal and distance",
+    ),
+)
+
 def get_default_ogre_xml_converter():
     """Try to find OgreXMLConverter.exe in the bundled ogretools folder."""
     addon_dir = os.path.dirname(__file__)
@@ -83,7 +106,7 @@ bl_info = {
     "name": "Battlezone GEO/VDF/SDF Formats (For Blender 4.5 LTS)",
     "description": "Import and export GEO/VDF/SDF files from Battlezone (1998 / Redux).",
     "author": "GrizzlyOne95, Commando950, DivisionByZero, Business Lawyer, Kindrad; inspired by Lucius64",
-    "version": (1, 4, 3),
+    "version": (1, 4, 4),
     "blender": (4, 5, 1),
     "category": "Import-Export",
     "wiki_url": "https://commando950.neocities.org/docs/BZBlenderAddon/"
@@ -145,6 +168,7 @@ EXPORT_KIND_IDNAMES = {
 
 EXPORT_PRESET_PROPERTY_NAMES = {
     "GEO": (
+        "face_plane_mode",
         "auto_port_ogre",
         "ogre_name",
         "ogre_suffix",
@@ -161,6 +185,7 @@ EXPORT_PRESET_PROPERTY_NAMES = {
     "VDF": (
         "ExportAnimations",
         "ExportVDFOnly",
+        "face_plane_mode",
         "auto_port_ogre",
         "ogre_name",
         "ogre_suffix",
@@ -186,10 +211,12 @@ EXPORT_PRESET_PROPERTY_NAMES = {
         "ogre_scope_transform",
         "ogre_scope_texture",
         "ogre_no_pov_rots",
+        "ogre_stabilize_walker_cockpit",
     ),
     "SDF": (
         "ExportAnimations",
         "ExportSDFOnly",
+        "face_plane_mode",
         "auto_port_ogre",
         "ogre_name",
         "ogre_suffix",
@@ -208,6 +235,7 @@ EXPORT_PRESET_PROPERTY_NAMES = {
 BUILTIN_EXPORT_PRESETS = {
     "GEO": (
         ("classic_geo", "Legacy GEO Only", {
+            "face_plane_mode": "CURRENT",
             "auto_port_ogre": False,
             "ogre_name": "",
             "ogre_suffix": "_port",
@@ -222,6 +250,7 @@ BUILTIN_EXPORT_PRESETS = {
             "ogre_dest_dir": "",
         }),
         ("geo_port", "Legacy GEO + Redux", {
+            "face_plane_mode": "CURRENT",
             "auto_port_ogre": True,
             "ogre_name": "",
             "ogre_suffix": "_port",
@@ -240,6 +269,7 @@ BUILTIN_EXPORT_PRESETS = {
         ("vehicle_vdf", "Legacy Vehicle Only", {
             "ExportAnimations": True,
             "ExportVDFOnly": False,
+            "face_plane_mode": "CURRENT",
             "auto_port_ogre": False,
             "ogre_name": "",
             "ogre_suffix": "_port",
@@ -268,10 +298,12 @@ BUILTIN_EXPORT_PRESETS = {
                                      0.0, 0.0, 0.0],
             "ogre_scope_texture": "__scope",
             "ogre_no_pov_rots": False,
+            "ogre_stabilize_walker_cockpit": False,
         }),
         ("vehicle_vdf_port", "Legacy Vehicle + Redux", {
             "ExportAnimations": True,
             "ExportVDFOnly": False,
+            "face_plane_mode": "CURRENT",
             "auto_port_ogre": True,
             "ogre_name": "",
             "ogre_suffix": "_port",
@@ -300,12 +332,14 @@ BUILTIN_EXPORT_PRESETS = {
                                      0.0, 0.0, 0.0],
             "ogre_scope_texture": "__scope",
             "ogre_no_pov_rots": False,
+            "ogre_stabilize_walker_cockpit": False,
         }),
     ),
     "SDF": (
         ("structure_sdf", "Legacy Structure Only", {
             "ExportAnimations": True,
             "ExportSDFOnly": False,
+            "face_plane_mode": "CURRENT",
             "auto_port_ogre": False,
             "ogre_name": "",
             "ogre_suffix": "_port",
@@ -322,6 +356,7 @@ BUILTIN_EXPORT_PRESETS = {
         ("structure_sdf_port", "Legacy Structure + Redux", {
             "ExportAnimations": True,
             "ExportSDFOnly": False,
+            "face_plane_mode": "CURRENT",
             "auto_port_ogre": True,
             "ogre_name": "",
             "ogre_suffix": "_port",
@@ -805,6 +840,19 @@ def _get_face_attr_int(mesh, attr_name, face_index, default_value=0):
         return int(default_value)
 
 
+def _get_face_attr_float(mesh, attr_name, face_index, default_value=0.0):
+    attrs = getattr(mesh, "attributes", None)
+    if attrs is None:
+        return float(default_value)
+    attr = attrs.get(attr_name)
+    if attr is None or attr.domain != 'FACE':
+        return float(default_value)
+    try:
+        return float(attr.data[face_index].value)
+    except Exception:
+        return float(default_value)
+
+
 def _summarize_face_values(mesh, face_indices, attr_name, default_value=0):
     values = [
         _get_face_attr_int(mesh, attr_name, face_index, default_value)
@@ -816,6 +864,37 @@ def _summarize_face_values(mesh, face_indices, attr_name, default_value=0):
     if len(unique_values) == 1:
         return str(unique_values[0])
     return f"Mixed ({len(unique_values)} values, {min(unique_values)}..{max(unique_values)})"
+
+
+def _summarize_face_float_values(mesh, face_indices, attr_name, default_value=0.0):
+    values = [
+        round(_get_face_attr_float(mesh, attr_name, face_index, default_value), 6)
+        for face_index in face_indices
+    ]
+    if not values:
+        return "None"
+    unique_values = sorted(set(values))
+    if len(unique_values) == 1:
+        return f"{unique_values[0]:.6g}"
+    return f"Mixed ({len(unique_values)} values, {min(unique_values):.6g}..{max(unique_values):.6g})"
+
+
+def _draw_legacy_geo_naming_note(layout):
+    box = layout.box()
+    box.label(text="Legacy Naming Notes", icon='INFO')
+    box.label(text="Body/root GEOs export with parent WORLD when no exportable parent is found.")
+    box.label(text="Common suffixes: bd*, pov, gc*, gr*, gm*, gs*, tx*, ty*.")
+    box.label(text="Vehicle exports should include a Type 40 POV/eyepoint.")
+
+
+def _draw_geo_face_plane_export_box(layout, owner):
+    experimental = layout.box()
+    experimental.label(text="Experimental GEO Face Plane")
+    experimental.prop(owner, "face_plane_mode")
+    if owner.face_plane_mode == "DX_FIX":
+        experimental.label(text="Best-effort legacy Max exporter workaround; verify in-game.", icon='WARNING')
+    elif owner.face_plane_mode == "PRESERVE":
+        experimental.label(text="Uses imported bz_face_plane_x/y/z/d attributes when present.", icon='INFO')
 
 # -------------------------------
 # Animation Index Reference Popup
@@ -1412,6 +1491,7 @@ def _draw_vdf_autoport_options(layout, operator):
     box.prop(operator, "ogre_scope_transform")
     box.prop(operator, "ogre_scope_texture")
     box.prop(operator, "ogre_no_pov_rots")
+    box.prop(operator, "ogre_stabilize_walker_cockpit")
 
 
 def _draw_xyz_row(layout, prop_group, prop_names, labels):
@@ -2425,6 +2505,7 @@ class BattlezoneGEOProperties(bpy.types.Panel):
         )
         layout.label(text=f"Selected Role: {_get_geotype_label(geo.GEOType)}")
         _draw_geotype_hint(layout, geo.GEOType)
+        _draw_legacy_geo_naming_note(layout)
         if getattr(obj, "type", None) == 'MESH':
             layout.label(text=f"Vertices: {len(obj.data.vertices)}", icon='MESH_DATA')
         else:
@@ -2465,6 +2546,7 @@ class BZ98TOOLS_PT_view3d_selected_geo(bpy.types.Panel):
         parent_name = obj.parent.name if obj.parent is not None else "WORLD"
         info.label(text=f"Parent: {parent_name}")
         info.label(text=_get_object_lod_label(obj))
+        _draw_legacy_geo_naming_note(layout)
         if getattr(obj, "type", None) == 'MESH':
             info.label(text=f"Vertices: {len(obj.data.vertices)}", icon='MESH_DATA')
         elif getattr(geo, "IsSpinnerHelper", False):
@@ -2751,6 +2833,19 @@ class BZ98TOOLS_PT_geo_face_data(bpy.types.Panel):
             row = data_box.row()
             row.label(text=label)
             row.label(text=_summarize_face_values(mesh, face_indices, attr_name, default_value))
+
+        plane_box = layout.box()
+        plane_box.label(text="Face Plane Floats", icon='NORMALS_FACE')
+        plane_rows = (
+            ("Plane X", "bz_face_plane_x"),
+            ("Plane Y", "bz_face_plane_y"),
+            ("Plane Z", "bz_face_plane_z"),
+            ("Plane D", "bz_face_plane_d"),
+        )
+        for label, attr_name in plane_rows:
+            row = plane_box.row()
+            row.label(text=label)
+            row.label(text=_summarize_face_float_values(mesh, face_indices, attr_name, 0.0))
 
         if len(face_indices) == 1:
             face_index = face_indices[0]
@@ -4249,6 +4344,13 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
         options={'HIDDEN'},
     )
 
+    face_plane_mode: EnumProperty(
+        name="Face Plane Export",
+        description="Experimental handling for the four per-face GEO plane floats",
+        items=GEO_FACE_PLANE_MODE_ITEMS,
+        default="CURRENT",
+    )
+
     # Ogre auto-port toggle
     auto_port_ogre: BoolProperty(
         name="Also Create Redux Files",
@@ -4410,6 +4512,8 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
             core.label(text=f"Active Object: {active_obj.name}", icon='OBJECT_DATA')
             core.label(text="Only the active mesh object is exported.", icon='INFO')
 
+        _draw_geo_face_plane_export_box(layout, self)
+
         _draw_orientation_reference_box(layout, mode="LEGACY", auto_port_enabled=self.auto_port_ogre)
 
         _draw_validation_summary_box(layout, scene, export_mode="GEO")
@@ -4443,6 +4547,13 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         name="Skip GEO File Export",
         description="Only write the VDF container and keep existing referenced GEO files.",
         default=False,
+    )
+
+    face_plane_mode: EnumProperty(
+        name="Face Plane Export",
+        description="Experimental handling for referenced GEO files written by this VDF export",
+        items=GEO_FACE_PLANE_MODE_ITEMS,
+        default="CURRENT",
     )
 
     # NEW: Ogre auto-port checkbox
@@ -4624,6 +4735,16 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         default=False,
     )
 
+    ogre_stabilize_walker_cockpit: BoolProperty(
+        name="Experimental Walker Cockpit Stabilizer",
+        description=(
+            "Porter --stabilizewalkercockpit. In separate cockpit Redux output, "
+            "emit cockpit and POV bones as model-space roots so walker body animation "
+            "does not shake the first-person cockpit."
+        ),
+        default=False,
+    )
+
 
     def execute(self, context):
         from . import export_vdf
@@ -4677,6 +4798,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
             "ogre_scope_transform",
             "ogre_scope_texture",
             "ogre_no_pov_rots",
+            "ogre_stabilize_walker_cockpit",
         ))
 
         result = export_vdf.export(context, **keywords)
@@ -4710,6 +4832,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
                 "scope_transform": list(self.ogre_scope_transform),
                 "scope_texture": self.ogre_scope_texture.strip() or None,
                 "no_pov_rots": self.ogre_no_pov_rots,
+                "stabilize_walker_cockpit": self.ogre_stabilize_walker_cockpit,
             }
 
             ogre_autoport.auto_port_bz98_to_ogre(self.filepath, opts)
@@ -4741,6 +4864,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
         legacy.prop(self, "ExportVDFOnly")
         if not self.ExportVDFOnly:
             legacy.label(text="Referenced GEO files in the export folder may be overwritten.", icon='ERROR')
+            _draw_geo_face_plane_export_box(layout, self)
 
         _draw_validation_summary_box(layout, scene, export_mode="VDF")
 
@@ -4779,6 +4903,13 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         name="Skip GEO File Export",
         description="Only write the SDF container and keep existing referenced GEO files.",
         default=False,
+    )
+
+    face_plane_mode: EnumProperty(
+        name="Face Plane Export",
+        description="Experimental handling for referenced GEO files written by this SDF export",
+        items=GEO_FACE_PLANE_MODE_ITEMS,
+        default="CURRENT",
     )
 
     # NEW: Ogre auto-port toggle
@@ -4958,6 +5089,7 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
         legacy.prop(self, "ExportSDFOnly")
         if not self.ExportSDFOnly:
             legacy.label(text="Referenced GEO files in the export folder may be overwritten.", icon='ERROR')
+            _draw_geo_face_plane_export_box(layout, self)
 
         _draw_validation_summary_box(layout, scene, export_mode="SDF")
 

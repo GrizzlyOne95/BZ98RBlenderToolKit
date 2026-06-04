@@ -949,16 +949,20 @@ def geoload(context, geofilepath, *, name=None, flip=True,
 
         Slots = {}
         face_attribute_names = (
-            "bz_face_unknown_raw",
-            "bz_face_shade_type",
-            "bz_face_texture_type",
-            "bz_face_xluscent_type",
-            "bz_face_parent",
-            "bz_face_node",
+            ("bz_face_unknown_raw", 'INT'),
+            ("bz_face_shade_type", 'INT'),
+            ("bz_face_texture_type", 'INT'),
+            ("bz_face_xluscent_type", 'INT'),
+            ("bz_face_parent", 'INT'),
+            ("bz_face_node", 'INT'),
+            ("bz_face_plane_x", 'FLOAT'),
+            ("bz_face_plane_y", 'FLOAT'),
+            ("bz_face_plane_z", 'FLOAT'),
+            ("bz_face_plane_d", 'FLOAT'),
         )
-        for attr_name in face_attribute_names:
+        for attr_name, attr_type in face_attribute_names:
             if mesh.attributes.get(attr_name) is None:
-                mesh.attributes.new(name=attr_name, type='INT', domain='FACE')
+                mesh.attributes.new(name=attr_name, type=attr_type, domain='FACE')
 
         # Blender 4.5 can invalidate RNA attribute handles after adding more
         # attributes, so fetch them after all creation is complete.
@@ -968,6 +972,10 @@ def geoload(context, geofilepath, *, name=None, flip=True,
         face_xluscent_attr = mesh.attributes["bz_face_xluscent_type"]
         face_parent_attr = mesh.attributes["bz_face_parent"]
         face_node_attr = mesh.attributes["bz_face_node"]
+        face_plane_x_attr = mesh.attributes["bz_face_plane_x"]
+        face_plane_y_attr = mesh.attributes["bz_face_plane_y"]
+        face_plane_z_attr = mesh.attributes["bz_face_plane_z"]
+        face_plane_d_attr = mesh.attributes["bz_face_plane_d"]
 
         for i, face in enumerate(used_faces):
             if i >= len(mesh.polygons):
@@ -983,6 +991,10 @@ def geoload(context, geofilepath, *, name=None, flip=True,
             face_xluscent_attr.data[i].value = int(xluscent)
             face_parent_attr.data[i].value = int(face.Parent)
             face_node_attr.data[i].value = int(face.Node)
+            face_plane_x_attr.data[i].value = float(face.x)
+            face_plane_y_attr.data[i].value = float(face.y)
+            face_plane_z_attr.data[i].value = float(face.z)
+            face_plane_d_attr.data[i].value = float(face.d)
 
             if len(face.MapName) > 0:
                 if PreserveFaceColors:

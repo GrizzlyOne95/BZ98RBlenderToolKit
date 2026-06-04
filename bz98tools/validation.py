@@ -233,6 +233,7 @@ def _collect_geo_export_issues(context):
                 )
             )
 
+    issues.extend(_collect_face_topology_issues(active_obj, {"GEO"}))
     issues.extend(_collect_material_issues(active_obj, {"GEO"}))
     return issues
 
@@ -340,6 +341,7 @@ def _collect_scene_export_issues(context, validation_preset="AUTO"):
 
         issues.extend(_collect_legacy_animation_limit_issues(obj))
         issues.extend(_collect_transform_issues(obj))
+        issues.extend(_collect_face_topology_issues(obj, {"VDF", "SDF"}))
         issues.extend(_collect_geotype_suffix_issues(obj))
         issues.extend(_collect_material_issues(obj, {"VDF", "SDF"}))
 
@@ -680,6 +682,39 @@ def _collect_geotype_suffix_issues(obj):
                     "Battlezone uses that suffix to bind the hardpoint slot."
                 ),
                 {"VDF"},
+                object_name=obj.name,
+                action="select_object",
+            )
+        )
+
+    return issues
+
+
+def _collect_face_topology_issues(obj, export_modes):
+    issues = []
+    mesh = getattr(obj, "data", None)
+    if mesh is None:
+        return issues
+
+    large_faces = [
+        poly.index
+        for poly in getattr(mesh, "polygons", [])
+        if len(getattr(poly, "vertices", [])) > 10
+    ]
+    if large_faces:
+        sample = ", ".join(str(index) for index in large_faces[:5])
+        if len(large_faces) > 5:
+            sample += ", ..."
+        issues.append(
+            _make_issue(
+                "WARNING",
+                "Geometry",
+                obj.name,
+                (
+                    f"{len(large_faces)} face(s) have more than 10 vertices ({sample}). "
+                    "Legacy GEO tools reserve 10 vertex slots per face; split large n-gons before export."
+                ),
+                export_modes,
                 object_name=obj.name,
                 action="select_object",
             )

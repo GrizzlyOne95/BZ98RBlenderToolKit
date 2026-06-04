@@ -1831,6 +1831,16 @@ def build_mesh(imodel, type='primary'):
 		)
 	return mesh
 
+def _stabilize_cockpit_bone_for_output(imodel, ibone, type):
+	if(not imodel.settings.walker_cockpit_stabilization_enabled()):
+		return False
+	if(type != 'cockpit' or not imodel.use_cockpit):
+		return False
+	if(ibone.type == 'cockpit'):
+		return True
+	iobject = getattr(ibone, "iobject", None)
+	return bool(iobject is not None and iobject.is_eyepoint)
+
 def build_skeleton(imodel, type='primary'):
 	skeleton = Skeleton()
 	
@@ -1843,12 +1853,19 @@ def build_skeleton(imodel, type='primary'):
 			name = name+"_copy"
 		ogre_bone = skeleton.create_bone(name, ibone.index)
 			
-		ogre_bone.position = ibone.position
-		ogre_bone.orientation = ibone.orientation
+		if(_stabilize_cockpit_bone_for_output(imodel, ibone, type)):
+			absolute_transform = ibone.get_absolute_transform()
+			ogre_bone.position = absolute_transform.posit()
+			ogre_bone.orientation = absolute_transform.compute_orientation()
+		else:
+			ogre_bone.position = ibone.position
+			ogre_bone.orientation = ibone.orientation
 		ogre_bone.scale = ibone.size
 	
 	# Second pass: Parent the ogre bones
 	for ibone in imodel.ibone_list:
+		if(_stabilize_cockpit_bone_for_output(imodel, ibone, type)):
+			continue
 		if(ibone.parent is None):
 			continue
 		ogre_bone = skeleton.get_bone(ibone.index)

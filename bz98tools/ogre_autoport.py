@@ -78,7 +78,7 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
     VDF-only extras:
       headlights, person_mode, turret_mode, cockpit_mode, skeletalanims_mode,
       scope_mode, scope_type, scope_nation, scope_screen, scope_gun,
-      scope_transform, scope_texture, no_pov_rots
+      scope_transform, scope_texture, no_pov_rots, stabilize_walker_cockpit
     """
     options = options or {}
     filepath = Path(exported_path)
@@ -133,6 +133,7 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
     # VDF/person-only-ish settings (safe to pass even if not used)
     headlights = bool(options.get("headlights", False))
     no_pov_rots = bool(options.get("no_pov_rots", False))
+    stabilize_walker_cockpit = bool(options.get("stabilize_walker_cockpit", False))
 
     person = _ternary_from_enum(options.get("person_mode"))
     turret = _ternary_from_enum(options.get("turret_mode"))
@@ -182,6 +183,7 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
         skeletalanims=skeletalanims,
         scope=scope_settings,
         no_pov_rots=no_pov_rots,
+        stabilize_walker_cockpit=stabilize_walker_cockpit,
         flat_colors=flat_colors,
         boundingbox_scale_factors=boundingbox_scale_factors,
         nowrite=nowrite,

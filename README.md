@@ -30,6 +30,8 @@ This plugin targets the **Blender 4.5 LTS** and **Blender 5.1** lines, with **qu
 - ✅ **Organic Redux skin helper** for turning legacy GEO control hierarchies into weighted Redux armatures (see `docs/ORGANIC_REDUX_SKIN_WALKTHROUGH.md`)
 - ✅ **Hardpoint/turret GEO suffix and hierarchy validation** for common `gc`, `gr`, `gm`, `gs`, `tx`, `ty`, and turret cockpit conventions
 - ✅ **Cockpit GEO generator** for cloning selected LOD1 faces into matching LOD2 cockpit objects with matching origins
+- ✅ **Experimental GEO face-plane preservation/recompute controls**, including a best-effort legacy `DX Normal Distance Fix`
+- ✅ **Experimental walker cockpit stabilizer** for separate Redux cockpit output
 - ✅ **Safe material name auto-generation**  
 - ✅ **Auto UV unwrap** when missing  
 - ✅ **Accurate GEO scaling and GEOFlags**  
@@ -73,6 +75,22 @@ Everything is handled inside Blender:
 ---
 
 ## Changelog
+**v1.4.4 - Experimental GEO Face Planes and Walker Cockpit Stabilizer**
+
+#### Added
+- Added **Face Plane Export** modes to GEO, VDF, and SDF exports: current default, preserve imported, recompute from faces, and best-effort `DX Normal Distance Fix`.
+- Imported GEO files now preserve `bz_face_plane_x/y/z/d` per-face attributes.
+- Selected face raw data now shows preserved face-plane floats.
+- Added **Experimental Walker Cockpit Stabilizer** for VDF Legacy + Redux auto-port output.
+- Added validation warning for GEO faces with more than 10 vertices, based on the unpacked legacy GEO viewer's fixed face storage.
+
+#### Reverse Engineering
+- Unpacked the legacy VDF, SDF, and GEO viewers with a run-and-memory-dump pass after Petite static unpacking failed.
+- Confirmed VDF/SDF object record sizes, ANIM payload sizes, and the old viewer's fixed 10-vertex in-memory GEO face capacity.
+- Documented the old Max `DX normal distance fix` behavior and the current best-effort implementation in `docs/EXPERIMENTAL_BINARY_FIELDS.md`.
+
+---
+
 **v1.4.3 - Organic Redux Skin Helper**
 
 #### Added

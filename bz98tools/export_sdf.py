@@ -93,7 +93,7 @@ def _iter_export_objects(context):
     return list(scene.objects)
 
 
-def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
+def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False, face_plane_mode="CURRENT"):
     '''
     We are going to use a bunch of classes to write data and encapsulate it.
     First we'll initialize a bunch of them here.
@@ -232,7 +232,8 @@ def export(context, *, filepath, ExportAnimations=True, ExportSDFOnly=False):
             export_geo.geoexport(
                 context, 
                 os.path.dirname(filepath)+'/' + GEO.name + '.geo', 
-                object
+                object,
+                face_plane_mode=face_plane_mode,
             )
         #Special class(BlenderObject) I made for putting object and geo in one nice package to keep track of both.
         BlenderObject = sdf_classes.BlenderObject(object,GEO)

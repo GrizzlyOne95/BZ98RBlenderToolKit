@@ -35,6 +35,47 @@ def _derive_legacy_texture_name(name):
     return base_name[:8]
 
 
+def _geo_coord(co):
+    return (float(co.x), float(co.z), float(co.y))
+
+
+def _vector_sub(a, b):
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _vector_cross(a, b):
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _vector_dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _normalize(vec):
+    length_sq = _vector_dot(vec, vec)
+    if length_sq <= 0.0:
+        return (0.0, 0.0, 1.0)
+    length = length_sq ** 0.5
+    return (vec[0] / length, vec[1] / length, vec[2] / length)
+
+
+def _compute_face_plane(mesh, face):
+    if len(face.vertices) < 3:
+        center = _geo_coord(face.center)
+        return (0.0, 0.0, 1.0, center[2])
+
+    points = [_geo_coord(mesh.vertices[index].co) for index in face.vertices[:3]]
+    edge_a = _vector_sub(points[1], points[0])
+    edge_b = _vector_sub(points[2], points[0])
+    normal = _normalize(_vector_cross(edge_a, edge_b))
+    distance = _vector_dot(normal, points[0])
+    return (normal[0], normal[1], normal[2], distance)
+
+
 def _get_image_derived_texture_name(material):
     node_tree = getattr(material, "node_tree", None)
     if node_tree is None:
@@ -55,7 +96,7 @@ def _get_image_derived_texture_name(material):
     return _derive_legacy_texture_name(getattr(image, "name", "") or getattr(image, "filepath", ""))
 
 
-def geoexport(context, filepath, obj):
+def geoexport(context, filepath, obj, *, face_plane_mode="CURRENT"):
     Vertices = []
     Normals = []
     Faces = []
@@ -78,6 +119,35 @@ def geoexport(context, filepath, obj):
                 return int(attr.data[face_index].value)
             except Exception:
                 return int(default_value)
+
+        def _get_face_attr_float(attr_name, face_index, default_value=0.0):
+            attrs = getattr(mesh, "attributes", None)
+            if attrs is None:
+                return float(default_value)
+            attr = attrs.get(attr_name)
+            if attr is None or attr.domain != 'FACE':
+                return float(default_value)
+            try:
+                return float(attr.data[face_index].value)
+            except Exception:
+                return float(default_value)
+
+        def _has_face_plane_attrs(face_index):
+            attrs = getattr(mesh, "attributes", None)
+            if attrs is None:
+                return False
+            for attr_name in (
+                "bz_face_plane_x",
+                "bz_face_plane_y",
+                "bz_face_plane_z",
+                "bz_face_plane_d",
+            ):
+                attr = attrs.get(attr_name)
+                if attr is None or attr.domain != 'FACE':
+                    return False
+                if face_index >= len(attr.data):
+                    return False
+            return True
 
         # ------------------------------------------------------------------
         # Failsafe: fix any invalid material indices on polygons
@@ -105,6 +175,8 @@ def geoexport(context, filepath, obj):
                     [-vertex.normal.x, -vertex.normal.z, -vertex.normal.y]
                 )
             )
+
+        face_plane_mode = (face_plane_mode or "CURRENT").upper()
 
         # Collect faces
         for face in mesh.polygons:
@@ -163,15 +235,28 @@ def geoexport(context, filepath, obj):
             xluscent_type = _get_face_attr_int("bz_face_xluscent_type", face.index, default_xluscent) & 0xFF
             string_header_bytes = bytes([shade_type, texture_type, xluscent_type])
 
+            if face_plane_mode == "PRESERVE" and _has_face_plane_attrs(face.index):
+                plane_x = _get_face_attr_float("bz_face_plane_x", face.index, face.center.x)
+                plane_y = _get_face_attr_float("bz_face_plane_y", face.index, face.center.y)
+                plane_z = _get_face_attr_float("bz_face_plane_z", face.index, face.center.z)
+                plane_d = _get_face_attr_float("bz_face_plane_d", face.index, 1.0)
+            elif face_plane_mode in {"RECOMPUTE", "DX_FIX"}:
+                plane_x, plane_y, plane_z, plane_d = _compute_face_plane(mesh, face)
+            else:
+                plane_x = face.center.x
+                plane_y = face.center.y
+                plane_z = face.center.z
+                plane_d = 1.0
+
             NewFace = geo_classes.GEOFace(
                 [
                     face.index,              # Index
                     len(face.vertices),      # Vertices
                     r, g, b,                 # Color
-                    face.center.x,           # x
-                    face.center.y,           # y
-                    face.center.z,           # z
-                    1.0,                     # d
+                    plane_x,                 # x
+                    plane_y,                 # y
+                    plane_z,                 # z
+                    plane_d,                 # d
                     face_unknown,            # unknown/raw int
                     string_header_bytes,     # StringHeader (shade/texture/xluscent bytes)
                     facematerial,            # MapName (texture name)
@@ -246,10 +331,10 @@ def geoexport(context, filepath, obj):
     return {'FINISHED'}
 
 
-def export(context, *, filepath):
+def export(context, *, filepath, face_plane_mode="CURRENT"):
     view_layer = getattr(context, "view_layer", None)
     active_obj = getattr(getattr(view_layer, "objects", None), "active", None)
     if active_obj is None:
         active_obj = bpy.context.view_layer.objects.active
-    geoexport(context, filepath, active_obj)
+    geoexport(context, filepath, active_obj, face_plane_mode=face_plane_mode)
     return {'FINISHED'}
