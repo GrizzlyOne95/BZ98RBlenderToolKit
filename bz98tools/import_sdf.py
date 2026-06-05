@@ -64,7 +64,7 @@ def _diagnostic_name(name):
 
 
 def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
-         ImportMapTextures=False):
+         ImportMapTextures=False, MapTextureDirectory="", MapTextureZFS=""):
     EXIT = sdf_classes.EXITSection() #We going to be using this class to read through exit sections.
     GEOList = []
     SDFHeader = sdf_classes.SDFHeader()
@@ -207,6 +207,8 @@ def load(context, filepath, *, ImportAnimations=True, PreserveFaceColors=True,
                         PreserveFaceColors=PreserveFaceColors,
                         ImportMapTextures=ImportMapTextures,
                         map_base_dir=os.path.dirname(filepath),
+                        MapTextureDirectory=MapTextureDirectory,
+                        MapTextureZFS=MapTextureZFS,
                     )
                 except Exception as exc:
                     _add_import_diagnostic(

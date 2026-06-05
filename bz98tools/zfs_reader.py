@@ -193,6 +193,7 @@ class ZFSReader:
             content = data
 
         out_path = os.path.join(out_dir, rec['name'])
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
         with open(out_path, 'wb') as out_f:
             out_f.write(content)
         return out_path

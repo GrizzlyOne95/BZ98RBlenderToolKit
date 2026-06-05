@@ -10,6 +10,7 @@ import bpy
 import importlib
 import struct
 import zlib
+import hashlib
 from io import BytesIO
 
 from . import geo_classes
@@ -317,6 +318,15 @@ def _get_target_collection(context):
 # File / palette helpers
 # ---------------------------------------------------------------------------
 
+def _normalized_map_filename(map_name):
+    map_name = (map_name or "").strip()
+    if not map_name:
+        return ""
+    if map_name.lower().endswith(".map"):
+        return map_name
+    return map_name + ".map"
+
+
 def _find_map_file(map_name, base_dir):
     """
     Try to find a .map file for the given name (without extension)
@@ -328,19 +338,79 @@ def _find_map_file(map_name, base_dir):
     map_name = map_name.strip()
     if not map_name:
         return None
+    if not base_dir:
+        return None
+
+    base_dir = bpy.path.abspath(base_dir)
+    if not os.path.isdir(base_dir):
+        return None
 
     # Direct hit first
-    candidate = os.path.join(base_dir, map_name + ".map")
+    map_filename = _normalized_map_filename(map_name)
+    candidate = os.path.join(base_dir, map_filename)
     if os.path.exists(candidate):
         return candidate
 
-    target_lower = (map_name + ".map").lower()
+    target_lower = map_filename.lower()
     for root, dirs, files in os.walk(base_dir):
         for f in files:
             if f.lower() == target_lower:
                 return os.path.join(root, f)
 
     return None
+
+
+def _build_map_search_dirs(base_dir, texture_dir=""):
+    search_dirs = []
+    for directory in (base_dir, texture_dir):
+        directory = bpy.path.abspath(directory or "")
+        if directory and os.path.isdir(directory) and directory not in search_dirs:
+            search_dirs.append(directory)
+    return search_dirs
+
+
+def _get_import_texture_cache_dir(zfs_path):
+    archive_name = os.path.splitext(os.path.basename(zfs_path))[0] or "archive"
+    archive_hash = hashlib.sha1(os.path.abspath(zfs_path).encode("utf-8")).hexdigest()[:8]
+    return os.path.join(os.path.dirname(__file__), "_cache", "import_textures", f"{archive_name}_{archive_hash}")
+
+
+def _extract_map_from_zfs(map_name, zfs_path):
+    zfs_path = bpy.path.abspath(zfs_path or "")
+    if not map_name or not zfs_path or not os.path.exists(zfs_path):
+        return None
+
+    map_filename = _normalized_map_filename(map_name)
+    cache_dir = _get_import_texture_cache_dir(zfs_path)
+    existing = _find_map_file(map_filename, cache_dir)
+    if existing:
+        return existing
+
+    try:
+        from .zfs_reader import ZFSReader
+        reader = ZFSReader(zfs_path)
+        reader.open()
+        try:
+            extracted = reader.extract(map_filename, cache_dir)
+        finally:
+            reader.close()
+    except Exception as exc:
+        print(f"[BZ MAP] Failed to extract '{map_filename}' from ZFS '{zfs_path}': {exc}")
+        return None
+
+    if extracted and os.path.exists(extracted):
+        print(f"[BZ MAP] Extracted '{map_filename}' from stock ZFS to '{extracted}'.")
+        return extracted
+    return None
+
+
+def _resolve_map_file(map_name, base_dir, texture_dir="", texture_zfs=""):
+    for directory in _build_map_search_dirs(base_dir, texture_dir):
+        map_path = _find_map_file(map_name, directory)
+        if map_path:
+            return map_path
+
+    return _extract_map_from_zfs(map_name, texture_zfs)
 
 
 def _load_palette_from_act(path):
@@ -783,7 +853,7 @@ def _load_bzmap_to_image(filepath, image_name, palette_search_dir):
 
 
 
-def _ensure_map_texture_on_material(mat, map_name, base_dir):
+def _ensure_map_texture_on_material(mat, map_name, base_dir, texture_dir="", texture_zfs=""):
     """
     Given a Blender material and a Battlezone map name, try to load the
     corresponding .map file as an image and hook it up to the material's
@@ -792,9 +862,15 @@ def _ensure_map_texture_on_material(mat, map_name, base_dir):
     if not map_name:
         return
 
-    map_path = _find_map_file(map_name, base_dir)
+    map_path = _resolve_map_file(map_name, base_dir, texture_dir, texture_zfs)
     if not map_path:
-        print(f"[BZ MAP] Could not find .map file for '{map_name}' under '{base_dir}'.")
+        sources = [base_dir]
+        if texture_dir:
+            sources.append(texture_dir)
+        if texture_zfs:
+            sources.append(texture_zfs)
+        source_note = "', '".join(source for source in sources if source)
+        print(f"[BZ MAP] Could not find .map file for '{map_name}' under '{source_note}'.")
         return
 
     image_name = f"{map_name}.map"
@@ -851,7 +927,7 @@ def _ensure_map_texture_on_material(mat, map_name, base_dir):
 
 def geoload(context, geofilepath, *, name=None, flip=True,
             PreserveFaceColors=False, ImportMapTextures=False,
-            map_base_dir=None):
+            map_base_dir=None, MapTextureDirectory="", MapTextureZFS=""):
     position = 0
     header = None
     verticeslist = []
@@ -1026,12 +1102,19 @@ def geoload(context, geofilepath, *, name=None, flip=True,
                 map_name = (mat.MaterialPropertyGroup.MapTexture or "").strip()
                 if not map_name:
                     continue
-                _ensure_map_texture_on_material(mat, map_name, map_base_dir)
+                _ensure_map_texture_on_material(
+                    mat,
+                    map_name,
+                    map_base_dir,
+                    texture_dir=MapTextureDirectory,
+                    texture_zfs=MapTextureZFS,
+                )
 
         return obj
 
 
-def load(context, filepath, *, PreserveFaceColors=True, ImportMapTextures=False):
+def load(context, filepath, *, PreserveFaceColors=True, ImportMapTextures=False,
+         MapTextureDirectory="", MapTextureZFS=""):
     if not os.path.exists(filepath):
         raise Exception(filepath + ' was not found!')
         return {'FINISHED'}
@@ -1085,6 +1168,8 @@ def load(context, filepath, *, PreserveFaceColors=True, ImportMapTextures=False)
         PreserveFaceColors=PreserveFaceColors,
         ImportMapTextures=ImportMapTextures,
         map_base_dir=os.path.dirname(filepath),
+        MapTextureDirectory=MapTextureDirectory,
+        MapTextureZFS=MapTextureZFS,
     )
 
     return {'FINISHED'}

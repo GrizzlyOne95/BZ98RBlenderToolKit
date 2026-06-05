@@ -4539,6 +4539,26 @@ class BZ98TOOLS_MT_sdf_delete_export_preset(bpy.types.Menu):
 Import/Export MENUs/UIs for GEO/VDF
 Used for importing/exporting
 '''
+
+def _draw_legacy_import_options(layout, operator):
+    if hasattr(operator, "ImportAnimations"):
+        layout.prop(operator, "ImportAnimations")
+    if hasattr(operator, "PreserveFaceColors"):
+        layout.prop(operator, "PreserveFaceColors")
+    if hasattr(operator, "ImportMapTextures"):
+        layout.prop(operator, "ImportMapTextures")
+        texture_box = layout.box()
+        texture_box.enabled = bool(operator.ImportMapTextures)
+        texture_box.prop(operator, "MapTextureDirectory")
+        texture_box.prop(operator, "MapTextureZFS")
+        _draw_wrapped_label(
+            texture_box,
+            "Paste paths here. Blender cannot open a second folder/file picker while the import file browser is already open. Texture lookup checks the import folder first, then this folder, then extracts missing .map files from the selected ZFS.",
+            icon='INFO',
+            width=62,
+        )
+
+
 class ImportGEO(bpy.types.Operator, ImportHelper):
     bl_idname = "import_scene.geo"
     bl_label = "Import GEO"
@@ -4561,7 +4581,22 @@ class ImportGEO(bpy.types.Operator, ImportHelper):
             description="Automatically load matching .map files for materials and hook them up as image textures.",
             default=True,
             )
-    
+
+    MapTextureDirectory: StringProperty(
+            name=".MAP Texture Folder",
+            description="Optional folder path to search for referenced .map textures when importing. Paste the path here; Blender cannot open a nested folder picker inside the import dialog.",
+            default="",
+            )
+
+    MapTextureZFS: StringProperty(
+            name=".MAP Texture ZFS",
+            description="Optional stock ZFS archive path to extract missing referenced .map textures from during import. Paste the path here; Blender cannot open a nested file picker inside the import dialog.",
+            default="",
+            )
+
+    def draw(self, context):
+        _draw_legacy_import_options(self.layout, self)
+
     def execute(self, context):
         from . import import_geo
         #Don't pass a ton of stupid stuff to our load function. Who even cares!
@@ -4602,6 +4637,21 @@ class ImportVDF(bpy.types.Operator, ImportHelper):
             default=True,
             )
 
+    MapTextureDirectory: StringProperty(
+            name=".MAP Texture Folder",
+            description="Optional folder path to search for referenced .map textures when importing. Paste the path here; Blender cannot open a nested folder picker inside the import dialog.",
+            default="",
+            )
+
+    MapTextureZFS: StringProperty(
+            name=".MAP Texture ZFS",
+            description="Optional stock ZFS archive path to extract missing referenced .map textures from during import. Paste the path here; Blender cannot open a nested file picker inside the import dialog.",
+            default="",
+            )
+
+    def draw(self, context):
+        _draw_legacy_import_options(self.layout, self)
+
     def execute(self, context):
         from . import import_vdf
         #Don't pass a ton of stupid stuff to our load function. Who even cares!
@@ -4640,7 +4690,22 @@ class ImportSDF(bpy.types.Operator, ImportHelper):
             description="Automatically load matching .map files for materials and hook them up as image textures.",
             default=True,
             )
-    
+
+    MapTextureDirectory: StringProperty(
+            name=".MAP Texture Folder",
+            description="Optional folder path to search for referenced .map textures when importing. Paste the path here; Blender cannot open a nested folder picker inside the import dialog.",
+            default="",
+            )
+
+    MapTextureZFS: StringProperty(
+            name=".MAP Texture ZFS",
+            description="Optional stock ZFS archive path to extract missing referenced .map textures from during import. Paste the path here; Blender cannot open a nested file picker inside the import dialog.",
+            default="",
+            )
+
+    def draw(self, context):
+        _draw_legacy_import_options(self.layout, self)
+
     def execute(self, context):
         from . import import_sdf
         #Don't pass a ton of stupid stuff to our load function. Who even cares!

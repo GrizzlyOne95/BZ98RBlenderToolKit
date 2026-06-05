@@ -42,7 +42,8 @@ def _add_import_diagnostic(scene, severity, scope, target, message):
 
 
 def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
-         PreserveFaceColors=True, ImportMapTextures=False):
+         PreserveFaceColors=True, ImportMapTextures=False,
+         MapTextureDirectory="", MapTextureZFS=""):
     EXIT = vdf_classes.EXITSection()  # We are going to be using this class to read through exit sections.
     GEOList = []
     VDFHeader = vdf_classes.VDFHeader()
@@ -354,6 +355,8 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                                 PreserveFaceColors=PreserveFaceColors,
                                 ImportMapTextures=ImportMapTextures,
                                 map_base_dir=os.path.dirname(filepath),
+                                MapTextureDirectory=MapTextureDirectory,
+                                MapTextureZFS=MapTextureZFS,
                             )
                         except Exception as e:
                             print(f"[BZ VDF Import] Failed to load GEO '{GEO.name}': {e}")

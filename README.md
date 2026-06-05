@@ -40,6 +40,7 @@ It combines legacy model editing, Redux mesh export, terrain tools, validation, 
 Use the wiki for workflows and modeling reference:
 
 - [Getting Started](https://github.com/GrizzlyOne95/BZ98RBlenderToolKit/wiki/Getting-Started)
+- [Importing Models and Stock MAP Textures](https://github.com/GrizzlyOne95/BZ98RBlenderToolKit/wiki/Importing-Models-and-Stock-MAP-Textures)
 - [Legacy VDF SDF GEO Modeling Guide](https://github.com/GrizzlyOne95/BZ98RBlenderToolKit/wiki/Legacy-VDF-SDF-GEO-Modeling-Guide)
 - [Validation Checks](https://github.com/GrizzlyOne95/BZ98RBlenderToolKit/wiki/Validation-Checks)
 - [Animation Tools and Animation Slots](https://github.com/GrizzlyOne95/BZ98RBlenderToolKit/wiki/Animation-Tools-and-Animation-Slots)
