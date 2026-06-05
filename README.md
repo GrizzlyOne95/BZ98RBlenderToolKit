@@ -60,10 +60,10 @@ Versioned technical notes stay in the repository:
 
 ## Latest Highlights
 
+- `v1.4.8`: added import texture source options for stock `.map` folders and ZFS archives.
 - `v1.4.7`: fixed Animation Tools mirror dialog invocation so `Mirror From` and `Mirror To` selectors open from the sidebar.
 - `v1.4.6`: fixed popup info buttons such as `What Gets Checked`.
 - `v1.4.5`: added custom world atlas terrain painting, compact validation reports, expanded legacy guide validation, and removed unsupported Game Playback tooling.
-- `v1.4.4`: added experimental GEO face-plane controls and walker cockpit stabilizer.
 
 See [Releases](https://github.com/GrizzlyOne95/BZ98RBlenderToolKit/releases) and the `docs/RELEASE_NOTES_*.md` files for full version history.
 
