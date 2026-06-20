@@ -1,13 +1,18 @@
+from typing import Any
 from . import probe_native_backend
 
 
 def _fallback(operator, reason, legacy_handler, *args, **kwargs):
     if reason:
-        print(f"Native Ogre backend unavailable, falling back to legacy XML path: {reason}")
+        print(
+            f"Native Ogre backend unavailable, falling back to legacy XML path: {reason}"
+        )
     return legacy_handler(*args, **kwargs)
 
 
-def _map_tangent_format(export_tangents, export_binormals, zero_tangents_binormals, tangent_parity):
+def _map_tangent_format(
+    export_tangents, export_binormals, zero_tangents_binormals, tangent_parity
+):
     if zero_tangents_binormals:
         return "ZERO"
     if not export_tangents:
@@ -18,19 +23,20 @@ def _map_tangent_format(export_tangents, export_binormals, zero_tangents_binorma
 
 
 def import_mesh(
-        operator,
-        context,
-        filepath,
-        legacy_handler,
-        xml_converter=None,
-        keep_xml=False,
-        import_normals=True,
-        normal_mode="custom",
-        import_shapekeys=True,
-        import_animations=False,
-        round_frames=True,
-        use_selected_skeleton=False,
-        import_materials=True):
+    operator,
+    context,
+    filepath,
+    legacy_handler,
+    xml_converter=None,
+    keep_xml=False,
+    import_normals=True,
+    normal_mode="custom",
+    import_shapekeys=True,
+    import_animations=False,
+    round_frames=True,
+    use_selected_skeleton=False,
+    import_materials=True,
+):
     available, reason = probe_native_backend()
     if not available:
         return _fallback(
@@ -88,27 +94,28 @@ def import_mesh(
 
 
 def export_mesh(
-        operator,
-        context,
-        filepath,
-        legacy_handler,
-        xml_converter=None,
-        keep_xml=False,
-        export_tangents=True,
-        export_binormals=True,
-        zero_tangents_binormals=False,
-        export_colour=True,
-        tangent_parity=True,
-        apply_transform=True,
-        apply_modifiers=True,
-        export_materials=True,
-        overwrite_material=False,
-        copy_textures=False,
-        export_skeleton=True,
-        export_poses=True,
-        export_animation=False,
-        renormalize_weights=True,
-        batch_export=False):
+    operator,
+    context,
+    filepath,
+    legacy_handler,
+    xml_converter=None,
+    keep_xml=False,
+    export_tangents=True,
+    export_binormals=True,
+    zero_tangents_binormals=False,
+    export_colour=True,
+    tangent_parity=True,
+    apply_transform=True,
+    apply_modifiers=True,
+    export_materials=True,
+    overwrite_material=False,
+    copy_textures=False,
+    export_skeleton=True,
+    export_poses=True,
+    export_animation=False,
+    renormalize_weights=True,
+    batch_export=False,
+):
     if batch_export:
         return _fallback(
             operator,
@@ -165,8 +172,9 @@ def export_mesh(
         )
 
     selected_objects = [
-        obj for obj in context.view_layer.objects
-        if obj.select_get() and obj.type != 'ARMATURE'
+        obj
+        for obj in context.view_layer.objects
+        if obj.select_get() and obj.type != "ARMATURE"
     ]
 
     from . import ogre_exporter
@@ -191,14 +199,14 @@ def export_mesh(
             export_animation=export_animation,
             export_all_bones=False,
             mesh_optimize=True,
-            export_version='V_1_10',
+            export_version="V_1_10",
             is_visual_keying=False,
             use_scale_keyframe=False,
             num_fake_pose=0,
             renormalize_weights=renormalize_weights,
         )
 
-        if result == {'FINISHED'} and export_materials:
+        if result == {"FINISHED"} and export_materials:
             from ..ogretools import OgreExport as legacy_export
 
             material_data = {}

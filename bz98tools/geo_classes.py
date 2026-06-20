@@ -1,21 +1,24 @@
+from typing import Any
+
 # Battlezone 98R Blender ToolKit
 # Copyright (C) 2024–2025 “GrizzlyOne95” and contributors
-# 
+#
 # This file is part of BZ98R Blender ToolKit, which is distributed
 # under the terms of the GNU General Public License v3.0.
 # See the LICENSE file or <https://www.gnu.org/licenses/>.
 
-'''
+"""
 GEOClasses Python File
 
 This contains all classes used by the Addon.
-'''
+"""
+
 
 def safe_decode_ascii(raw):
     """Decode a bytes field as ASCII, ignoring non-ASCII garbage."""
     if isinstance(raw, bytes):
-        return raw.decode('ascii', errors='ignore').strip('\0')
-    return str(raw).strip('\0')
+        return raw.decode("ascii", errors="ignore").strip("\0")
+    return str(raw).strip("\0")
 
 
 # Represents a GEO header. It contains important information for reading a complete geo.
@@ -41,9 +44,9 @@ class GEOHeader:
 
     def Read(self):
         return [
-            bytes(self.HeaderType, 'ascii', errors='ignore'),
+            bytes(self.HeaderType, "ascii", errors="ignore"),
             self.Unknown,
-            bytes(self.GEOName, 'ascii', errors='ignore'),
+            bytes(self.GEOName, "ascii", errors="ignore"),
             self.Vertices,
             self.Faces,
             self.Unknown2,
@@ -99,11 +102,13 @@ class GEOFace:
         # StringHeader
         if not isinstance(array[10], str):
             raw = bytes(array[10])
-            self.StringHeaderRaw = raw[:3].ljust(3, b'\0')
+            self.StringHeaderRaw = raw[:3].ljust(3, b"\0")
             self.StringHeader = safe_decode_ascii(self.StringHeaderRaw)
         else:
             self.StringHeader = array[10]
-            self.StringHeaderRaw = bytes(self.StringHeader, 'ascii', errors='ignore')[:3].ljust(3, b'\0')
+            self.StringHeaderRaw = bytes(self.StringHeader, "ascii", errors="ignore")[
+                :3
+            ].ljust(3, b"\0")
 
         # MapName (.map texture name)
         if not isinstance(array[11], str):
@@ -127,8 +132,12 @@ class GEOFace:
             self.z,
             self.d,
             self.unknown,
-            getattr(self, "StringHeaderRaw", bytes(self.StringHeader, 'ascii', errors='ignore')[:3].ljust(3, b'\0')),
-            bytes(self.MapName, 'ascii', errors='ignore'),
+            getattr(
+                self,
+                "StringHeaderRaw",
+                bytes(self.StringHeader, "ascii", errors="ignore")[:3].ljust(3, b"\0"),
+            ),
+            bytes(self.MapName, "ascii", errors="ignore"),
             self.Parent,
             self.Node,
         ]

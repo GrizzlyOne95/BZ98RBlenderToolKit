@@ -1,3 +1,4 @@
+from typing import Any
 import importlib
 import importlib.machinery
 import os
@@ -29,12 +30,13 @@ def _has_runtime_extension():
         return False, "native Ogre backend files are missing"
 
     abi_suffixes = tuple(
-        suffix for suffix in importlib.machinery.EXTENSION_SUFFIXES
-        if suffix != ".pyd"
+        suffix for suffix in importlib.machinery.EXTENSION_SUFFIXES if suffix != ".pyd"
     )
     generic_suffix = ".pyd"
     for filename in os.listdir(_NATIVE_ROOT):
-        if filename.startswith("Kenshi_blender_tool") and filename.endswith(abi_suffixes):
+        if filename.startswith("Kenshi_blender_tool") and filename.endswith(
+            abi_suffixes
+        ):
             return True, None
         if filename == f"Kenshi_blender_tool{generic_suffix}":
             return True, None
@@ -60,7 +62,10 @@ def probe_native_backend(force=False):
         return _PROBE_RESULT
 
     if os.name != "nt":
-        _PROBE_RESULT = (False, "native Ogre backend is currently bundled for Windows only")
+        _PROBE_RESULT = (
+            False,
+            "native Ogre backend is currently bundled for Windows only",
+        )
         return _PROBE_RESULT
 
     if platform.machine().lower() not in {"amd64", "x86_64"}:

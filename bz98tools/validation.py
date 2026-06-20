@@ -1,3 +1,4 @@
+from typing import Any
 import os
 
 INNER_COLLISION_NAMES = {
@@ -121,12 +122,16 @@ def sort_issues(issues):
     )
 
 
-def collect_legacy_validation_issues(context, export_mode="ALL", validation_preset="AUTO"):
+def collect_legacy_validation_issues(
+    context, export_mode="ALL", validation_preset="AUTO"
+):
     if export_mode == "GEO":
         issues = _collect_geo_export_issues(context)
         issues.append(_orientation_reference_issue({"GEO"}))
         return sort_issues(issues)
-    return sort_issues(_collect_scene_export_issues(context, validation_preset=validation_preset))
+    return sort_issues(
+        _collect_scene_export_issues(context, validation_preset=validation_preset)
+    )
 
 
 def _make_issue(
@@ -173,13 +178,17 @@ def _get_image_derived_texture_name(material):
         return ""
 
     image_nodes = [
-        node for node in getattr(node_tree, "nodes", [])
-        if getattr(node, "type", "") == 'TEX_IMAGE' and getattr(node, "image", None) is not None
+        node
+        for node in getattr(node_tree, "nodes", [])
+        if getattr(node, "type", "") == "TEX_IMAGE"
+        and getattr(node, "image", None) is not None
     ]
     if not image_nodes:
         return ""
 
-    active_node = next((node for node in image_nodes if getattr(node, "select", False)), None)
+    active_node = next(
+        (node for node in image_nodes if getattr(node, "select", False)), None
+    )
     if active_node is None:
         active_node = image_nodes[0]
 
@@ -195,43 +204,46 @@ def _collect_geo_export_issues(context):
 
     if active_obj is None:
         issues.append(
-                _make_issue(
-                    "ERROR",
-                    "Scene",
-                    "",
-                    "No active object selected. GEO export requires an active mesh object.",
-                    {"GEO"},
-                    action="select_object",
-                )
+            _make_issue(
+                "ERROR",
+                "Scene",
+                "",
+                "No active object selected. GEO export requires an active mesh object.",
+                {"GEO"},
+                action="select_object",
             )
+        )
         return issues
 
-    if getattr(active_obj, "type", None) != "MESH" or getattr(active_obj, "data", None) is None:
+    if (
+        getattr(active_obj, "type", None) != "MESH"
+        or getattr(active_obj, "data", None) is None
+    ):
         issues.append(
-                _make_issue(
-                    "ERROR",
-                    "Object",
-                    active_obj.name,
-                    "Active object is not a mesh. GEO export only supports mesh objects.",
-                    {"GEO"},
-                    object_name=active_obj.name,
-                    action="select_object",
-                )
+            _make_issue(
+                "ERROR",
+                "Object",
+                active_obj.name,
+                "Active object is not a mesh. GEO export only supports mesh objects.",
+                {"GEO"},
+                object_name=active_obj.name,
+                action="select_object",
             )
+        )
         return issues
 
     if len(getattr(active_obj.data, "vertices", [])) == 0:
         issues.append(
-                _make_issue(
-                    "ERROR",
-                    "Object",
-                    active_obj.name,
-                    "Active mesh has no vertices and cannot be exported as GEO.",
-                    {"GEO"},
-                    object_name=active_obj.name,
-                    action="select_object",
-                )
+            _make_issue(
+                "ERROR",
+                "Object",
+                active_obj.name,
+                "Active mesh has no vertices and cannot be exported as GEO.",
+                {"GEO"},
+                object_name=active_obj.name,
+                action="select_object",
             )
+        )
 
     issues.extend(_collect_face_topology_issues(active_obj, {"GEO"}))
     issues.extend(_collect_material_issues(active_obj, {"GEO"}))
@@ -269,7 +281,9 @@ def _collect_scene_export_issues(context, validation_preset="AUTO"):
         name_info = parse_legacy_geo_name(obj.name)
         geo_props = getattr(obj, "GEOPropertyGroup", None)
         is_spinner_helper = bool(getattr(geo_props, "IsSpinnerHelper", False))
-        spinner_like = is_spinner_helper or (int(getattr(geo_props, "GEOType", 0)) == 15)
+        spinner_like = is_spinner_helper or (
+            int(getattr(geo_props, "GEOType", 0)) == 15
+        )
 
         if not name_info["valid"]:
             if _looks_like_export_candidate(obj, spinner_like):
@@ -412,8 +426,14 @@ def _collect_scene_export_issues(context, validation_preset="AUTO"):
     issues.extend(_collect_collision_helper_issues(outer_helpers, "outer"))
     issues.extend(_collect_lod_counterpart_issues(named_candidates))
     issues.extend(_collect_multiple_root_issues(named_candidates))
-    issues.extend(_collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_helpers, validation_preset))
-    issues.extend(_collect_animation_preset_issues(scene, named_candidates, validation_preset))
+    issues.extend(
+        _collect_vdf_vehicle_required_issues(
+            named_candidates, inner_helpers, outer_helpers, validation_preset
+        )
+    )
+    issues.extend(
+        _collect_animation_preset_issues(scene, named_candidates, validation_preset)
+    )
     issues.extend(_collect_animation_guide_issues(scene, named_candidates))
     issues.extend(_collect_turret_cockpit_issues(named_candidates))
     return issues
@@ -432,7 +452,9 @@ def _iter_action_fcurves(action):
 
 
 def _has_action_fcurves(animation_data):
-    action = getattr(animation_data, "action", None) if animation_data is not None else None
+    action = (
+        getattr(animation_data, "action", None) if animation_data is not None else None
+    )
     if action is None:
         return False
     return any(True for _curve in _iter_action_fcurves(action))
@@ -498,7 +520,11 @@ def _collect_legacy_animation_limit_issues(obj):
     parent_is_armature = getattr(parent, "type", None) == "ARMATURE"
     has_weighted_groups = _has_weighted_vertex_groups(obj)
 
-    if has_armature_modifier or parent_is_armature or (has_weighted_groups and has_armature_modifier):
+    if (
+        has_armature_modifier
+        or parent_is_armature
+        or (has_weighted_groups and has_armature_modifier)
+    ):
         issues.append(
             _make_issue(
                 "WARNING",
@@ -624,10 +650,10 @@ def _collect_transform_issues(obj):
         quat = getattr(obj, "rotation_quaternion", None)
         if quat is not None:
             has_rotation = (
-                abs(float(quat.w) - 1.0) > 0.0001 or
-                abs(float(quat.x)) > 0.0001 or
-                abs(float(quat.y)) > 0.0001 or
-                abs(float(quat.z)) > 0.0001
+                abs(float(quat.w) - 1.0) > 0.0001
+                or abs(float(quat.x)) > 0.0001
+                or abs(float(quat.y)) > 0.0001
+                or abs(float(quat.z)) > 0.0001
             )
     else:
         euler = getattr(obj, "rotation_euler", None)
@@ -768,14 +794,20 @@ def _object_has_assigned_material(obj):
 
 def _world_location_distance(a, b):
     try:
-        return (a.matrix_world.to_translation() - b.matrix_world.to_translation()).length
+        return (
+            a.matrix_world.to_translation() - b.matrix_world.to_translation()
+        ).length
     except Exception:
         return 0.0
 
 
 def _world_rotation_delta(a, b):
     try:
-        return a.matrix_world.to_quaternion().rotation_difference(b.matrix_world.to_quaternion()).angle
+        return (
+            a.matrix_world.to_quaternion()
+            .rotation_difference(b.matrix_world.to_quaternion())
+            .angle
+        )
     except Exception:
         return 0.0
 
@@ -907,7 +939,9 @@ def _is_top_level_model_root(entry):
 
 
 def _collect_multiple_root_issues(named_candidates):
-    roots = [entry["object"] for entry in named_candidates if _is_top_level_model_root(entry)]
+    roots = [
+        entry["object"] for entry in named_candidates if _is_top_level_model_root(entry)
+    ]
     if len(roots) < 2:
         return []
 
@@ -937,10 +971,14 @@ def _vdf_collision_helpers_required(named_candidates, validation_preset):
     geo_types = {_geo_type(obj) for obj in candidates}
     if 61 in geo_types:
         return False
-    return 40 in geo_types or any(geo_type in HARDPOINT_SUFFIX_RULES for geo_type in geo_types)
+    return 40 in geo_types or any(
+        geo_type in HARDPOINT_SUFFIX_RULES for geo_type in geo_types
+    )
 
 
-def _collect_vdf_vehicle_required_issues(named_candidates, inner_helpers, outer_helpers, validation_preset):
+def _collect_vdf_vehicle_required_issues(
+    named_candidates, inner_helpers, outer_helpers, validation_preset
+):
     issues = []
     candidates = [entry["object"] for entry in named_candidates]
     has_exportable_geo = any(getattr(obj, "type", None) == "MESH" for obj in candidates)
@@ -1010,7 +1048,9 @@ def _has_object_animation(obj):
 
 def _iter_object_transform_fcurves(obj):
     animation_data = getattr(obj, "animation_data", None)
-    action = getattr(animation_data, "action", None) if animation_data is not None else None
+    action = (
+        getattr(animation_data, "action", None) if animation_data is not None else None
+    )
     if action is None:
         return
 
@@ -1063,7 +1103,8 @@ def _animation_item_int(item, attr, default=0):
 def _collect_animation_guide_issues(scene, named_candidates):
     issues = []
     animated_objects = [
-        entry["object"] for entry in named_candidates
+        entry["object"]
+        for entry in named_candidates
         if _has_object_animation(entry["object"])
     ]
     if len(animated_objects) > 25:
@@ -1108,7 +1149,8 @@ def _collect_animation_guide_issues(scene, named_candidates):
 
         end = start + length
         mismatched = [
-            obj.name for obj in animated_objects
+            obj.name
+            for obj in animated_objects
             if _object_loop_transform_mismatch(obj, start, end)
         ]
         if not mismatched:
@@ -1167,7 +1209,8 @@ def _collect_animation_preset_issues(scene, named_candidates, validation_preset)
         return issues
 
     animated_objects = [
-        entry["object"] for entry in named_candidates
+        entry["object"]
+        for entry in named_candidates
         if _has_object_animation(entry["object"])
     ]
     if animated_objects and not indices:
@@ -1243,7 +1286,8 @@ def _collect_turret_cockpit_issues(named_candidates):
         if geo_type == 40:
             pitch_parent = next(
                 (
-                    parent for parent in _iter_ancestors(obj)
+                    parent
+                    for parent in _iter_ancestors(obj)
                     if _geo_type(parent) == 65 and _is_turret_pitch_name(parent.name)
                 ),
                 None,
@@ -1266,7 +1310,8 @@ def _collect_turret_cockpit_issues(named_candidates):
 
             yaw_parent = _has_ancestor_matching(
                 obj,
-                lambda parent: _geo_type(parent) == 65 and _is_turret_yaw_name(parent.name),
+                lambda parent: _geo_type(parent) == 65
+                and _is_turret_yaw_name(parent.name),
             )
             if not yaw_parent:
                 issues.append(
@@ -1284,7 +1329,8 @@ def _collect_turret_cockpit_issues(named_candidates):
         if geo_type in HARDPOINT_SUFFIX_RULES:
             pitch_parent = _has_ancestor_matching(
                 obj,
-                lambda parent: _geo_type(parent) == 65 and _is_turret_pitch_name(parent.name),
+                lambda parent: _geo_type(parent) == 65
+                and _is_turret_pitch_name(parent.name),
             )
             if not pitch_parent:
                 issues.append(
@@ -1303,7 +1349,8 @@ def _collect_turret_cockpit_issues(named_candidates):
                 )
 
     cockpit_rotators = [
-        obj for entry in named_candidates
+        obj
+        for entry in named_candidates
         for obj in [entry["object"]]
         if entry.get("lod") == 2 and _geo_type(obj) == 65
     ]
@@ -1352,7 +1399,10 @@ def _collect_collision_helper_issues(helpers, label):
         )
 
     for helper in helpers:
-        if getattr(helper, "type", None) != "MESH" or getattr(helper, "data", None) is None:
+        if (
+            getattr(helper, "type", None) != "MESH"
+            or getattr(helper, "data", None) is None
+        ):
             issues.append(
                 _make_issue(
                     "ERROR",

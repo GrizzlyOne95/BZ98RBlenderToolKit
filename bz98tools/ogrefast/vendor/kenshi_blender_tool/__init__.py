@@ -1,3 +1,4 @@
+from typing import Any
 from .Kenshi_blender_tool import AnimationData
 from .Kenshi_blender_tool import BlenderAnimationTrack
 from .Kenshi_blender_tool import BoneAssignmentData
@@ -18,5 +19,27 @@ from .Kenshi_blender_tool import SkeletonVersion
 from .Kenshi_blender_tool import SubMeshData
 from .Kenshi_blender_tool import Vector3
 from .Kenshi_blender_tool import VertexGroupData
+
 # from . import Kenshi_blender_tool
-__all__ = ['AnimationData', 'BlenderAnimationTrack', 'BoneAssignmentData', 'BoneData', 'CollisionMesh', 'GeometryData', 'KenshiObjectSerializer', 'KenshiPhysXSerializer', 'Matrix3', 'MeshData', 'MeshVersion', 'OgreQuaternion', 'OperationType', 'Radian', 'SkeletonAnimationBlendMode', 'SkeletonData', 'SkeletonVersion', 'SubMeshData', 'Vector3', 'VertexGroupData']
+__all__ = [
+    "AnimationData",
+    "BlenderAnimationTrack",
+    "BoneAssignmentData",
+    "BoneData",
+    "CollisionMesh",
+    "GeometryData",
+    "KenshiObjectSerializer",
+    "KenshiPhysXSerializer",
+    "Matrix3",
+    "MeshData",
+    "MeshVersion",
+    "OgreQuaternion",
+    "OperationType",
+    "Radian",
+    "SkeletonAnimationBlendMode",
+    "SkeletonData",
+    "SkeletonVersion",
+    "SubMeshData",
+    "Vector3",
+    "VertexGroupData",
+]

@@ -1,6 +1,8 @@
+from typing import Any
+
 # Battlezone 98R Blender ToolKit
 # Copyright (C) 2024–2025 “GrizzlyOne95” and contributors
-# 
+#
 # This file is part of BZ98R Blender ToolKit, which is distributed
 # under the terms of the GNU General Public License v3.0.
 # See the LICENSE file or <https://www.gnu.org/licenses/>.
@@ -13,6 +15,7 @@ import mathutils
 
 from . import vdf_classes
 from . import import_geo
+
 # Reload it just in case something changed!
 importlib.reload(vdf_classes)
 importlib.reload(import_geo)
@@ -41,10 +44,20 @@ def _add_import_diagnostic(scene, severity, scope, target, message):
     item.message = message
 
 
-def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
-         PreserveFaceColors=True, ImportMapTextures=False,
-         MapTextureDirectory="", MapTextureZFS=""):
-    EXIT = vdf_classes.EXITSection()  # We are going to be using this class to read through exit sections.
+def load(
+    context,
+    filepath,
+    *,
+    ImportGEOs=True,
+    ImportAnimations=True,
+    PreserveFaceColors=True,
+    ImportMapTextures=False,
+    MapTextureDirectory="",
+    MapTextureZFS="",
+):
+    EXIT = (
+        vdf_classes.EXITSection()
+    )  # We are going to be using this class to read through exit sections.
     GEOList = []
     VDFHeader = vdf_classes.VDFHeader()
     VDFC = vdf_classes.VDFCHeader()
@@ -59,11 +72,11 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
     SCPS = vdf_classes.SCPSSection()
 
     if not os.path.exists(filepath):
-        raise Exception(filepath + ' was not found!')
-        return {'FINISHED'}
+        raise Exception(filepath + " was not found!")
+        return {"FINISHED"}
 
     # Open the VDF file.
-    with open(filepath, mode='rb') as file:  # b is important -> binary
+    with open(filepath, mode="rb") as file:  # b is important -> binary
         # Read the file we opened.
         fileContent = file.read()
         position = 0
@@ -75,8 +88,8 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         # Read the VDF header information.
         position = VDFHeader.Read(fileContent, position)
         # If we don't see some basic matches, we know something is wrong.
-        if VDFHeader.BWDHeader != b'BWD2' or VDFHeader.REVHeader != b'REV\0':
-            raise Exception('This file is not a VDF file or is corrupted!')
+        if VDFHeader.BWDHeader != b"BWD2" or VDFHeader.REVHeader != b"REV\0":
+            raise Exception("This file is not a VDF file or is corrupted!")
 
         # Read VDFC header.
         position = VDFC.Read(fileContent, position)
@@ -105,17 +118,17 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
             )
 
         # Take our VDF information and load it into the scene.
-        scene.SDFVDFPropertyGroup['Name'] = VDFC.name
-        scene.SDFVDFPropertyGroup['VehicleSize'] = VDFC.vehiclesize
-        scene.SDFVDFPropertyGroup['VehicleType'] = VDFC.vehicletype
-        scene.SDFVDFPropertyGroup['LOD1'] = VDFC.lod1dist
-        scene.SDFVDFPropertyGroup['LOD2'] = VDFC.lod2dist
-        scene.SDFVDFPropertyGroup['LOD3'] = VDFC.lod3dist
-        scene.SDFVDFPropertyGroup['LOD4'] = VDFC.lod4dist
-        scene.SDFVDFPropertyGroup['LOD5'] = VDFC.lod5dist
-        scene.SDFVDFPropertyGroup['Mass'] = VDFC.mass
-        scene.SDFVDFPropertyGroup['CollMult'] = VDFC.multiplyer
-        scene.SDFVDFPropertyGroup['DragCoefficient'] = VDFC.drag
+        scene.SDFVDFPropertyGroup["Name"] = VDFC.name
+        scene.SDFVDFPropertyGroup["VehicleSize"] = VDFC.vehiclesize
+        scene.SDFVDFPropertyGroup["VehicleType"] = VDFC.vehicletype
+        scene.SDFVDFPropertyGroup["LOD1"] = VDFC.lod1dist
+        scene.SDFVDFPropertyGroup["LOD2"] = VDFC.lod2dist
+        scene.SDFVDFPropertyGroup["LOD3"] = VDFC.lod3dist
+        scene.SDFVDFPropertyGroup["LOD4"] = VDFC.lod4dist
+        scene.SDFVDFPropertyGroup["LOD5"] = VDFC.lod5dist
+        scene.SDFVDFPropertyGroup["Mass"] = VDFC.mass
+        scene.SDFVDFPropertyGroup["CollMult"] = VDFC.multiplyer
+        scene.SDFVDFPropertyGroup["DragCoefficient"] = VDFC.drag
 
         # Read VGEO header.
         position = VGEO.Read(fileContent, position)
@@ -154,10 +167,10 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                 "No optional sections were present after VGEO; empty collision helpers were created.",
             )
         else:
-            sectionname = struct.unpack('4s', fileContent[position:position + 4])
+            sectionname = struct.unpack("4s", fileContent[position : position + 4])
 
             # Optional ANIM block (may or may not be present)
-            if sectionname[0] == b'ANIM':
+            if sectionname[0] == b"ANIM":
                 anim_found = True
                 position = ANIM.Read(fileContent, position)
                 for i in range(ANIM.elementscount):
@@ -210,8 +223,12 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
 
             # Only read COLP if we have a full header+body and the header matches.
             if position + 4 <= len(fileContent):
-                colp_header = struct.unpack('4s', fileContent[position:position + 4])[0]
-                if colp_header == b'COLP' and position + COLP.binlength <= len(fileContent):
+                colp_header = struct.unpack("4s", fileContent[position : position + 4])[
+                    0
+                ]
+                if colp_header == b"COLP" and position + COLP.binlength <= len(
+                    fileContent
+                ):
                     position = COLP.Read(fileContent, position)
                     _add_import_diagnostic(
                         scene,
@@ -221,13 +238,17 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                         "Imported VDF inner/outer collision box values.",
                     )
                     if position + EXIT.binlength <= len(fileContent):
-                        next_header = struct.unpack('4s', fileContent[position:position + 4])[0]
-                        if next_header == b'EXIT':
+                        next_header = struct.unpack(
+                            "4s", fileContent[position : position + 4]
+                        )[0]
+                        if next_header == b"EXIT":
                             position = EXIT.Read(fileContent, position)
 
                     if position + SCPS.binlength <= len(fileContent):
-                        scps_header = struct.unpack('4s', fileContent[position:position + 4])[0]
-                        if scps_header in (b'SPCS', b'SCPS'):
+                        scps_header = struct.unpack(
+                            "4s", fileContent[position : position + 4]
+                        )[0]
+                        if scps_header in (b"SPCS", b"SCPS"):
                             position = SCPS.Read(fileContent, position)
                             scps_data = [int(v) for v in SCPS.data]
                             scps_found = True
@@ -264,10 +285,14 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
             scene.SDFVDFPropertyGroup.AnimNull2 = int(ANIM.null2)
             scene.SDFVDFPropertyGroup.AnimUnknown2 = int(ANIM.unknown2)
             try:
-                scene.SDFVDFPropertyGroup.AnimReserved = tuple(int(v) for v in ANIM._reserved[:5])
+                scene.SDFVDFPropertyGroup.AnimReserved = tuple(
+                    int(v) for v in ANIM._reserved[:5]
+                )
             except Exception:
                 scene.SDFVDFPropertyGroup.AnimReserved = (0, 0, 0, 0, 0)
-            scene.SDFVDFPropertyGroup.UseTranslation2Track = bool(ANIM.translation2count > 0)
+            scene.SDFVDFPropertyGroup.UseTranslation2Track = bool(
+                ANIM.translation2count > 0
+            )
         else:
             scene.SDFVDFPropertyGroup.UseAdvancedAnimHeader = False
             scene.SDFVDFPropertyGroup.UseTranslation2Track = False
@@ -282,10 +307,23 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
         # Recreate the inner/outer collision boxes from COLP
         # ------------------------------------------------------------------
         innermesh = bpy.data.meshes.new("mesh")
-        innerobj = bpy.data.objects.new('inner_col', innermesh)
+        innerobj = bpy.data.objects.new("inner_col", innermesh)
         outermesh = bpy.data.meshes.new("mesh")
-        outerobj = bpy.data.objects.new('outer_col', outermesh)
-        YMaxOut, YMaxIn, YMinIn, YMinOut, XMaxOut, XMaxIn, XMinIn, XMinOut, ZMaxOut, ZMaxIn, ZMinIn, ZMinOut = COLP.data
+        outerobj = bpy.data.objects.new("outer_col", outermesh)
+        (
+            YMaxOut,
+            YMaxIn,
+            YMinIn,
+            YMinOut,
+            XMaxOut,
+            XMaxIn,
+            XMinIn,
+            XMinOut,
+            ZMaxOut,
+            ZMaxIn,
+            ZMinIn,
+            ZMinOut,
+        ) = COLP.data
 
         target_collection.objects.link(innerobj)
         target_collection.objects.link(outerobj)
@@ -333,15 +371,17 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
             currentlod = 0
             currentgeo = 0
             for GEO in GEOList:
-                if GEO.name[0:4].lower() != 'null':
-                    geofilename = os.path.dirname(filepath) + '/' + GEO.name + '.geo'
+                if GEO.name[0:4].lower() != "null":
+                    geofilename = os.path.dirname(filepath) + "/" + GEO.name + ".geo"
 
                     # Case-insensitive search for GEO file if needed.
                     if not os.path.exists(geofilename):
                         for root, dirs, files in os.walk(os.path.dirname(geofilename)):
                             for afile in files:
-                                if (GEO.name + '.geo').lower() == afile.lower():
-                                    geofilename = os.path.join(os.path.dirname(geofilename), afile.lower())
+                                if (GEO.name + ".geo").lower() == afile.lower():
+                                    geofilename = os.path.join(
+                                        os.path.dirname(geofilename), afile.lower()
+                                    )
                                     break
 
                     newobj = None
@@ -359,12 +399,14 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                                 MapTextureZFS=MapTextureZFS,
                             )
                         except Exception as e:
-                            print(f"[BZ VDF Import] Failed to load GEO '{GEO.name}': {e}")
+                            print(
+                                f"[BZ VDF Import] Failed to load GEO '{GEO.name}': {e}"
+                            )
 
                     # Spinner helpers often have no .geo file by design.
                     if newobj is None and GEO.type == 15:
                         newobj = bpy.data.objects.new(GEO.name, None)
-                        newobj.empty_display_type = 'ARROWS'
+                        newobj.empty_display_type = "ARROWS"
                         newobj.empty_display_size = 0.25
                         target_collection.objects.link(newobj)
 
@@ -379,17 +421,19 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                         else:
                             geolod = 1
 
-                        newobj.GEOPropertyGroup['GEOType'] = GEO.type
-                        newobj.GEOPropertyGroup['GEOFlags'] = GEO.geoflags
-                        newobj.GEOPropertyGroup['GeoCenterX'] = GEO.geocenter[0]
-                        newobj.GEOPropertyGroup['GeoCenterY'] = GEO.geocenter[1]
-                        newobj.GEOPropertyGroup['GeoCenterZ'] = GEO.geocenter[2]
-                        newobj.GEOPropertyGroup['SphereRadius'] = GEO.sphereradius
-                        newobj.GEOPropertyGroup['BoxHalfHeightX'] = GEO.boxhalfheight[0]
-                        newobj.GEOPropertyGroup['BoxHalfHeightY'] = GEO.boxhalfheight[1]
-                        newobj.GEOPropertyGroup['BoxHalfHeightZ'] = GEO.boxhalfheight[2]
+                        newobj.GEOPropertyGroup["GEOType"] = GEO.type
+                        newobj.GEOPropertyGroup["GEOFlags"] = GEO.geoflags
+                        newobj.GEOPropertyGroup["GeoCenterX"] = GEO.geocenter[0]
+                        newobj.GEOPropertyGroup["GeoCenterY"] = GEO.geocenter[1]
+                        newobj.GEOPropertyGroup["GeoCenterZ"] = GEO.geocenter[2]
+                        newobj.GEOPropertyGroup["SphereRadius"] = GEO.sphereradius
+                        newobj.GEOPropertyGroup["BoxHalfHeightX"] = GEO.boxhalfheight[0]
+                        newobj.GEOPropertyGroup["BoxHalfHeightY"] = GEO.boxhalfheight[1]
+                        newobj.GEOPropertyGroup["BoxHalfHeightZ"] = GEO.boxhalfheight[2]
                         try:
-                            newobj.GEOPropertyGroup.RawVDFMatrix = tuple(float(v) for v in GEO.matrix)
+                            newobj.GEOPropertyGroup.RawVDFMatrix = tuple(
+                                float(v) for v in GEO.matrix
+                            )
                         except Exception:
                             pass
 
@@ -408,8 +452,10 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                             newobj.GEOPropertyGroup.SpinnerSpeed = speed
                             newobj.GEOPropertyGroup.GenerateCollision = False
 
-                            if GEO.parent.lower() != 'world':
-                                newobj.GEOPropertyGroup.SpinnerTarget = GEO.parent.lower()
+                            if GEO.parent.lower() != "world":
+                                newobj.GEOPropertyGroup.SpinnerTarget = (
+                                    GEO.parent.lower()
+                                )
 
                         blenobj = vdf_classes.BlenderObject(newobj, GEO)
                         blenobj.obj_index = currentgeo
@@ -425,13 +471,19 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
             # Parent GEO objects according to GEO.parent
             # ------------------------------------------------------------------
             for Model in OBJList.values():
-                if Model.geo.parent.lower() != 'world' and Model.geo.parent.lower() in OBJList:
+                if (
+                    Model.geo.parent.lower() != "world"
+                    and Model.geo.parent.lower() in OBJList
+                ):
                     Parent = OBJList[Model.geo.parent.lower()]
                     Model.object.parent = Parent.object
-                elif Model.geo.parent.lower() != 'world' and Model.geo.parent.lower() not in OBJList:
+                elif (
+                    Model.geo.parent.lower() != "world"
+                    and Model.geo.parent.lower() not in OBJList
+                ):
                     Parent = None
                     stringlist = list(Model.geo.parent.lower())
-                    stringlist[3] = '1'
+                    stringlist[3] = "1"
                     lowerlodparent = "".join(stringlist)
                     if lowerlodparent in OBJList.keys():
                         Parent = OBJList[lowerlodparent]
@@ -451,11 +503,13 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                     geo = Model.geo
 
                     # Rebuild 3x3 basis from GEO matrix (right, up, front w/ scale baked in)
-                    mat3 = mathutils.Matrix((
-                        (geo.matrix[0], geo.matrix[1], geo.matrix[2]),
-                        (geo.matrix[3], geo.matrix[4], geo.matrix[5]),
-                        (geo.matrix[6], geo.matrix[7], geo.matrix[8]),
-                    ))
+                    mat3 = mathutils.Matrix(
+                        (
+                            (geo.matrix[0], geo.matrix[1], geo.matrix[2]),
+                            (geo.matrix[3], geo.matrix[4], geo.matrix[5]),
+                            (geo.matrix[6], geo.matrix[7], geo.matrix[8]),
+                        )
+                    )
 
                     # Decompose: scale from column lengths, then normalize columns to get pure rotation
                     sx = mat3.col[0].length
@@ -472,14 +526,16 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
 
                     rotation = rot_mat.to_euler()
                     rotation[:] = rotation[0], rotation[2], rotation[1]
-                    obj.rotation_mode = 'YZX'
+                    obj.rotation_mode = "YZX"
                     obj.rotation_euler = rotation
 
                     # Apply scale that was encoded in the basis vectors
                     obj.scale = mathutils.Vector((sx, sy, sz))
 
                     # Position (same axis remap as before)
-                    obj.location = mathutils.Vector((geo.matrix[9], geo.matrix[11], geo.matrix[10]))
+                    obj.location = mathutils.Vector(
+                        (geo.matrix[9], geo.matrix[11], geo.matrix[10])
+                    )
 
             # Position children to their parents.
             for Model in OBJList.values():
@@ -487,11 +543,13 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                     obj = Model.object
                     geo = Model.geo
 
-                    mat3 = mathutils.Matrix((
-                        (geo.matrix[0], geo.matrix[1], geo.matrix[2]),
-                        (geo.matrix[3], geo.matrix[4], geo.matrix[5]),
-                        (geo.matrix[6], geo.matrix[7], geo.matrix[8]),
-                    ))
+                    mat3 = mathutils.Matrix(
+                        (
+                            (geo.matrix[0], geo.matrix[1], geo.matrix[2]),
+                            (geo.matrix[3], geo.matrix[4], geo.matrix[5]),
+                            (geo.matrix[6], geo.matrix[7], geo.matrix[8]),
+                        )
+                    )
 
                     sx = mat3.col[0].length
                     sy = mat3.col[1].length
@@ -507,11 +565,13 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
 
                     rotation = rot_mat.to_euler()
                     rotation[:] = rotation[0], rotation[2], rotation[1]
-                    obj.rotation_mode = 'YZX'
+                    obj.rotation_mode = "YZX"
                     obj.rotation_euler = rotation
 
                     obj.scale = mathutils.Vector((sx, sy, sz))
-                    obj.location = mathutils.Vector((geo.matrix[9], geo.matrix[11], geo.matrix[10]))
+                    obj.location = mathutils.Vector(
+                        (geo.matrix[9], geo.matrix[11], geo.matrix[10])
+                    )
 
         # ------------------------------------------------------------------
         # Load animation into the scene (if present and requested)
@@ -537,44 +597,56 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
                 if geoname in ANIMorientations:
                     modelanim = ANIMorientations[geoname]
                     if modelanim.rotationcount > 0:
-                        for index in range(modelanim.rotationindex,
-                                           modelanim.rotationindex + modelanim.rotationcount):
-                            RotQuaternion = mathutils.Quaternion((
-                                ANIMrotations[index].translate[0],
-                                ANIMrotations[index].translate[1],
-                                ANIMrotations[index].translate[3],
-                                ANIMrotations[index].translate[2]
-                            ))
-                            RotEuler = RotQuaternion.to_euler('XYZ')
-                            Model.object.rotation_mode = 'XYZ'
+                        for index in range(
+                            modelanim.rotationindex,
+                            modelanim.rotationindex + modelanim.rotationcount,
+                        ):
+                            RotQuaternion = mathutils.Quaternion(
+                                (
+                                    ANIMrotations[index].translate[0],
+                                    ANIMrotations[index].translate[1],
+                                    ANIMrotations[index].translate[3],
+                                    ANIMrotations[index].translate[2],
+                                )
+                            )
+                            RotEuler = RotQuaternion.to_euler("XYZ")
+                            Model.object.rotation_mode = "XYZ"
                             Model.object.rotation_euler = RotEuler
-                            Model.object.keyframe_insert("rotation_euler", frame=ANIMrotations[index].frame)
+                            Model.object.keyframe_insert(
+                                "rotation_euler", frame=ANIMrotations[index].frame
+                            )
                             if ANIMrotations[index].frame > EndFrame:
                                 EndFrame = ANIMrotations[index].frame
 
                     if modelanim.positioncount > 0:
-                        for index in range(modelanim.positionindex,
-                                           modelanim.positionindex + modelanim.positioncount):
+                        for index in range(
+                            modelanim.positionindex,
+                            modelanim.positionindex + modelanim.positioncount,
+                        ):
                             Model.object.location = (
                                 ANIMpositions[index].translate[0],
                                 ANIMpositions[index].translate[2],
-                                ANIMpositions[index].translate[1]
+                                ANIMpositions[index].translate[1],
                             )
-                            Model.object.keyframe_insert(data_path="location",
-                                                         frame=ANIMpositions[index].frame)
+                            Model.object.keyframe_insert(
+                                data_path="location", frame=ANIMpositions[index].frame
+                            )
                             if ANIMpositions[index].frame > EndFrame:
                                 EndFrame = ANIMpositions[index].frame
 
                     if modelanim.translation2count > 0:
-                        for index in range(modelanim.translation2index,
-                                           modelanim.translation2index + modelanim.translation2count):
+                        for index in range(
+                            modelanim.translation2index,
+                            modelanim.translation2index + modelanim.translation2count,
+                        ):
                             Model.object.scale = (
                                 ANIMtranslations2[index].translate[0],
                                 ANIMtranslations2[index].translate[2],
-                                ANIMtranslations2[index].translate[1]
+                                ANIMtranslations2[index].translate[1],
                             )
-                            Model.object.keyframe_insert(data_path="scale",
-                                                         frame=ANIMtranslations2[index].frame)
+                            Model.object.keyframe_insert(
+                                data_path="scale", frame=ANIMtranslations2[index].frame
+                            )
                             if ANIMtranslations2[index].frame > EndFrame:
                                 EndFrame = ANIMtranslations2[index].frame
 
@@ -582,4 +654,4 @@ def load(context, filepath, *, ImportGEOs=True, ImportAnimations=True,
             scene.frame_start = 0
             scene.frame_end = EndFrame
 
-    return {'FINISHED'}
+    return {"FINISHED"}

@@ -1,6 +1,8 @@
+from typing import Any
+
 # Battlezone 98R Blender ToolKit
 # Copyright (C) 2024–2025 “GrizzlyOne95” and contributors
-# 
+#
 # This file is part of BZ98R Blender ToolKit, which is distributed
 # under the terms of the GNU General Public License v3.0.
 # See the LICENSE file or <https://www.gnu.org/licenses/>.
@@ -20,11 +22,11 @@ def _ternary_from_enum(val: str):
       YES          -> True
       NO           -> False
     """
-    if not val or val == 'AUTO':
+    if not val or val == "AUTO":
         return None
-    if val == 'YES':
+    if val == "YES":
         return True
-    if val == 'NO':
+    if val == "NO":
         return False
     return None
 
@@ -39,13 +41,15 @@ def _load_config_for_porter(config_path_str, act_override_str):
     - Remaining non-empty lines: resource search directories.
     """
     script_dir = Path(port_models.__file__).parent
-    config_path = Path(config_path_str) if config_path_str else (script_dir / "config.cfg")
+    config_path = (
+        Path(config_path_str) if config_path_str else (script_dir / "config.cfg")
+    )
 
     resource_dir_list = []
     act_path = None
 
     try:
-        with open(config_path, 'rt') as stream:
+        with open(config_path, "rt") as stream:
             first = stream.readline().rstrip("\n")
             if first:
                 act_path = Path(first)
@@ -86,7 +90,7 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
 
     if ext not in {".vdf", ".sdf", ".geo"}:
         print(f"[bz98tools] Ogre auto-port: skipping unsupported type {ext}")
-        return {'CANCELLED'}
+        return {"CANCELLED"}
 
     # Destination directory
     dest_dir_str = options.get("dest_dir") or None
@@ -96,8 +100,10 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
     if options.get("only_once"):
         mesh_path = dest_dirpath / (filepath.stem + ".mesh")
         if mesh_path.exists():
-            print(f"[bz98tools] Ogre auto-port: skipping, mesh already exists and only-once is enabled: {mesh_path}")
-            return {'CANCELLED'}
+            print(
+                f"[bz98tools] Ogre auto-port: skipping, mesh already exists and only-once is enabled: {mesh_path}"
+            )
+            return {"CANCELLED"}
 
     # ACT / resource dirs via config (or override)
     act_path, resource_dir_list = _load_config_for_porter(
@@ -156,7 +162,10 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
     scope_texture = options.get("scope_texture") or None
 
     scope_transform_vals = options.get("scope_transform")
-    if isinstance(scope_transform_vals, (list, tuple)) and len(scope_transform_vals) == 12:
+    if (
+        isinstance(scope_transform_vals, (list, tuple))
+        and len(scope_transform_vals) == 12
+    ):
         transform = port_models.Transform.from_array_rufp_xyz(
             [float(x) for x in scope_transform_vals]
         )
@@ -203,8 +212,8 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
         print("[bz98tools] Ogre auto-port FAILED:")
         print(traceback.format_exc())
         asset_resolver.print_profile(time.perf_counter() - start)
-        return {'CANCELLED'}
+        return {"CANCELLED"}
 
     asset_resolver.print_profile(time.perf_counter() - start)
     print("[bz98tools] Ogre auto-port complete.")
-    return {'FINISHED'}
+    return {"FINISHED"}

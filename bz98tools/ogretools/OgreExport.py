@@ -1,3 +1,5 @@
+from typing import Any
+
 # ##### BEGIN GPL LICENSE BLOCK #####
 #
 #  This program is free software; you can redistribute it and/or
@@ -113,12 +115,12 @@ bl_info = {
     "location": "File > Import-Export",
     "description": ("Import-Export Battlezone 98 Redux Mesh"),
     "warning": "",
-    "support": 'COMMUNITY',
-    "category": "Import-Export"}
+    "support": "COMMUNITY",
+    "category": "Import-Export",
+}
 
 
-
-#from Blender import *
+# from Blender import *
 from xml.dom import minidom
 import bpy
 from mathutils import Vector, Matrix, Quaternion
@@ -144,12 +146,31 @@ def _run_converter(args):
     except Exception:
         return False
 
+
 def hash_combine(x, y):
-    return x ^ y + 0x9e3779b9 + (x << 6) + (x >> 2)
+    return x ^ y + 0x9E3779B9 + (x << 6) + (x >> 2)
 
 
 class VertexInfo(object):
-    def __init__(self, px, py, pz, nx, ny, nz, u, v, r, g, b, a, boneWeights, original, tangent, binormal):
+    def __init__(
+        self,
+        px,
+        py,
+        pz,
+        nx,
+        ny,
+        nz,
+        u,
+        v,
+        r,
+        g,
+        b,
+        a,
+        boneWeights,
+        original,
+        tangent,
+        binormal,
+    ):
         self.px = px
         self.py = py
         self.pz = pz
@@ -167,7 +188,7 @@ class VertexInfo(object):
         self.boneWeights = boneWeights
         self.original = original
 
-    '''does not compare ogre_vidx (and position at the moment) [ no need to compare position ]'''
+    """does not compare ogre_vidx (and position at the moment) [ no need to compare position ]"""
 
     def __eq__(self, o):
         if self.nx != o.nx or self.ny != o.ny or self.nz != o.nz:
@@ -201,11 +222,11 @@ class VertexInfo(object):
 
 ########################################
 
+
 class Bone(object):
     def __init__(self, bone):
         self.name = bone.name
         self.parent = bone.parent.name if bone.parent else None
-
 
 
 class Skeleton(object):
@@ -224,16 +245,16 @@ class Skeleton(object):
         # get ogre bone ids - need to be in edit mode to access edit_bones
         prev = bpy.context.view_layer.objects.active
         bpy.context.view_layer.objects.active = self.armature
-        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
-        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+        bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
+        bpy.ops.object.mode_set(mode="EDIT", toggle=False)
         for bone in data.edit_bones:
-            if 'OGREID' in bone:
-                self.ids[bone.name] = bone['OGREID']
+            if "OGREID" in bone:
+                self.ids[bone.name] = bone["OGREID"]
             else:
                 self.ids[bone.name] = self.highestBoneID
             self.highestBoneID += 1
 
-        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+        bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
         bpy.context.view_layer.objects.active = prev
         self.armature.hide_viewport = self.hidden
 
@@ -241,7 +262,7 @@ class Skeleton(object):
         index = 0
         missing = []
         self.bones = [None] * len(data.bones)
-        #self.bones = []
+        # self.bones = []
         print("bones:", self.bones)
         for bone in data.bones:
             if bone.name in self.ids:
@@ -255,7 +276,7 @@ class Skeleton(object):
             self.bones[index] = bone
             self.ids[bone.name] = index
 
-        #Allocate bones and their IDS
+        # Allocate bones and their IDS
         # index = 0
         # for bone in data.bones:
         #     self.bones.append(bone)
@@ -264,17 +285,21 @@ class Skeleton(object):
 
         # calculate bone rest matrices
         # Rotate to y-up coordinates
-        rot = Matrix.Rotation(-1.5707963, 4, 'X')
-        fix = Matrix.Rotation(1.5707963, 4, 'Z')    # Fix bone axis
-        fix = fix @ Matrix.Rotation(3.141592653, 4, 'X')
+        rot = Matrix.Rotation(-1.5707963, 4, "X")
+        fix = Matrix.Rotation(1.5707963, 4, "Z")  # Fix bone axis
+        fix = fix @ Matrix.Rotation(3.141592653, 4, "X")
         self.rest = [None] * len(self.bones)
         for i, bone in enumerate(self.bones):
             if bone == None:
                 continue
 
             if bone.parent:
-                self.rest[i] = (bone.parent.matrix_local @ fix @
-                                rot).inverted() @ bone.matrix_local @ fix @ rot
+                self.rest[i] = (
+                    (bone.parent.matrix_local @ fix @ rot).inverted()
+                    @ bone.matrix_local
+                    @ fix
+                    @ rot
+                )
             else:
                 self.rest[i] = rot @ bone.matrix_local @ fix @ rot
 
@@ -289,9 +314,9 @@ class Skeleton(object):
             print(i, bone)
 
     def export_xml(self, doc, root):
-        bones = doc.createElement('bones')
+        bones = doc.createElement("bones")
         root.appendChild(bones)
-        bh = doc.createElement('bonehierarchy')
+        bh = doc.createElement("bonehierarchy")
         root.appendChild(bh)
         for i, bone in enumerate(self.bones):
 
@@ -303,48 +328,51 @@ class Skeleton(object):
 
             print(i, bone)
 
-            b = doc.createElement('bone')
-            b.setAttribute('name', bone.name)
-            b.setAttribute('id', str(i))
+            b = doc.createElement("bone")
+            b.setAttribute("name", bone.name)
+            b.setAttribute("id", str(i))
             bones.appendChild(b)
 
             if bone.parent:
-                bp = doc.createElement('boneparent')
-                bp.setAttribute('bone', bone.name)
-                bp.setAttribute('parent', bone.parent)
+                bp = doc.createElement("boneparent")
+                bp.setAttribute("bone", bone.name)
+                bp.setAttribute("parent", bone.parent)
                 bh.appendChild(bp)
 
             mat = self.rest[i]
-            pos = doc.createElement('position')
+            pos = doc.createElement("position")
             b.appendChild(pos)
             x, y, z = mat.to_translation()
-            pos.setAttribute('x', '%6f' % MZP(x))
-            pos.setAttribute('y', '%6f' % MZP(y))
-            pos.setAttribute('z', '%6f' % MZP(z))
+            pos.setAttribute("x", "%6f" % MZP(x))
+            pos.setAttribute("y", "%6f" % MZP(y))
+            pos.setAttribute("z", "%6f" % MZP(z))
 
-            rot = doc.createElement('rotation')
+            rot = doc.createElement("rotation")
             b.appendChild(rot)
             q = mat.to_quaternion()
-            rot.setAttribute('angle', '%6f' % MZP(q.angle))
-            axis = doc.createElement('axis')
+            rot.setAttribute("angle", "%6f" % MZP(q.angle))
+            axis = doc.createElement("axis")
             rot.appendChild(axis)
             x, y, z = q.axis
-            axis.setAttribute('x', '%6f' % MZP(x))
-            axis.setAttribute('y', '%6f' % MZP(y))
-            axis.setAttribute('z', '%6f' % MZP(z))
+            axis.setAttribute("x", "%6f" % MZP(x))
+            axis.setAttribute("y", "%6f" % MZP(y))
+            axis.setAttribute("z", "%6f" % MZP(z))
+
 
 # -------------------------------------------------------------------- #
 
-def MZP(value):#make zero positive
+
+def MZP(value):  # make zero positive
     if math.isclose(value, 0.0, abs_tol=rounding_epsilon):
         value = 0.0
     return value
 
+
 def bCollectAnimationData(meshData):
-    if 'skeleton' not in meshData:
+    if "skeleton" not in meshData:
         return
 
-    armature = meshData['skeleton'].armature
+    armature = meshData["skeleton"].armature
     animdata = armature.animation_data
 
     if not animdata:
@@ -370,16 +398,11 @@ def bCollectAnimationData(meshData):
         animdata.action = action
 
         anim = {}
-        anim['keyframes'] = collectAnimationData(
-            armature,
-            action.frame_range,
-            fps,
-            frame_step
+        anim["keyframes"] = collectAnimationData(
+            armature, action.frame_range, fps, frame_step
         )
-        anim['name'] = action.name
-        anim['length'] = (
-            action.frame_range[1] - action.frame_range[0]
-        ) / fps
+        anim["name"] = action.name
+        anim["length"] = (action.frame_range[1] - action.frame_range[0]) / fps
 
         animations.append(anim)
         collected_names.add(action.name)
@@ -406,19 +429,22 @@ def bCollectAnimationData(meshData):
             add_action(action)
 
     if animations:
-        meshData['animations'] = animations
+        meshData["animations"] = animations
 
     # Restore original state
     animdata.action = currentAction
     scene.frame_set(currentFrame)
 
 
-
 def collectAnimationData(armature, frame_range, fps, step=1):
     scene = bpy.context.scene
     start, end = frame_range
 
-    keyframes = {bone.name: [[], [], []] for bone in armature.pose.bones if not bone.name.startswith("H_")} # pos, rot, scl
+    keyframes = {
+        bone.name: [[], [], []]
+        for bone in armature.pose.bones
+        if not bone.name.startswith("H_")
+    }  # pos, rot, scl
 
     # Swap YZ and negate some matrices
     fix1 = Matrix([(1, 0, 0), (0, 0, 1), (0, -1, 0)])
@@ -430,16 +456,18 @@ def collectAnimationData(armature, frame_range, fps, step=1):
     armature.hide_viewport = False
     prev = bpy.context.view_layer.objects.active
     bpy.context.view_layer.objects.active = armature
-    bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.object.mode_set(mode="EDIT")
     for b in armature.data.edit_bones:
         if b.name.startswith("H_"):
             continue
         if b.parent:
-            mat[b.name] = fix2 @ b.parent.matrix.to_3x3().transposed() @ b.matrix.to_3x3()
+            mat[b.name] = (
+                fix2 @ b.parent.matrix.to_3x3().transposed() @ b.matrix.to_3x3()
+            )
         else:
-            mat[b.name] = fix1 @  b.matrix.to_3x3()
-    bpy.ops.object.mode_set(mode='OBJECT')
+            mat[b.name] = fix1 @ b.matrix.to_3x3()
+    bpy.ops.object.mode_set(mode="OBJECT")
     bpy.context.view_layer.objects.active = prev
     armature.hide_viewport = hidden
 
@@ -451,11 +479,11 @@ def collectAnimationData(armature, frame_range, fps, step=1):
         poseBone.scale = Scale
         poseBone.location = poseBone.bone.head
 
-    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode="OBJECT")
 
     # Collect data
     obj = bpy.context.object
-    for frame in range(int(start), int(end)+1, step):
+    for frame in range(int(start), int(end) + 1, step):
         time = (frame - start) / fps
         bpy.context.scene.frame_set(frame)
         for bone in armature.pose.bones:
@@ -463,10 +491,9 @@ def collectAnimationData(armature, frame_range, fps, step=1):
                 continue
             loc, rot, scl = bone.matrix.decompose()
 
-            pbMatrix = armature.convert_space(pose_bone=bone,
-                                              matrix=bone.matrix,
-                                              from_space='POSE',
-                                              to_space='LOCAL')
+            pbMatrix = armature.convert_space(
+                pose_bone=bone, matrix=bone.matrix, from_space="POSE", to_space="LOCAL"
+            )
 
             loc, rot, scl = pbMatrix.decompose()
             loc = mat[bone.name] @ loc
@@ -479,70 +506,72 @@ def collectAnimationData(armature, frame_range, fps, step=1):
 
 
 def xSaveAnimations(meshData, xNode, xDoc):
-    if 'animations' in meshData:
+    if "animations" in meshData:
         animations = xDoc.createElement("animations")
         xNode.appendChild(animations)
 
-        for animation in meshData['animations']:
+        for animation in meshData["animations"]:
             xSaveAnimation(animation, xDoc, animations)
 
 
 def xSaveAnimation(animation, xDoc, xAnimations):
-    anim = xDoc.createElement('animation')
-    tracks = xDoc.createElement('tracks')
+    anim = xDoc.createElement("animation")
+    tracks = xDoc.createElement("tracks")
     xAnimations.appendChild(anim)
     anim.appendChild(tracks)
-    anim.setAttribute('name', animation['name'])
-    anim.setAttribute('length', '%6f' % MZP(animation['length']))
-    keyframes = animation['keyframes']
+    anim.setAttribute("name", animation["name"])
+    anim.setAttribute("length", "%6f" % MZP(animation["length"]))
+    keyframes = animation["keyframes"]
     for bone, data in keyframes.items():
         if not data:
             continue
-        track = xDoc.createElement('track')
-        keyframes = xDoc.createElement('keyframes')
-        track.setAttribute('bone', bone)
+        track = xDoc.createElement("track")
+        keyframes = xDoc.createElement("keyframes")
+        track.setAttribute("bone", bone)
         tracks.appendChild(track)
         track.appendChild(keyframes)
 
         basis = 0 if data[0] else 1 if data[1] else 2
 
         for frame in range(len(data[basis])):
-            keyframe = xDoc.createElement('keyframe')
+            keyframe = xDoc.createElement("keyframe")
             keyframes.appendChild(keyframe)
-            keyframe.setAttribute('time', '%6f' % MZP(data[basis][frame][0]))
+            keyframe.setAttribute("time", "%6f" % MZP(data[basis][frame][0]))
 
             if data[0]:
                 loc = data[0][frame][1]
-                translate = xDoc.createElement('translate')
-                translate.setAttribute('x', '%6f' % MZP(loc[0]))
-                translate.setAttribute('y', '%6f' % MZP(loc[1]))
-                translate.setAttribute('z', '%6f' % MZP(loc[2]))
+                translate = xDoc.createElement("translate")
+                translate.setAttribute("x", "%6f" % MZP(loc[0]))
+                translate.setAttribute("y", "%6f" % MZP(loc[1]))
+                translate.setAttribute("z", "%6f" % MZP(loc[2]))
                 keyframe.appendChild(translate)
 
             if data[1]:
                 rot = data[1][frame][1]
                 angle = math.acos(rot[0]) * 2
-                l = math.sqrt(rot[1]*rot[1] + rot[2]*rot[2] + rot[3]*rot[3])
-                
-                axis = (1, 0, 0)
-                if not math.isclose(l, 0.0, abs_tol=rounding_epsilon):#prevent rounding errors
-                    axis = (rot[1]/l, rot[2]/l, rot[3]/l)
+                l = math.sqrt(rot[1] * rot[1] + rot[2] * rot[2] + rot[3] * rot[3])
 
-                rotate = xDoc.createElement('rotate')
-                raxis = xDoc.createElement('axis')
-                rotate.setAttribute('angle', '%6f' % MZP(angle))
-                raxis.setAttribute('x', '%6f' % MZP(axis[1]))
-                raxis.setAttribute('y', '%6f' % MZP(axis[2]))
-                raxis.setAttribute('z', '%6f' % MZP(axis[0]))
+                axis = (1, 0, 0)
+                if not math.isclose(
+                    l, 0.0, abs_tol=rounding_epsilon
+                ):  # prevent rounding errors
+                    axis = (rot[1] / l, rot[2] / l, rot[3] / l)
+
+                rotate = xDoc.createElement("rotate")
+                raxis = xDoc.createElement("axis")
+                rotate.setAttribute("angle", "%6f" % MZP(angle))
+                raxis.setAttribute("x", "%6f" % MZP(axis[1]))
+                raxis.setAttribute("y", "%6f" % MZP(axis[2]))
+                raxis.setAttribute("z", "%6f" % MZP(axis[0]))
                 keyframe.appendChild(rotate)
                 rotate.appendChild(raxis)
 
             if data[2]:
                 scl = data[2][frame][1]
-                scale = xDoc.createElement('scale')
-                scale.setAttribute('x', '%6f' % MZP(scl[0]))
-                scale.setAttribute('y', '%6f' % MZP(scl[1]))
-                scale.setAttribute('z', '%6f' % MZP(scl[2]))
+                scale = xDoc.createElement("scale")
+                scale.setAttribute("x", "%6f" % MZP(scl[0]))
+                scale.setAttribute("y", "%6f" % MZP(scl[1]))
+                scale.setAttribute("z", "%6f" % MZP(scl[2]))
                 keyframe.appendChild(scale)
 
 
@@ -565,15 +594,15 @@ def toFmtStr(number):
 def indent(indent):
     """Indentation.
 
-       @param indent Level of indentation.
-       @return String.
+    @param indent Level of indentation.
+    @return String.
     """
-    return "        "*indent
+    return "        " * indent
 
 
 def xSaveGeometry(geometry, xDoc, xMesh, isShared):
     # Positions must always be present
-    vertices = geometry['positions']
+    vertices = geometry["positions"]
 
     if isShared:
         geometryType = "sharedgeometry"
@@ -582,35 +611,35 @@ def xSaveGeometry(geometry, xDoc, xMesh, isShared):
 
     # --- Attribute presence flags / arrays ---
     isNormals = False
-    if 'normals' in geometry:
+    if "normals" in geometry:
         isNormals = True
-        normals = geometry['normals']
+        normals = geometry["normals"]
 
     # texcoord sets
     isTexCoordsSets = False
-    texCoordSets = geometry.get('texcoordsets', 0)
-    if texCoordSets > 0 and 'uvsets' in geometry:
+    texCoordSets = geometry.get("texcoordsets", 0)
+    if texCoordSets > 0 and "uvsets" in geometry:
         isTexCoordsSets = True
-        uvSets = geometry['uvsets']
+        uvSets = geometry["uvsets"]
 
     # vertex colours
     isColours = False
-    if 'colours' in geometry:
+    if "colours" in geometry:
         isColours = True
-        colours = geometry['colours']
+        colours = geometry["colours"]
 
     # tangents (+ optional parity)
     isTangents = False
-    if 'tangents' in geometry:
+    if "tangents" in geometry:
         isTangents = True
-        tangents = geometry['tangents']
-    isParity = isTangents and geometry.get('parity', False)
+        tangents = geometry["tangents"]
+    isParity = isTangents and geometry.get("parity", False)
 
     # binormals
     isBinormals = False
-    if 'binormals' in geometry:
+    if "binormals" in geometry:
         isBinormals = True
-        binormals = geometry['binormals']
+        binormals = geometry["binormals"]
 
     # ------------------------------------------------------------------
     # OgreMeshUpgrader-style split:
@@ -681,7 +710,8 @@ def xSaveGeometry(geometry, xDoc, xMesh, isShared):
                 xColour = xDoc.createElement("colour_diffuse")
                 xColour.setAttribute(
                     "value",
-                    "%g %g %g %g" % (
+                    "%g %g %g %g"
+                    % (
                         colours[i][0],
                         colours[i][1],
                         colours[i][2],
@@ -715,32 +745,29 @@ def xSaveGeometry(geometry, xDoc, xMesh, isShared):
                 xVertexAttr.appendChild(xTangent)
 
 
-
-
 def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
 
     xSubMeshes = xDoc.createElement("submeshes")
     xMesh.appendChild(xSubMeshes)
 
-    for submesh in meshData['submeshes']:
+    for submesh in meshData["submeshes"]:
 
-        numVerts = len(submesh['geometry']['positions'])
+        numVerts = len(submesh["geometry"]["positions"])
 
         xSubMesh = xDoc.createElement("submesh")
-        xSubMesh.setAttribute("material", submesh['material'])
+        xSubMesh.setAttribute("material", submesh["material"])
         if hasSharedGeometry:
             xSubMesh.setAttribute("usesharedvertices", "true")
         else:
             xSubMesh.setAttribute("usesharedvertices", "false")
             xSubMesh.setAttribute(
-                "use32bitindexes",
-                "true" if numVerts > 65535 else "false"
+                "use32bitindexes", "true" if numVerts > 65535 else "false"
             )
         xSubMesh.setAttribute("operationtype", "triangle_list")
         xSubMeshes.appendChild(xSubMesh)
         # write all faces
-        if 'faces' in submesh:
-            faces = submesh['faces']
+        if "faces" in submesh:
+            faces = submesh["faces"]
             xFaces = xDoc.createElement("faces")
             xFaces.setAttribute("count", str(len(faces)))
             xSubMesh.appendChild(xFaces)
@@ -751,24 +778,23 @@ def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
                 xFace.setAttribute("v3", str(face[2]))
                 xFaces.appendChild(xFace)
         # if there is geometry per sub mesh
-        if 'geometry' in submesh:
-            geometry = submesh['geometry']
+        if "geometry" in submesh:
+            geometry = submesh["geometry"]
             xSaveGeometry(geometry, xDoc, xSubMesh, hasSharedGeometry)
         # boneassignments
-        if 'skeleton' in meshData:
-            skeleton = meshData['skeleton']
+        if "skeleton" in meshData:
+            skeleton = meshData["skeleton"]
             xBoneAssignments = xDoc.createElement("boneassignments")
-            for vxIdx, vxBoneAsg in enumerate(submesh['geometry']['boneassignments']):
+            for vxIdx, vxBoneAsg in enumerate(submesh["geometry"]["boneassignments"]):
                 for boneAndWeight in vxBoneAsg:
                     boneName = boneAndWeight[0]
                     boneWeight = boneAndWeight[1]
-                    xVxBoneassignment = xDoc.createElement(
-                        "vertexboneassignment")
+                    xVxBoneassignment = xDoc.createElement("vertexboneassignment")
                     xVxBoneassignment.setAttribute("vertexindex", str(vxIdx))
                     xVxBoneassignment.setAttribute(
-                        "boneindex", str(skeleton.bone_id(boneName)))
-                    xVxBoneassignment.setAttribute(
-                        "weight", '%6f' % MZP(boneWeight))
+                        "boneindex", str(skeleton.bone_id(boneName))
+                    )
+                    xVxBoneassignment.setAttribute("weight", "%6f" % MZP(boneWeight))
                     xBoneAssignments.appendChild(xVxBoneassignment)
             xSubMesh.appendChild(xBoneAssignments)
 
@@ -776,51 +802,51 @@ def xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry):
 def xSavePoses(meshData, xDoc, xMesh):
     xPoses = xDoc.createElement("poses")
     xMesh.appendChild(xPoses)
-    for index, submesh in enumerate(meshData['submeshes']):
-        if not submesh['poses']:
+    for index, submesh in enumerate(meshData["submeshes"]):
+        if not submesh["poses"]:
             continue
-        for name in submesh['poses']:
+        for name in submesh["poses"]:
             xPose = xDoc.createElement("pose")
-            xPose.setAttribute('target', 'submesh')
-            xPose.setAttribute('index', str(index))
-            xPose.setAttribute('name', name)
+            xPose.setAttribute("target", "submesh")
+            xPose.setAttribute("index", str(index))
+            xPose.setAttribute("name", name)
             xPoses.appendChild(xPose)
-            pose = submesh['poses'][name]
+            pose = submesh["poses"][name]
             for v in pose:
-                xPoseVertex = xDoc.createElement('poseoffset')
-                xPoseVertex.setAttribute('index', str(v[0]))
-                xPoseVertex.setAttribute('x', '%6f' % MZP(v[1]))
-                xPoseVertex.setAttribute('y', '%6f' % MZP(v[3]))
-                xPoseVertex.setAttribute('z', '%6f' % MZP(-v[2]))
+                xPoseVertex = xDoc.createElement("poseoffset")
+                xPoseVertex.setAttribute("index", str(v[0]))
+                xPoseVertex.setAttribute("x", "%6f" % MZP(v[1]))
+                xPoseVertex.setAttribute("y", "%6f" % MZP(v[3]))
+                xPoseVertex.setAttribute("z", "%6f" % MZP(-v[2]))
                 xPose.appendChild(xPoseVertex)
 
 
 def xSaveSkeletonData(blenderMeshData, filepath):
     from xml.dom.minidom import Document
 
-    if 'skeleton' in blenderMeshData:
-        skeleton = blenderMeshData['skeleton']
+    if "skeleton" in blenderMeshData:
+        skeleton = blenderMeshData["skeleton"]
 
         xDoc = Document()
         xRoot = xDoc.createElement("skeleton")
         xDoc.appendChild(xRoot)
         skeleton.export_xml(xDoc, xRoot)
 
-        if 'animations' in blenderMeshData:
+        if "animations" in blenderMeshData:
             xSaveAnimations(blenderMeshData, xRoot, xDoc)
 
-        #xmlfile = os.path.join(filepath, '%s.skeleton.xml' %name )
+        # xmlfile = os.path.join(filepath, '%s.skeleton.xml' %name )
         nameOnly = os.path.splitext(filepath)[0]  # removing .mesh
         xmlfile = nameOnly + ".skeleton.xml"
-        with open(xmlfile, 'wb') as f:
-            f.write(xDoc.toxml(encoding='utf-8'))
+        with open(xmlfile, "wb") as f:
+            f.write(xDoc.toxml(encoding="utf-8"))
 
 
 def xSaveMeshData(meshData, filepath, export_skeleton):
     from xml.dom.minidom import Document
 
     hasSharedGeometry = False
-    if 'sharedgeometry' in meshData:
+    if "sharedgeometry" in meshData:
         hasSharedGeometry = True
 
     # Create the minidom document
@@ -831,40 +857,40 @@ def xSaveMeshData(meshData, filepath, export_skeleton):
     xDoc.appendChild(xMesh)
 
     if hasSharedGeometry:
-        geometry = meshData['sharedgeometry']
+        geometry = meshData["sharedgeometry"]
         xSaveGeometry(geometry, xDoc, xMesh, hasSharedGeometry)
 
     xSaveSubMeshes(meshData, xDoc, xMesh, hasSharedGeometry)
 
-    if 'has_poses' in meshData:
+    if "has_poses" in meshData:
         xSavePoses(meshData, xDoc, xMesh)
 
     # skeleton link only
-    if 'skeleton' in meshData:
+    if "skeleton" in meshData:
         xSkeletonlink = xDoc.createElement("skeletonlink")
         # default skeleton
-        linkSkeletonName = meshData['skeleton'].name
-        if(export_skeleton):
+        linkSkeletonName = meshData["skeleton"].name
+        if export_skeleton:
             nameDotMeshDotXml = os.path.split(filepath)[1].lower()
             nameDotMesh = os.path.splitext(nameDotMeshDotXml)[0]
             linkSkeletonName = os.path.splitext(nameDotMesh)[0]
-        #xSkeletonlink.setAttribute("name", meshData['skeleton']['name']+".skeleton")
-        xSkeletonlink.setAttribute("name", linkSkeletonName+".skeleton")
+        # xSkeletonlink.setAttribute("name", meshData['skeleton']['name']+".skeleton")
+        xSkeletonlink.setAttribute("name", linkSkeletonName + ".skeleton")
         xMesh.appendChild(xSkeletonlink)
 
     # Print our newly created XML
-    with open(filepath + ".xml", 'wb') as fileWr:
-        fileWr.write(xDoc.toxml(encoding='utf-8'))
+    with open(filepath + ".xml", "wb") as fileWr:
+        fileWr.write(xDoc.toxml(encoding="utf-8"))
 
 
 def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
     """Write Battlezone-style .material using BZBase templates."""
-    if 'materials' not in meshData:
+    if "materials" not in meshData:
         return
-    allMatData = meshData['materials']
+    allMatData = meshData["materials"]
 
     if len(allMatData) <= 0:
-        print('Mesh has no materials')
+        print("Mesh has no materials")
         return
 
     matFile = os.path.splitext(filepath)[0]  # removing .mesh
@@ -883,6 +909,7 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
     def derive_map_names(mat_name: str, tex_name: str):
         # Use texture name if available, else fall back to material name
         import os
+
         base_src = tex_name or mat_name
         base = os.path.splitext(os.path.basename(base_src))[0]
 
@@ -895,8 +922,8 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
 
         diffuse = root + "_d.dds"
         normal = root + "_n.dds"
-        spec   = root + "_S.dds"
-        emiss  = root + "_e.dds"
+        spec = root + "_S.dds"
+        emiss = root + "_e.dds"
         return diffuse, normal, spec, emiss
 
     def fmt_rgb(rgb):
@@ -905,7 +932,7 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
 
     # If there is no material file, or we are forced to overwrite it, write the material file
     if not isMaterial or overwriteMaterialFlag:
-        with open(matFile, 'w', encoding="utf-8") as fileWr:
+        with open(matFile, "w", encoding="utf-8") as fileWr:
             # Header
             fileWr.write('import * from "BZBase.material"\n\n')
 
@@ -913,13 +940,15 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
                 base_template = guess_bz_base_template(matName)
 
                 # Colors (fall back to sane defaults if missing)
-                amb = matInfo.get('ambient',  [1.0, 1.0, 1.0])
-                dif = matInfo.get('diffuse',  [1.0, 1.0, 1.0])
-                spe = matInfo.get('specular', [0.7, 0.7, 0.7])  # BZ sample uses ~0.7
+                amb = matInfo.get("ambient", [1.0, 1.0, 1.0])
+                dif = matInfo.get("diffuse", [1.0, 1.0, 1.0])
+                spe = matInfo.get("specular", [0.7, 0.7, 0.7])  # BZ sample uses ~0.7
                 # emissive is usually controlled by the emissive map, so not used here
 
-                tex_name = matInfo.get('texture', None)
-                diffuse_tex, normal_tex, spec_tex, emiss_tex = derive_map_names(matName, tex_name)
+                tex_name = matInfo.get("texture", None)
+                diffuse_tex, normal_tex, spec_tex, emiss_tex = derive_map_names(
+                    matName, tex_name
+                )
 
                 fileWr.write(f"material {matName} : {base_template}\n")
                 fileWr.write("{\n")
@@ -942,28 +971,26 @@ def xSaveMaterialData(filepath, meshData, overwriteMaterialFlag, copyTextures):
     # try to copy material textures to destination (kept exactly as before)
     if copyTextures:
         for matName, matInfo in allMatData.items():
-            if 'texture' in matInfo:
-                if 'texture_path' in matInfo:
-                    srcTextureFile = matInfo['texture_path']
+            if "texture" in matInfo:
+                if "texture_path" in matInfo:
+                    srcTextureFile = matInfo["texture_path"]
                     baseDirName = os.path.dirname(bpy.data.filepath)
-                    if (srcTextureFile[0:2] == "//"):
-                        print("Converting relative image name \"%s\"" %
-                              srcTextureFile)
-                        srcTextureFile = os.path.join(
-                            baseDirName, srcTextureFile[2:])
+                    if srcTextureFile[0:2] == "//":
+                        print('Converting relative image name "%s"' % srcTextureFile)
+                        srcTextureFile = os.path.join(baseDirName, srcTextureFile[2:])
                     if fileExist(srcTextureFile):
                         # copy texture to dir
-                        print("Copying texture \"%s\"" % srcTextureFile)
+                        print('Copying texture "%s"' % srcTextureFile)
                         try:
-                            print(" to \"%s\"" % os.path.dirname(matFile))
-                            shutil.copy(srcTextureFile,
-                                        os.path.dirname(matFile))
+                            print(' to "%s"' % os.path.dirname(matFile))
+                            shutil.copy(srcTextureFile, os.path.dirname(matFile))
                         except:
-                            print("Error copying \"%s\"" % srcTextureFile)
+                            print('Error copying "%s"' % srcTextureFile)
                     else:
                         print(
-                            "Can't copy texture \"%s\" because file does not exists!" % srcTextureFile)
-
+                            'Can\'t copy texture "%s" because file does not exists!'
+                            % srcTextureFile
+                        )
 
 
 def getVertexIndex(vertexInfo, vertexList):
@@ -974,7 +1001,8 @@ def getVertexIndex(vertexInfo, vertexList):
 
     # not present in list:
     vertexList.append(vertexInfo)
-    return len(vertexList)-1
+    return len(vertexList) - 1
+
 
 # Convert rgb colour to brightness value - used for alpha channel
 
@@ -985,18 +1013,22 @@ def luminosity(c):
 
 def bCollectMeshData(operator, meshData, selectedObjects, export_params):
     import bmesh
+
     subMeshesData = []
     for ob in selectedObjects:
         subMeshData = {}
-        #ob = bpy.types.Object ##
+        # ob = bpy.types.Object ##
         materialName = ob.name
         for m in ob.data.materials:
             if m:
                 materialName = m.name
 
-        #mesh = bpy.types.Mesh ##
-        tobj = ob.evaluated_get(
-            bpy.context.evaluated_depsgraph_get()) if export_params['apply_modifiers'] else ob
+        # mesh = bpy.types.Mesh ##
+        tobj = (
+            ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
+            if export_params["apply_modifiers"]
+            else ob
+        )
         mesh = tobj.to_mesh()
 
         # use bmesh to triangulate
@@ -1023,7 +1055,7 @@ def bCollectMeshData(operator, meshData, selectedObjects, export_params):
         if mesh.vertex_colors.active and export_params["export_colour"]:
             colourData = mesh.vertex_colors.active.data
             for layer in mesh.vertex_colors:
-                if layer.name.lower() == 'alpha':
+                if layer.name.lower() == "alpha":
                     alphaData = layer.data
                     # pick a different one for colour if alpha layer is active
                     if layer.active:
@@ -1039,26 +1071,38 @@ def bCollectMeshData(operator, meshData, selectedObjects, export_params):
         map = {}
 
         import sys
+
         progressScale = 1.0 / (len(mesh.polygons) - 1)
         for fidx, face in enumerate(mesh.polygons):
             tris = []
             tris.append((face.vertices[0], face.vertices[1], face.vertices[2]))
-            if(len(face.vertices) >= 4):
-                tris.append(
-                    (face.vertices[0], face.vertices[2], face.vertices[3]))
+            if len(face.vertices) >= 4:
+                tris.append((face.vertices[0], face.vertices[2], face.vertices[3]))
             if SHOW_EXPORT_TRACE_VX:
-                print("_face: " + str(fidx) +
-                      " indices [" + str(list(face.vertices)) + "]")
+                print(
+                    "_face: "
+                    + str(fidx)
+                    + " indices ["
+                    + str(list(face.vertices))
+                    + "]"
+                )
 
             # Progress
             percent = fidx * progressScale
-            sys.stdout.write("\rVertices [" + '=' * int(percent*50) + '>' + '.' * int(
-                50-percent*50) + "] " + str(int(percent*10000)/100.0) + "%   ")
+            sys.stdout.write(
+                "\rVertices ["
+                + "=" * int(percent * 50)
+                + ">"
+                + "." * int(50 - percent * 50)
+                + "] "
+                + str(int(percent * 10000) / 100.0)
+                + "%   "
+            )
             sys.stdout.flush()
 
             # should be triangles
             if len(face.vertices) != 3:
-                raise ValueError('Polygon not a triangle')
+                raise ValueError("Polygon not a triangle")
 
             # Add triangle
             newFaceVx = []
@@ -1069,97 +1113,126 @@ def bCollectMeshData(operator, meshData, selectedObjects, export_params):
                 px, py, pz = mesh.vertices[vertex].co
                 nx, ny, nz = mesh.loops[loop].normal
                 u, v = uvData[loop].uv if uvData else (0, 0)
-                r, g, b, a = colourData[loop].color if colourData else (
-                    1, 1, 1, 1)
+                r, g, b, a = colourData[loop].color if colourData else (1, 1, 1, 1)
 
-                #a = alphaData[loop].color[0] if alphaData else 1
+                # a = alphaData[loop].color[0] if alphaData else 1
 
                 if alphaData:
                     a = alphaData[loop].color[0]
 
                 if not export_params["zero_tangents_binormals"]:
-                    tangent = mesh.loops[loop].tangent[:] + \
-                        (mesh.loops[loop].bitangent_sign,
-                        ) if export_params["export_tangents"] else None
-                    binormal = mesh.loops[loop].bitangent * - \
-                        1 if export_params["export_binormals"] else None
+                    tangent = (
+                        mesh.loops[loop].tangent[:] + (mesh.loops[loop].bitangent_sign,)
+                        if export_params["export_tangents"]
+                        else None
+                    )
+                    binormal = (
+                        mesh.loops[loop].bitangent * -1
+                        if export_params["export_binormals"]
+                        else None
+                    )
                 else:
-                    tangent = [0,0,0,1]
-                    binormal = [0,0,0,1]
+                    tangent = [0, 0, 0, 1]
+                    binormal = [0, 0, 0, 1]
 
                 # vertex groups
                 boneWeights = {}
                 if len(mesh.vertices[vertex].groups) <= 3:
-                    #we have 3 or less bone weights, just dump all of them into mesh weights
-                    
+                    # we have 3 or less bone weights, just dump all of them into mesh weights
+
                     weightList = mesh.vertices[vertex].groups.items()
-                    #iterate backwards through list and remove items not in the
-                    for wi in range(len(weightList) - 1 ,-1, -1):
+                    # iterate backwards through list and remove items not in the
+                    for wi in range(len(weightList) - 1, -1, -1):
                         if weightList[wi][1].group > len(ob.vertex_groups) - 1:
-                            operator.report({'WARNING'} ,"vert: " + str(fidx) + " - has invalid vertex group: " + str(weightList[wi][1].group) + 
-                                            "!\n Continuing export without group. Vertex weights may not work as expected." +
-                                            "\n When transfering a mesh from one armature to another make sure to clear all vertex groups first.")
+                            operator.report(
+                                {"WARNING"},
+                                "vert: "
+                                + str(fidx)
+                                + " - has invalid vertex group: "
+                                + str(weightList[wi][1].group)
+                                + "!\n Continuing export without group. Vertex weights may not work as expected."
+                                + "\n When transfering a mesh from one armature to another make sure to clear all vertex groups first.",
+                            )
                             weightList.pop(wi)
 
                     for vxGroup in weightList:
                         vg = ob.vertex_groups[vxGroup[1].group]
                         boneWeights[vg.name] = vxGroup[1].weight
                 else:
-                    #We have more than 3 bone weights, Only take highest 3 weights
+                    # We have more than 3 bone weights, Only take highest 3 weights
                     weightList = mesh.vertices[vertex].groups.items()
 
-
-                    #iterate backwards through list and remove items not in the
-                    for wi in range(len(weightList) - 1 ,-1, -1):
+                    # iterate backwards through list and remove items not in the
+                    for wi in range(len(weightList) - 1, -1, -1):
                         if weightList[wi][1].group > len(ob.vertex_groups) - 1:
-                            operator.report({'WARNING'} ,"vert: " + str(fidx) + " - has invalid vertex group: " + str(weightList[wi][1].group) + 
-                                            "!\n Continuing export without group. Vertex weights may not work as expected." +
-                                            "\n When transfering a mesh from one armature to another make sure to clear all vertex groups first.")
+                            operator.report(
+                                {"WARNING"},
+                                "vert: "
+                                + str(fidx)
+                                + " - has invalid vertex group: "
+                                + str(weightList[wi][1].group)
+                                + "!\n Continuing export without group. Vertex weights may not work as expected."
+                                + "\n When transfering a mesh from one armature to another make sure to clear all vertex groups first.",
+                            )
                             weightList.pop(wi)
 
                     tempWeights = []
                     for i in range(3):
                         tempWeights.append(weightList[i])
-                    
-                    minWeight = 0#index to smallest weight
 
-                    #get smallest weight index
+                    minWeight = 0  # index to smallest weight
+
+                    # get smallest weight index
                     for i in range(3):
                         if tempWeights[i][1].weight < tempWeights[minWeight][1].weight:
                             minWeight = i
-                    
-                    #iterate through the weights, this should get us the smallest 4 weights in an arbitrary order
+
+                    # iterate through the weights, this should get us the smallest 4 weights in an arbitrary order
                     for i in range(3, len(weightList)):
                         if weightList[i][1].weight > tempWeights[minWeight][1].weight:
                             tempWeights[minWeight] = weightList[i]
 
-                            #get smallest weight again
+                            # get smallest weight again
                             for i in range(3):
-                                if tempWeights[i][1].weight < tempWeights[minWeight][1].weight:
+                                if (
+                                    tempWeights[i][1].weight
+                                    < tempWeights[minWeight][1].weight
+                                ):
                                     minWeight = i
 
                     for w in tempWeights:
                         vg = ob.vertex_groups[w[1].group]
                         boneWeights[vg.name] = w[1].weight
-                    
+
                     # optional renormalize
                     if export_params["renormalize_weights"]:
                         weightTotal = 0
                         for bkey in boneWeights:
                             weightTotal += boneWeights[bkey]
-                        
+
                         for bkey in boneWeights:
                             if boneWeights[bkey] != 0:  # Skip if weight is 0
                                 boneWeights[bkey] /= weightTotal
 
-
-                    
-
-
-
                 # Add vertex
-                vert = VertexInfo(px, py, pz, nx, ny, nz, u, v, r,
-                                  g, b, a, boneWeights, vertex, tangent, binormal)
+                vert = VertexInfo(
+                    px,
+                    py,
+                    pz,
+                    nx,
+                    ny,
+                    nz,
+                    u,
+                    v,
+                    r,
+                    g,
+                    b,
+                    a,
+                    boneWeights,
+                    vertex,
+                    tangent,
+                    binormal,
+                )
                 newVxIdx = map.get(vert)
                 if newVxIdx == None:
                     newVxIdx = len(vertexList)
@@ -1213,7 +1286,11 @@ def bCollectMeshData(operator, meshData, selectedObjects, export_params):
 
         # Shape keys - poses
         poses = None
-        if export_params["export_poses"] and mesh.shape_keys and mesh.shape_keys.key_blocks:
+        if (
+            export_params["export_poses"]
+            and mesh.shape_keys
+            and mesh.shape_keys.key_blocks
+        ):
             poses = {}
             for pose in mesh.shape_keys.key_blocks:
                 if pose.relative_key:
@@ -1229,37 +1306,37 @@ def bCollectMeshData(operator, meshData, selectedObjects, export_params):
                     if poseData:
                         poses[pose.name] = poseData
 
-        geometry['positions'] = positions
-        geometry['normals'] = normals
-        geometry['texcoordsets'] = len(mesh.uv_layers)
+        geometry["positions"] = positions
+        geometry["normals"] = normals
+        geometry["texcoordsets"] = len(mesh.uv_layers)
         if SHOW_EXPORT_TRACE:
             print("texcoordsets: " + str(len(mesh.uv_layers)))
         if uvData:
-            geometry['uvsets'] = uvTex
+            geometry["uvsets"] = uvTex
         if colourData or alphaData:
-            geometry['colours'] = colours
+            geometry["colours"] = colours
         if export_params["export_tangents"]:
-            geometry['tangents'] = tangents
-            geometry['parity'] = needsParity
+            geometry["tangents"] = tangents
+            geometry["parity"] = needsParity
         if export_params["export_binormals"]:
-            geometry['binormals'] = binormals
+            geometry["binormals"] = binormals
 
         # need bone name to bone ID dict
-        geometry['boneassignments'] = boneAssignments
+        geometry["boneassignments"] = boneAssignments
 
-        subMeshData['material'] = materialName
-        subMeshData['faces'] = faces
-        subMeshData['geometry'] = geometry
-        subMeshData['poses'] = poses
+        subMeshData["material"] = materialName
+        subMeshData["faces"] = faces
+        subMeshData["geometry"] = geometry
+        subMeshData["poses"] = poses
         subMeshesData.append(subMeshData)
 
         if poses:
-            meshData['has_poses'] = True
+            meshData["has_poses"] = True
 
         # Clear temporary mesh data
         tobj.to_mesh_clear()
 
-    meshData['submeshes'] = subMeshesData
+    meshData["submeshes"] = subMeshesData
 
     return meshData
 
@@ -1272,16 +1349,16 @@ def bCollectSkeletonData(blenderMeshData, selectedObjects):
     if selectedObjects[0].find_armature():
         # creates and parses blender skeleton
         skeleton = Skeleton(selectedObjects[0])
-        blenderMeshData['skeleton'] = skeleton
+        blenderMeshData["skeleton"] = skeleton
 
 
 def bCollectMaterialData(blenderMeshData, selectedObjects):
 
     allMaterials = {}
-    blenderMeshData['materials'] = allMaterials
+    blenderMeshData["materials"] = allMaterials
 
     for ob in selectedObjects:
-        if ob.type != 'MESH' or len(ob.data.materials) == 0:
+        if ob.type != "MESH" or len(ob.data.materials) == 0:
             continue
 
         for mat in ob.data.materials:
@@ -1306,7 +1383,7 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
                 # Try to find a Principled BSDF
                 principled = None
                 for n in nodes:
-                    if n.type == 'BSDF_PRINCIPLED':
+                    if n.type == "BSDF_PRINCIPLED":
                         principled = n
                         break
 
@@ -1325,7 +1402,9 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
                         emissive = (e[0], e[1], e[2])
 
                     # Specular
-                    spec_in = principled.inputs.get("Specular Tint") or principled.inputs.get("Specular")
+                    spec_in = principled.inputs.get(
+                        "Specular Tint"
+                    ) or principled.inputs.get("Specular")
                     if spec_in and hasattr(spec_in, "default_value"):
                         # Just use diffuse as base and scale a bit
                         sc = diffuse
@@ -1334,7 +1413,7 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
                 # Find first image texture node
                 img_node = None
                 for n in nodes:
-                    if n.type == 'TEX_IMAGE' and getattr(n, "image", None):
+                    if n.type == "TEX_IMAGE" and getattr(n, "image", None):
                         img_node = n
                         break
 
@@ -1359,28 +1438,31 @@ def bCollectMaterialData(blenderMeshData, selectedObjects):
                 # Very old API: texture_slots
                 if hasattr(mat, "texture_slots"):
                     for slot in mat.texture_slots:
-                        if (slot and getattr(slot, "texture", None)
-                                and slot.texture.type == 'IMAGE'
-                                and slot.texture.image):
+                        if (
+                            slot
+                            and getattr(slot, "texture", None)
+                            and slot.texture.type == "IMAGE"
+                            and slot.texture.image
+                        ):
                             tex_name = slot.texture.image.name
                             tex_path = slot.texture.image.filepath
                             break
 
             # --- Fill matInfo in Ogre format ---
-            matInfo['ambient'] = [ambient[0], ambient[1], ambient[2]]
-            matInfo['diffuse'] = [diffuse[0], diffuse[1], diffuse[2]]
-            matInfo['specular'] = [specular[0], specular[1], specular[2]]
-            matInfo['emissive'] = [emissive[0], emissive[1], emissive[2]]
+            matInfo["ambient"] = [ambient[0], ambient[1], ambient[2]]
+            matInfo["diffuse"] = [diffuse[0], diffuse[1], diffuse[2]]
+            matInfo["specular"] = [specular[0], specular[1], specular[2]]
+            matInfo["emissive"] = [emissive[0], emissive[1], emissive[2]]
 
             if tex_name:
-                matInfo['texture'] = tex_name
+                matInfo["texture"] = tex_name
             if tex_path:
-                matInfo['texture_path'] = tex_path
+                matInfo["texture_path"] = tex_path
 
 
-
-def XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
-                     export_skeleton, keep_xml):
+def XMLtoOGREConvert(
+    blenderMeshData, filepath, ogreXMLconverter, export_skeleton, keep_xml
+):
 
     if ogreXMLconverter is None:
         return False
@@ -1394,13 +1476,15 @@ def XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
         # remove XML file if successfully converted
         if keep_xml is False and os.path.isfile(xmlFilepath):
             os.unlink("%s" % xmlFilepath)
-            if not os.path.isfile(filepath):#return false if the .mesh file wasn't generated
+            if not os.path.isfile(
+                filepath
+            ):  # return false if the .mesh file wasn't generated
                 print("Could not find .mesh: ", filepath)
                 return False
         else:
             return False
 
-        if 'skeleton' in blenderMeshData and export_skeleton:
+        if "skeleton" in blenderMeshData and export_skeleton:
             # for skeleton
             skelFile = os.path.splitext(filepath)[0]  # removing .mesh
             skelFile = skelFile + ".skeleton"
@@ -1410,7 +1494,9 @@ def XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
             # remove XML file
             if keep_xml is False and os.path.isfile(xmlFilepath):
                 os.unlink("%s" % xmlFilepath)
-                if not os.path.isfile(skelFile):#return false if the .skeleton file wasn't generated
+                if not os.path.isfile(
+                    skelFile
+                ):  # return false if the .skeleton file wasn't generated
                     print("Could not find .skeleton: ", skelFile)
                     return False
 
@@ -1421,53 +1507,56 @@ def XMLtoOGREConvert(blenderMeshData, filepath, ogreXMLconverter,
         return False
 
 
-def save(operator, context, filepath,
-         xml_converter=None,
-         keep_xml=False,
-         export_tangents=False,
-         export_binormals=False,
-         zero_tangents_binormals=False,
-         export_colour=False,
-         tangent_parity=False,
-         apply_transform=True,
-         apply_modifiers=True,
-         export_materials=False,
-         overwrite_material=False,
-         copy_textures=False,
-         export_skeleton=False,
-         export_poses=False,
-         export_animation=False,
-         renormalize_weights=True,
-         batch_export=False,
-         ):
+def save(
+    operator,
+    context,
+    filepath,
+    xml_converter=None,
+    keep_xml=False,
+    export_tangents=False,
+    export_binormals=False,
+    zero_tangents_binormals=False,
+    export_colour=False,
+    tangent_parity=False,
+    apply_transform=True,
+    apply_modifiers=True,
+    export_materials=False,
+    overwrite_material=False,
+    copy_textures=False,
+    export_skeleton=False,
+    export_poses=False,
+    export_animation=False,
+    renormalize_weights=True,
+    batch_export=False,
+):
 
     export_params = {
-         "xml_converter" : xml_converter,
-         "keep_xml" : keep_xml,
-         "export_tangents" : export_tangents,
-         "export_binormals" : export_binormals,
-         "zero_tangents_binormals" : zero_tangents_binormals,
-         "export_colour" : export_colour,
-         "tangent_parity" : tangent_parity,
-         "apply_transform" : apply_transform,
-         "apply_modifiers" : apply_modifiers,
-         "export_materials" : export_materials,
-         "overwrite_material" : overwrite_material,
-         "copy_textures" : copy_textures,
-         "export_skeleton" : export_skeleton,
-         "export_poses" : export_poses,
-         "export_animation" : export_animation,
-         "renormalize_weights": renormalize_weights,
-         "batch_export" : batch_export
+        "xml_converter": xml_converter,
+        "keep_xml": keep_xml,
+        "export_tangents": export_tangents,
+        "export_binormals": export_binormals,
+        "zero_tangents_binormals": zero_tangents_binormals,
+        "export_colour": export_colour,
+        "tangent_parity": tangent_parity,
+        "apply_transform": apply_transform,
+        "apply_modifiers": apply_modifiers,
+        "export_materials": export_materials,
+        "overwrite_material": overwrite_material,
+        "copy_textures": copy_textures,
+        "export_skeleton": export_skeleton,
+        "export_poses": export_poses,
+        "export_animation": export_animation,
+        "renormalize_weights": renormalize_weights,
+        "batch_export": batch_export,
     }
 
     global blender_version
 
-    blender_version = bpy.app.version[0]*100 + bpy.app.version[1]
-    if(not batch_export):
+    blender_version = bpy.app.version[0] * 100 + bpy.app.version[1]
+    if not batch_export:
 
         # just check if there is extension - .mesh
-        if '.mesh' not in filepath.lower():
+        if ".mesh" not in filepath.lower():
             filepath = filepath + ".mesh"
 
         print("saving...")
@@ -1477,17 +1566,17 @@ def save(operator, context, filepath,
         selectedObjects = []
         scn = bpy.context.view_layer
         for ob in scn.objects:
-            if ob.select_get() and ob.type != 'ARMATURE':
+            if ob.select_get() and ob.type != "ARMATURE":
                 selectedObjects.append(ob)
 
         if len(selectedObjects) == 0:
             print("No objects selected for export.")
-            operator.report({'WARNING'}, "No objects selected for export")
-            return {'CANCELLED'}
+            operator.report({"WARNING"}, "No objects selected for export")
+            return {"CANCELLED"}
 
         # go to the object mode
         if context.active_object:
-            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.mode_set(mode="OBJECT")
 
         # apply transform
         if apply_transform:
@@ -1508,11 +1597,11 @@ def save(operator, context, filepath,
             bCollectAnimationData(blenderMeshData)
 
         if SHOW_EXPORT_TRACE:
-            print(blenderMeshData['materials'])
+            print(blenderMeshData["materials"])
 
         if SHOW_EXPORT_DUMPS:
             dumpFile = filepath + ".EDump"
-            fileWr = open(dumpFile, 'w')
+            fileWr = open(dumpFile, "w")
             fileWr.write(str(blenderMeshData))
             fileWr.close()
 
@@ -1521,34 +1610,34 @@ def save(operator, context, filepath,
 
         xSaveMeshData(blenderMeshData, filepath, export_skeleton)
 
-        xSaveMaterialData(filepath, blenderMeshData,
-                          overwrite_material, copy_textures)
+        xSaveMaterialData(filepath, blenderMeshData, overwrite_material, copy_textures)
 
-        if not XMLtoOGREConvert(blenderMeshData, filepath, xml_converter, export_skeleton, keep_xml):
-            operator.report(
-                {'WARNING'}, "Failed to convert .xml files to .mesh")
+        if not XMLtoOGREConvert(
+            blenderMeshData, filepath, xml_converter, export_skeleton, keep_xml
+        ):
+            operator.report({"WARNING"}, "Failed to convert .xml files to .mesh")
     else:
 
         # just check if there is extension - .mesh
         # if '.mesh' not in filepath.lower():
-        #filepath = filepath + ".mesh"
+        # filepath = filepath + ".mesh"
         directory = os.path.dirname(filepath)
 
         # get mesh data from selected objects
         selectedObjects = []
         scn = bpy.context.view_layer
         for ob in scn.objects:
-            if ob.select_get() and ob.type != 'ARMATURE':
+            if ob.select_get() and ob.type != "ARMATURE":
                 selectedObjects.append(ob)
 
         if len(selectedObjects) == 0:
             print("No objects selected for export.")
-            operator.report({'WARNING'}, "No objects selected for export")
-            return {'CANCELLED'}
+            operator.report({"WARNING"}, "No objects selected for export")
+            return {"CANCELLED"}
 
         # go to the object mode
         if context.active_object:
-            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.mode_set(mode="OBJECT")
 
         for obj in selectedObjects:
 
@@ -1579,11 +1668,11 @@ def save(operator, context, filepath,
                 bCollectAnimationData(blenderMeshData)
 
             if SHOW_EXPORT_TRACE:
-                print(blenderMeshData['materials'])
+                print(blenderMeshData["materials"])
 
             if SHOW_EXPORT_DUMPS:
                 dumpFile = filepath + ".EDump"
-                fileWr = open(dumpFile, 'w')
+                fileWr = open(dumpFile, "w")
                 fileWr.write(str(blenderMeshData))
                 fileWr.close()
 
@@ -1592,13 +1681,15 @@ def save(operator, context, filepath,
 
             xSaveMeshData(blenderMeshData, filepath, export_skeleton)
 
-            xSaveMaterialData(filepath, blenderMeshData,
-                              overwrite_material, copy_textures)
+            xSaveMaterialData(
+                filepath, blenderMeshData, overwrite_material, copy_textures
+            )
 
-            if not XMLtoOGREConvert(blenderMeshData, filepath, xml_converter, export_skeleton, keep_xml):
-                operator.report(
-                    {'WARNING'}, "Failed to convert .xml files to .mesh")
+            if not XMLtoOGREConvert(
+                blenderMeshData, filepath, xml_converter, export_skeleton, keep_xml
+            ):
+                operator.report({"WARNING"}, "Failed to convert .xml files to .mesh")
 
     print("done.")
 
-    return {'FINISHED'}
+    return {"FINISHED"}
