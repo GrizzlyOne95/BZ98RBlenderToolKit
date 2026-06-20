@@ -1,3 +1,5 @@
+from typing import Any
+
 # Battlezone 98R Blender ToolKit
 # Copyright (C) 2024-2026 "GrizzlyOne95" and contributors
 #
@@ -12,7 +14,6 @@ from mathutils import Vector
 
 from . import validation as bz_validation
 
-
 WEIGHT_MODE_NEAREST = "NEAREST"
 WEIGHT_MODE_BLENDS = "BLENDS"
 
@@ -26,13 +27,16 @@ def is_valid_geo_control(obj):
         return False
     if getattr(obj, "GEOPropertyGroup", None) is None:
         return False
-    return bool(bz_validation.parse_legacy_geo_name(getattr(obj, "name", "")).get("valid"))
+    return bool(
+        bz_validation.parse_legacy_geo_name(getattr(obj, "name", "")).get("valid")
+    )
 
 
 def collect_selected_geo_controls(context, target_obj):
     return sort_controls_for_bones(
         [
-            obj for obj in getattr(context, "selected_objects", [])
+            obj
+            for obj in getattr(context, "selected_objects", [])
             if obj != target_obj and is_valid_geo_control(obj)
         ]
     )
@@ -51,7 +55,9 @@ def collect_active_geo_hierarchy(target_obj):
         return []
 
     root = seed
-    while getattr(root, "parent", None) is not None and is_valid_geo_control(root.parent):
+    while getattr(root, "parent", None) is not None and is_valid_geo_control(
+        root.parent
+    ):
         root = root.parent
 
     controls = []
@@ -116,7 +122,9 @@ def ensure_unique_control_names(controls):
         seen.add(key)
     if duplicates:
         duplicate_list = ", ".join(sorted(set(duplicates)))
-        raise ValueError(f"Control names must be unique before creating bones: {duplicate_list}")
+        raise ValueError(
+            f"Control names must be unique before creating bones: {duplicate_list}"
+        )
 
 
 def create_armature_from_controls(context, controls, name=None):
@@ -135,7 +143,7 @@ def create_armature_from_controls(context, controls, name=None):
     context.view_layer.objects.active = arm_obj
 
     try:
-        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.mode_set(mode="EDIT")
         control_set = set(controls)
         children_by_parent = defaultdict(list)
         for control in controls:
@@ -145,7 +153,9 @@ def create_armature_from_controls(context, controls, name=None):
         for child_list in children_by_parent.values():
             child_list.sort(key=lambda obj: obj.name.lower())
 
-        heads = {control: control.matrix_world.translation.copy() for control in controls}
+        heads = {
+            control: control.matrix_world.translation.copy() for control in controls
+        }
 
         for index, control in enumerate(controls):
             bone = arm_data.edit_bones.new(control.name)
@@ -156,9 +166,11 @@ def create_armature_from_controls(context, controls, name=None):
         for control in controls:
             parent = getattr(control, "parent", None)
             if parent in control_set:
-                arm_data.edit_bones[control.name].parent = arm_data.edit_bones[parent.name]
+                arm_data.edit_bones[control.name].parent = arm_data.edit_bones[
+                    parent.name
+                ]
 
-        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode="OBJECT")
 
         for index, control in enumerate(controls):
             data_bone = arm_data.bones.get(control.name)
@@ -167,8 +179,8 @@ def create_armature_from_controls(context, controls, name=None):
 
     finally:
         try:
-            if context.mode != 'OBJECT':
-                bpy.ops.object.mode_set(mode='OBJECT')
+            if context.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
         except Exception:
             pass
         for obj in list(context.selected_objects):
@@ -208,7 +220,7 @@ def bind_mesh_to_armature(
     max_influences=3,
     replace_existing=True,
 ):
-    if getattr(target_obj, "type", None) != 'MESH':
+    if getattr(target_obj, "type", None) != "MESH":
         raise ValueError("Target object must be a mesh.")
 
     control_names = [control.name for control in controls]
@@ -233,7 +245,7 @@ def bind_mesh_to_armature(
 
     modifier = target_obj.modifiers.get(ORGANIC_ARMATURE_MODIFIER_NAME)
     if modifier is None:
-        modifier = target_obj.modifiers.new(ORGANIC_ARMATURE_MODIFIER_NAME, 'ARMATURE')
+        modifier = target_obj.modifiers.new(ORGANIC_ARMATURE_MODIFIER_NAME, "ARMATURE")
     modifier.object = armature_obj
     modifier.use_bone_envelopes = False
     modifier.use_vertex_groups = True
@@ -241,7 +253,10 @@ def bind_mesh_to_armature(
 
 def _clear_existing_rig_data(target_obj, control_names):
     for modifier in list(target_obj.modifiers):
-        if modifier.type == 'ARMATURE' and modifier.name == ORGANIC_ARMATURE_MODIFIER_NAME:
+        if (
+            modifier.type == "ARMATURE"
+            and modifier.name == ORGANIC_ARMATURE_MODIFIER_NAME
+        ):
             target_obj.modifiers.remove(modifier)
 
     for name in control_names:
@@ -250,8 +265,12 @@ def _clear_existing_rig_data(target_obj, control_names):
             target_obj.vertex_groups.remove(group)
 
 
-def _write_vertex_weights(target_obj, controls, groups, weight_mode, blend_radius, max_influences):
-    pivots = {control.name: control.matrix_world.translation.copy() for control in controls}
+def _write_vertex_weights(
+    target_obj, controls, groups, weight_mode, blend_radius, max_influences
+):
+    pivots = {
+        control.name: control.matrix_world.translation.copy() for control in controls
+    }
     hierarchy_edges = _hierarchy_edges(controls)
     for vertex in target_obj.data.vertices:
         vertex_world = target_obj.matrix_world @ vertex.co
@@ -266,7 +285,7 @@ def _write_vertex_weights(target_obj, controls, groups, weight_mode, blend_radiu
         )
 
         for name, weight in weights:
-            groups[name].add([vertex.index], weight, 'REPLACE')
+            groups[name].add([vertex.index], weight, "REPLACE")
 
     target_obj.data.update()
 
@@ -304,19 +323,30 @@ def _weights_for_vertex(
     if weight_mode == WEIGHT_MODE_NEAREST or max_influences == 1:
         return [(by_distance[0][0], 1.0)]
 
-    candidates = {name: 1.0 / (distance * distance) for name, distance in by_distance[:max_influences]}
+    candidates = {
+        name: 1.0 / (distance * distance)
+        for name, distance in by_distance[:max_influences]
+    }
 
     if blend_radius > 0.0:
         for parent_name, child_name in hierarchy_edges:
             parent_pos = pivots[parent_name]
             child_pos = pivots[child_name]
-            distance, factor = _distance_and_factor_on_segment(vertex_world, parent_pos, child_pos)
+            distance, factor = _distance_and_factor_on_segment(
+                vertex_world, parent_pos, child_pos
+            )
             if distance <= blend_radius:
                 strength = max(0.0, 1.0 - (distance / blend_radius))
-                candidates[parent_name] = max(candidates.get(parent_name, 0.0), (1.0 - factor) * strength)
-                candidates[child_name] = max(candidates.get(child_name, 0.0), factor * strength)
+                candidates[parent_name] = max(
+                    candidates.get(parent_name, 0.0), (1.0 - factor) * strength
+                )
+                candidates[child_name] = max(
+                    candidates.get(child_name, 0.0), factor * strength
+                )
 
-    ranked = sorted(candidates.items(), key=lambda item: (item[1], item[0].lower()), reverse=True)[:max_influences]
+    ranked = sorted(
+        candidates.items(), key=lambda item: (item[1], item[0].lower()), reverse=True
+    )[:max_influences]
     total = sum(weight for _name, weight in ranked)
     if total <= 0.0:
         return [(by_distance[0][0], 1.0)]
@@ -353,7 +383,9 @@ def create_organic_redux_skin(
             controls = collect_active_geo_hierarchy(target_obj)
 
     if len(controls) < 1:
-        raise ValueError("Select a target mesh plus at least one valid GEO control, or parent the mesh under a GEO hierarchy.")
+        raise ValueError(
+            "Select a target mesh plus at least one valid GEO control, or parent the mesh under a GEO hierarchy."
+        )
 
     armature_name = f"{target_obj.name}_organic_rig"
     armature_obj = create_armature_from_controls(context, controls, name=armature_name)

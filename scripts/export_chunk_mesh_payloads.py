@@ -52,7 +52,9 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--mesh-root",
         help="Recursively process every .mesh under this directory",
     )
-    parser.add_argument("--output-dir", required=True, help="Directory for exported chunk meshes")
+    parser.add_argument(
+        "--output-dir", required=True, help="Directory for exported chunk meshes"
+    )
     parser.add_argument(
         "--repo-root",
         default=str(default_repo_root),
@@ -150,7 +152,9 @@ def _sanitize_filename(name: str, preserve_case: bool) -> str:
     return safe or "chunk"
 
 
-def _find_imported_objects(before_names: set[str]) -> Tuple[List[bpy.types.Object], Optional[bpy.types.Object]]:
+def _find_imported_objects(
+    before_names: set[str],
+) -> Tuple[List[bpy.types.Object], Optional[bpy.types.Object]]:
     imported_meshes: List[bpy.types.Object] = []
     imported_armature: Optional[bpy.types.Object] = None
 
@@ -174,7 +178,9 @@ def _find_imported_objects(before_names: set[str]) -> Tuple[List[bpy.types.Objec
     return imported_meshes, imported_armature
 
 
-def _collect_input_meshes(mesh_path: Optional[Path], mesh_root: Optional[Path]) -> List[Path]:
+def _collect_input_meshes(
+    mesh_path: Optional[Path], mesh_root: Optional[Path]
+) -> List[Path]:
     if mesh_path is not None:
         if not mesh_path.exists():
             raise FileNotFoundError(f"Input mesh does not exist: {mesh_path}")
@@ -208,12 +214,16 @@ def _get_allowed_group_names(
     )
 
 
-def _copy_material_slots(source_obj: bpy.types.Object, target_mesh: bpy.types.Mesh) -> None:
+def _copy_material_slots(
+    source_obj: bpy.types.Object, target_mesh: bpy.types.Mesh
+) -> None:
     for material in source_obj.data.materials:
         target_mesh.materials.append(material)
 
 
-def _strip_vertex_group_data(piece_obj: bpy.types.Object, source_obj: bpy.types.Object) -> None:
+def _strip_vertex_group_data(
+    piece_obj: bpy.types.Object, source_obj: bpy.types.Object
+) -> None:
     vertex_count = len(piece_obj.data.vertices)
     if vertex_count == 0:
         return
@@ -525,7 +535,9 @@ def main(argv: Sequence[str]) -> int:
     all_exported_paths: List[Path] = []
     multi_input = len(input_meshes) > 1
     for current_mesh_path in input_meshes:
-        current_output_dir = output_dir / current_mesh_path.stem if multi_input else output_dir
+        current_output_dir = (
+            output_dir / current_mesh_path.stem if multi_input else output_dir
+        )
         print(f"Processing {current_mesh_path}")
         exported_paths = _process_single_mesh(
             ogre_backend=ogre_backend,

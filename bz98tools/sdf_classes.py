@@ -1,51 +1,62 @@
+from typing import Any
+
 # Battlezone 98R Blender ToolKit
 # Copyright (C) 2024–2025 “GrizzlyOne95” and contributors
-# 
+#
 # This file is part of BZ98R Blender ToolKit, which is distributed
 # under the terms of the GNU General Public License v3.0.
 # See the LICENSE file or <https://www.gnu.org/licenses/>.
 
-'''
+"""
 SDFClasses Python File
 
 This contains all classes used by the Addon.
-'''
+"""
 
 import struct
 import os
 
+
 def safe_decode_ascii(raw):
     """Decode a bytes field as ASCII, ignoring non-ASCII garbage."""
     if isinstance(raw, bytes):
-        return raw.decode('ascii', errors='ignore').strip('\0')
-    return str(raw).strip('\0')
+        return raw.decode("ascii", errors="ignore").strip("\0")
+    return str(raw).strip("\0")
+
 
 class SDFHeader:
     def __init__(self):
-       self.binstring = '=4si4sii'
-       self.binlength = 20
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+        self.binstring = "=4si4sii"
+        self.binlength = 20
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.BWDHeader = array[0]
         self.BWDVersion = array[1]
         self.REVHeader = array[2]
         self.SectionLength = array[3]
         self.Unknown = array[4]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
         # Same layout as VDFHeader, but with the SDF-specific "Unknown" field value (8).
-        struct.pack_into(self.binstring, buffer, 0, b'BWD2', 8, b'REV', 12, 8)
+        struct.pack_into(self.binstring, buffer, 0, b"BWD2", 8, b"REV", 12, 8)
         fileHandle.write(buffer)
         return self.binlength + position
 
-        
+
 class SDFCHeader:
     def __init__(self):
-        self.binstring = '=4si16si5fI13s13s'
+        self.binstring = "=4si16si5fI13s13s"
         self.binlength = 78
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.headername = safe_decode_ascii(array[0])
         self.sectionsize = array[1]
         self.name = safe_decode_ascii(array[2])
@@ -60,44 +71,66 @@ class SDFCHeader:
         self.explosioneffect = safe_decode_ascii(array[10])
         self.explosionsound = safe_decode_ascii(array[11])
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
         ddr = int(getattr(self, "ddr", getattr(self, "defensive", 0)))
-        struct.pack_into(self.binstring, buffer, 0,
-        b'SDFC', self.binlength,
-        bytes(self.name, 'ascii', errors='ignore'),
-        self.structuretype,
-        self.lod1dist, self.lod2dist, self.lod3dist, self.lod4dist, self.lod5dist,
-        ddr,
-        bytes(self.explosioneffect, 'ascii', errors='ignore'), bytes(self.explosionsound, 'ascii', errors='ignore'))
+        struct.pack_into(
+            self.binstring,
+            buffer,
+            0,
+            b"SDFC",
+            self.binlength,
+            bytes(self.name, "ascii", errors="ignore"),
+            self.structuretype,
+            self.lod1dist,
+            self.lod2dist,
+            self.lod3dist,
+            self.lod4dist,
+            self.lod5dist,
+            ddr,
+            bytes(self.explosioneffect, "ascii", errors="ignore"),
+            bytes(self.explosionsound, "ascii", errors="ignore"),
+        )
         fileHandle.write(buffer)
         return position + self.binlength
 
-#Represents our SGEO header.        
+
+# Represents our SGEO header.
 class SGEOHeader:
     def __init__(self):
-        self.binstring = '=4sIi'
+        self.binstring = "=4sIi"
         self.binlength = 12
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.headername = safe_decode_ascii(array[0])
         self.sectionlength = array[1]
         self.geocount = array[2]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, b'SGEO', self.sectionlength, self.geocount)
+        struct.pack_into(
+            self.binstring, buffer, 0, b"SGEO", self.sectionlength, self.geocount
+        )
         fileHandle.write(buffer)
         return position + self.binlength
 
-#Represents the most important information of a GEO.        
+
+# Represents the most important information of a GEO.
 class GEOData:
     def __init__(self):
         # 7f i i i 4f => type:int, geoflags:int, ddr:int
-        self.binstring = '=8s12f8s7fiii4f'
+        self.binstring = "=8s12f8s7fiii4f"
         self.binlength = 120
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.name = safe_decode_ascii(array[0])
         self.matrix = array[1:13]
         self.parent = safe_decode_ascii(array[13])
@@ -105,31 +138,48 @@ class GEOData:
         self.sphereradius = array[17]
         self.boxhalfheight = array[18:21]
         self.type = array[21]
-        self.geoflags = array[22]   # now an int
+        self.geoflags = array[22]  # now an int
         self.ddr = array[23]
         self.x = array[24]
         self.y = array[25]
         self.z = array[26]
         self.time = array[27]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
         struct.pack_into(
             self.binstring,
             buffer,
             0,
-            bytes(self.name, 'ascii', errors='ignore'),
-            self.matrix[0], self.matrix[1], self.matrix[2], self.matrix[3],
-            self.matrix[4], self.matrix[5], self.matrix[6], self.matrix[7],
-            self.matrix[8], self.matrix[9], self.matrix[10], self.matrix[11],
-            bytes(self.parent, 'ascii', errors='ignore'),
-            self.geocenter[0], self.geocenter[1], self.geocenter[2],
+            bytes(self.name, "ascii", errors="ignore"),
+            self.matrix[0],
+            self.matrix[1],
+            self.matrix[2],
+            self.matrix[3],
+            self.matrix[4],
+            self.matrix[5],
+            self.matrix[6],
+            self.matrix[7],
+            self.matrix[8],
+            self.matrix[9],
+            self.matrix[10],
+            self.matrix[11],
+            bytes(self.parent, "ascii", errors="ignore"),
+            self.geocenter[0],
+            self.geocenter[1],
+            self.geocenter[2],
             self.sphereradius,
-            self.boxhalfheight[0], self.boxhalfheight[1], self.boxhalfheight[2],
+            self.boxhalfheight[0],
+            self.boxhalfheight[1],
+            self.boxhalfheight[2],
             self.type,
-            self.geoflags,      # packed as int
+            self.geoflags,  # packed as int
             self.ddr,
-            self.x, self.y, self.z, self.time,
+            self.x,
+            self.y,
+            self.z,
+            self.time,
         )
         fileHandle.write(buffer)
         return position + self.binlength
@@ -139,11 +189,11 @@ class ANIMHeader:
     def __init__(self):
         # 4s  i   16s   5i         i      6i
         # tag len name counts      null2  unknown2+reserved(5)
-        self.binstring = '=4si16s5ii6i'
+        self.binstring = "=4si16s5ii6i"
         self.binlength = 72
 
         # sane defaults so export works even if exporter doesn't set everything
-        self.headername = 'ANIM'
+        self.headername = "ANIM"
         self.sectionlength = self.binlength
         self.name = ""
         self.elementscount = 0
@@ -158,21 +208,20 @@ class ANIMHeader:
 
     def Read(self, fileContent, position):
         array = struct.unpack(
-            self.binstring,
-            fileContent[position:position + self.binlength]
+            self.binstring, fileContent[position : position + self.binlength]
         )
         # 0..2: tag, len, name
         self.headername = safe_decode_ascii(array[0])
         self.sectionlength = array[1]
         self.name = safe_decode_ascii(array[2])
         # 3..7: 5 counts
-        self.elementscount      = array[3]
-        self.orientationscount  = array[4]
-        self.rotationcount      = array[5]
-        self.translation2count  = array[6]
-        self.positioncount      = array[7]
+        self.elementscount = array[3]
+        self.orientationscount = array[4]
+        self.rotationcount = array[5]
+        self.translation2count = array[6]
+        self.positioncount = array[7]
         # 8: null2
-        self.null2   = array[8]
+        self.null2 = array[8]
         # 9..14: unknown2 + 5 reserved ints
         self.unknown2 = array[9]
         self._reserved = list(array[10:15])
@@ -180,16 +229,20 @@ class ANIMHeader:
 
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        r = list(self._reserved) if isinstance(self._reserved, (list, tuple)) else [0, 0, 0, 0, 0]
+        r = (
+            list(self._reserved)
+            if isinstance(self._reserved, (list, tuple))
+            else [0, 0, 0, 0, 0]
+        )
         while len(r) < 5:
             r.append(0)
         struct.pack_into(
             self.binstring,
             buffer,
             0,
-            b'ANIM',
+            b"ANIM",
             int(self.sectionlength),
-            bytes(self.name or ".", 'ascii', errors='ignore'),
+            bytes(self.name or ".", "ascii", errors="ignore"),
             # 5 counts:
             int(self.elementscount),
             int(self.orientationscount),
@@ -200,20 +253,25 @@ class ANIMHeader:
             int(self.null2),
             # unknown2 + 5 reserved:
             int(self.unknown2),
-            int(r[0]), int(r[1]), int(r[2]), int(r[3]), int(r[4])
+            int(r[0]),
+            int(r[1]),
+            int(r[2]),
+            int(r[3]),
+            int(r[4]),
         )
         fileHandle.write(buffer)
         return position + self.binlength
 
 
-
-
 class ANIMElement:
     def __init__(self):
-        self.binstring = '=i32iiiif'
+        self.binstring = "=i32iiiif"
         self.binlength = 148
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.index = array[0]
         self.unknowngeoflag = list(array[1:33])
         self.start = array[33]
@@ -221,9 +279,14 @@ class ANIMElement:
         self.loop = array[35]
         self.speed = array[36]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        mask = list(self.unknowngeoflag) if isinstance(self.unknowngeoflag, (list, tuple)) else []
+        mask = (
+            list(self.unknowngeoflag)
+            if isinstance(self.unknowngeoflag, (list, tuple))
+            else []
+        )
         while len(mask) < 32:
             mask.append(0)
         mask = [int(v) for v in mask[:32]]
@@ -241,12 +304,16 @@ class ANIMElement:
         fileHandle.write(buffer)
         return position + self.binlength
 
+
 class ANIMOrientation:
     def __init__(self):
-        self.binstring = '=8si12f12f6i'
+        self.binstring = "=8si12f12f6i"
         self.binlength = 132
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.name = safe_decode_ascii(array[0])
         self.unknown = array[1]
         self.matrix1 = array[2:14]
@@ -256,139 +323,221 @@ class ANIMOrientation:
         self.translation2index = array[28]
         self.translation2count = array[29]
         self.positionindex = array[30]
-        self.positioncount = array [31]
+        self.positioncount = array[31]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0,
-                         bytes(self.name, 'ascii', errors='ignore'),
-                         0,
-                         self.matrix1[0], self.matrix1[1], self.matrix1[2], self.matrix1[3], self.matrix1[4], self.matrix1[5], self.matrix1[6], self.matrix1[7], self.matrix1[8], self.matrix1[9], self.matrix1[10], self.matrix1[11],
-                         self.matrix2[0], self.matrix2[1], self.matrix2[2], self.matrix2[3], self.matrix2[4], self.matrix2[5], self.matrix2[6], self.matrix2[7], self.matrix2[8], self.matrix2[9], self.matrix2[10], self.matrix2[11],
-                         self.rotationindex, self.rotationcount, self.translation2index, self.translation2count, self.positionindex, self.positioncount)
+        struct.pack_into(
+            self.binstring,
+            buffer,
+            0,
+            bytes(self.name, "ascii", errors="ignore"),
+            0,
+            self.matrix1[0],
+            self.matrix1[1],
+            self.matrix1[2],
+            self.matrix1[3],
+            self.matrix1[4],
+            self.matrix1[5],
+            self.matrix1[6],
+            self.matrix1[7],
+            self.matrix1[8],
+            self.matrix1[9],
+            self.matrix1[10],
+            self.matrix1[11],
+            self.matrix2[0],
+            self.matrix2[1],
+            self.matrix2[2],
+            self.matrix2[3],
+            self.matrix2[4],
+            self.matrix2[5],
+            self.matrix2[6],
+            self.matrix2[7],
+            self.matrix2[8],
+            self.matrix2[9],
+            self.matrix2[10],
+            self.matrix2[11],
+            self.rotationindex,
+            self.rotationcount,
+            self.translation2index,
+            self.translation2count,
+            self.positionindex,
+            self.positioncount,
+        )
         fileHandle.write(buffer)
         return position + self.binlength
-    
+
+
 class ANIMRotation:
     def __init__(self):
-        self.binstring = '=i4f'
+        self.binstring = "=i4f"
         self.binlength = 20
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.frame = array[0]
         self.translate = array[1:5]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
         struct.pack_into(self.binstring, buffer, 0, int(self.frame), *self.translate)
         fileHandle.write(buffer)
         return position + self.binlength
 
-#TODO: Figure out what this even does...
+
+# TODO: Figure out what this even does...
 class ANIMTranslation2:
     # Historical toolkit name for the legacy ANIM SCLKEY slot.
     # Engine symbols and stock assets identify this as a scale-key track.
     def __init__(self):
-        self.binstring = '=i3f'
+        self.binstring = "=i3f"
         self.binlength = 16
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.frame = array[0]
         self.translate = array[1:4]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
         struct.pack_into(self.binstring, buffer, 0, int(self.frame), *self.translate)
         fileHandle.write(buffer)
         return position + self.binlength
+
 
 class ANIMPosition:
     def __init__(self):
-        self.binstring = '=i3f'
+        self.binstring = "=i3f"
         self.binlength = 16
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.frame = array[0]
         self.translate = array[1:4]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
         struct.pack_into(self.binstring, buffer, 0, int(self.frame), *self.translate)
         fileHandle.write(buffer)
         return position + self.binlength
 
-#Represents the collision information on a structure in its own section.        
+
+# Represents the collision information on a structure in its own section.
 class COLPSection:
     def __init__(self):
-        self.binstring = '=4sI12f' 
+        self.binstring = "=4sI12f"
         self.binlength = 56
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.headername = safe_decode_ascii(array[0])
         self.sectionlength = array[1]
         self.data = array[2:14]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, b'COLP', 56, 
-        self.data[0], self.data[1], self.data[2], 
-        self.data[3], self.data[4], self.data[5], 
-        self.data[6], self.data[7], self.data[8], 
-        self.data[9], self.data[10], self.data[11])
+        struct.pack_into(
+            self.binstring,
+            buffer,
+            0,
+            b"COLP",
+            56,
+            self.data[0],
+            self.data[1],
+            self.data[2],
+            self.data[3],
+            self.data[4],
+            self.data[5],
+            self.data[6],
+            self.data[7],
+            self.data[8],
+            self.data[9],
+            self.data[10],
+            self.data[11],
+        )
         fileHandle.write(buffer)
         return position + self.binlength
 
-#DO NOT SEE THIS SECTION
+
+# DO NOT SEE THIS SECTION
 class SCPSSection:
     def __init__(self):
-        self.binstring = '=4s4i'
+        self.binstring = "=4s4i"
         self.binlength = 20
-        self.headername = 'SCPS'
+        self.headername = "SCPS"
         self.sectionlength = self.binlength
         self.data = [0, 0, 0]
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
         self.headername = safe_decode_ascii(array[0])
         self.sectionlength = array[1]
         self.data = array[2:5]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
         d = list(self.data) if isinstance(self.data, (list, tuple)) else [0, 0, 0]
         while len(d) < 3:
             d.append(0)
-        struct.pack_into(self.binstring, buffer, 0, b'SCPS', 20, int(d[0]), int(d[1]), int(d[2]))
+        struct.pack_into(
+            self.binstring, buffer, 0, b"SCPS", 20, int(d[0]), int(d[1]), int(d[2])
+        )
         fileHandle.write(buffer)
         return position + self.binlength
 
-#Just your good old standard exit section.        
+
+# Just your good old standard exit section.
 class EXITSection:
     def __init__(self):
-        self.binstring = '=4si'
+        self.binstring = "=4si"
         self.binlength = 8
-    def Read (self, fileContent, position):
-        array = struct.unpack(self.binstring,fileContent[position:position+self.binlength])
-        self.exit = safe_decode_ascii(array[0]) #Would you believe it that it is supposed to just say 'EXIT'?
+
+    def Read(self, fileContent, position):
+        array = struct.unpack(
+            self.binstring, fileContent[position : position + self.binlength]
+        )
+        self.exit = safe_decode_ascii(
+            array[0]
+        )  # Would you believe it that it is supposed to just say 'EXIT'?
         self.length = array[1]
         return position + self.binlength
+
     def Write(self, fileHandle, position):
         buffer = bytearray(self.binlength)
-        struct.pack_into(self.binstring, buffer, 0, b'EXIT', 8)
+        struct.pack_into(self.binstring, buffer, 0, b"EXIT", 8)
         fileHandle.write(buffer)
         return position + self.binlength
 
-#Represents a single trackable animation channel in blender.        
+
+# Represents a single trackable animation channel in blender.
 class BlenderAnimation:
     def __init__(self):
         self.x = 0
         self.y = 0
         self.z = 0
-        self.type = 'location'
+        self.type = "location"
 
-#Represents all the important information after we import everything.
-#Only used for importing.        
+
+# Represents all the important information after we import everything.
+# Only used for importing.
 class BlenderObject:
-    def __init__(self,object,geodata):
+    def __init__(self, object, geodata):
         self.object = object
         self.geo = geodata
         self.parent = geodata.parent

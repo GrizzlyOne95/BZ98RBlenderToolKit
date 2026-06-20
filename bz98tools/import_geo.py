@@ -1,6 +1,8 @@
+from typing import Any
+
 # Battlezone 98R Blender ToolKit
 # Copyright (C) 2024–2025 “GrizzlyOne95” and contributors
-# 
+#
 # This file is part of BZ98R Blender ToolKit, which is distributed
 # under the terms of the GNU General Public License v3.0.
 # See the LICENSE file or <https://www.gnu.org/licenses/>.
@@ -17,7 +19,6 @@ from . import geo_classes
 from .bzmap import BZMap, BZMapFormat
 from .bzmap_serializer import BZMapSerializer
 from .bzact_serializer import BZActSerializer
-
 
 importlib.reload(geo_classes)
 
@@ -37,7 +38,7 @@ def _add_import_diagnostic(scene, severity, scope, target, message):
 
 
 BUILTIN_ACT_PALETTES = {
-    'moon.act': [
+    "moon.act": [
         (0, 0, 0),
         (17, 16, 16),
         (26, 24, 24),
@@ -298,7 +299,6 @@ BUILTIN_ACT_PALETTES = {
 }
 
 
-
 _palette_cache = {}
 
 
@@ -317,6 +317,7 @@ def _get_target_collection(context):
 # ---------------------------------------------------------------------------
 # File / palette helpers
 # ---------------------------------------------------------------------------
+
 
 def _normalized_map_filename(map_name):
     map_name = (map_name or "").strip()
@@ -371,8 +372,15 @@ def _build_map_search_dirs(base_dir, texture_dir=""):
 
 def _get_import_texture_cache_dir(zfs_path):
     archive_name = os.path.splitext(os.path.basename(zfs_path))[0] or "archive"
-    archive_hash = hashlib.sha1(os.path.abspath(zfs_path).encode("utf-8")).hexdigest()[:8]
-    return os.path.join(os.path.dirname(__file__), "_cache", "import_textures", f"{archive_name}_{archive_hash}")
+    archive_hash = hashlib.sha1(os.path.abspath(zfs_path).encode("utf-8")).hexdigest()[
+        :8
+    ]
+    return os.path.join(
+        os.path.dirname(__file__),
+        "_cache",
+        "import_textures",
+        f"{archive_name}_{archive_hash}",
+    )
 
 
 def _extract_map_from_zfs(map_name, zfs_path):
@@ -388,6 +396,7 @@ def _extract_map_from_zfs(map_name, zfs_path):
 
     try:
         from .zfs_reader import ZFSReader
+
         reader = ZFSReader(zfs_path)
         reader.open()
         try:
@@ -395,7 +404,9 @@ def _extract_map_from_zfs(map_name, zfs_path):
         finally:
             reader.close()
     except Exception as exc:
-        print(f"[BZ MAP] Failed to extract '{map_filename}' from ZFS '{zfs_path}': {exc}")
+        print(
+            f"[BZ MAP] Failed to extract '{map_filename}' from ZFS '{zfs_path}': {exc}"
+        )
         return None
 
     if extracted and os.path.exists(extracted):
@@ -428,7 +439,9 @@ def _load_palette_from_act(path):
         return None
 
     if len(data) != 256 * 3:
-        print(f"[BZ ACT] Unexpected palette size {len(data)} (expected 768 bytes) in '{path}'.")
+        print(
+            f"[BZ ACT] Unexpected palette size {len(data)} (expected 768 bytes) in '{path}'."
+        )
         return None
 
     palette = []
@@ -547,7 +560,9 @@ def _write_indexed_map_to_png(map_path, palette, out_path=None):
     row_bytes, pixel_format, height, unknown = struct.unpack("<4H", data[:8])
 
     if pixel_format != BZMapFormat.INDEXED:
-        print(f"[BZ MAP] _write_indexed_map_to_png called for non-indexed fmt={pixel_format} in '{map_path}'")
+        print(
+            f"[BZ MAP] _write_indexed_map_to_png called for non-indexed fmt={pixel_format} in '{map_path}'"
+        )
         return None
 
     buf = data[8:]
@@ -555,7 +570,9 @@ def _write_indexed_map_to_png(map_path, palette, out_path=None):
 
     expected = width * height
     if len(buf) < expected:
-        print(f"[BZ MAP] Buffer too small: {len(buf)} bytes, expected {expected} in '{map_path}'")
+        print(
+            f"[BZ MAP] Buffer too small: {len(buf)} bytes, expected {expected} in '{map_path}'"
+        )
         return None
 
     # Build scanlines with PNG filter type 0 (no filter)
@@ -563,17 +580,19 @@ def _write_indexed_map_to_png(map_path, palette, out_path=None):
     for y in range(height):
         pixels.append(0)  # filter type 0
         row_start = y * width
-        row = buf[row_start:row_start + width]
+        row = buf[row_start : row_start + width]
         for idx in row:
             r, g, b = palette[idx]
             pixels.extend((r, g, b))
 
     # Minimal PNG writer (8-bit RGB, no interlace, no extras)
     def _png_chunk(tag, payload):
-        return (struct.pack(">I", len(payload)) +
-                tag +
-                payload +
-                struct.pack(">I", zlib.crc32(tag + payload) & 0xffffffff))
+        return (
+            struct.pack(">I", len(payload))
+            + tag
+            + payload
+            + struct.pack(">I", zlib.crc32(tag + payload) & 0xFFFFFFFF)
+        )
 
     bio = BytesIO()
     # PNG signature
@@ -603,6 +622,7 @@ def _write_indexed_map_to_png(map_path, palette, out_path=None):
 # ---------------------------------------------------------------------------
 # Pixel format decoders (mirror your NumPy/PIL logic)
 # ---------------------------------------------------------------------------
+
 
 def _decode_indexed(buf, width, height, row_bytes, palette=None):
     use_palette = palette is not None and len(palette) >= 256
@@ -634,8 +654,6 @@ def _decode_indexed(buf, width, height, row_bytes, palette=None):
             i += 4
 
     return pixels
-
-
 
 
 def _decode_argb4444(buf, width, height, row_bytes):
@@ -744,7 +762,9 @@ def _load_bzmap_to_image(filepath, image_name, palette_search_dir):
                 img.colorspace_settings.name = "sRGB"
             except Exception:
                 pass
-            print(f"[BZ MAP] Using existing PNG '{png_path}' for '{os.path.basename(filepath)}'.")
+            print(
+                f"[BZ MAP] Using existing PNG '{png_path}' for '{os.path.basename(filepath)}'."
+            )
             return img
         except Exception as e:
             print(f"[BZ MAP] Failed to load existing PNG '{png_path}': {e}")
@@ -768,11 +788,15 @@ def _load_bzmap_to_image(filepath, image_name, palette_search_dir):
     # ------------------------------------------------------------------
     if pixel_format == BZMapFormat.INDEXED:
         width = row_bytes
-        print(f"[BZ MAP] {os.path.basename(filepath)}: fmt={pixel_format}, size={width}x{height}, row_bytes={row_bytes}")
+        print(
+            f"[BZ MAP] {os.path.basename(filepath)}: fmt={pixel_format}, size={width}x{height}, row_bytes={row_bytes}"
+        )
 
         palette = _get_palette_for_dir(palette_search_dir)
         if not palette:
-            print(f"[BZ MAP] No valid ACT palette found near '{palette_search_dir}'. Cannot decode indexed .map.")
+            print(
+                f"[BZ MAP] No valid ACT palette found near '{palette_search_dir}'. Cannot decode indexed .map."
+            )
             return None
 
         print(f"[BZ MAP] Using palette from ACT; first 4 entries: {palette[:4]}")
@@ -797,7 +821,9 @@ def _load_bzmap_to_image(filepath, image_name, palette_search_dir):
     # ------------------------------------------------------------------
     # Non-indexed formats: fall back to your existing decoder path
     # ------------------------------------------------------------------
-    print(f"[BZ MAP] {os.path.basename(filepath)}: non-indexed fmt={pixel_format}, using direct decode path.")
+    print(
+        f"[BZ MAP] {os.path.basename(filepath)}: non-indexed fmt={pixel_format}, using direct decode path."
+    )
 
     try:
         bz = BZMap()
@@ -815,7 +841,9 @@ def _load_bzmap_to_image(filepath, image_name, palette_search_dir):
         return None
 
     row_bytes = bz.row_byte_size
-    print(f"[BZ MAP] {os.path.basename(filepath)}: fmt={bz.pixel_format}, size={width}x{height}, row_bytes={row_bytes}")
+    print(
+        f"[BZ MAP] {os.path.basename(filepath)}: fmt={bz.pixel_format}, size={width}x{height}, row_bytes={row_bytes}"
+    )
 
     # Decode to RGBA list (0..1) using your existing decoders
     if bz.pixel_format == BZMapFormat.ARGB4444:
@@ -846,14 +874,14 @@ def _load_bzmap_to_image(filepath, image_name, palette_search_dir):
     except Exception:
         pass
 
-    img.source = 'GENERATED'
+    img.source = "GENERATED"
     img.filepath = ""
     return img
 
 
-
-
-def _ensure_map_texture_on_material(mat, map_name, base_dir, texture_dir="", texture_zfs=""):
+def _ensure_map_texture_on_material(
+    mat, map_name, base_dir, texture_dir="", texture_zfs=""
+):
     """
     Given a Blender material and a Battlezone map name, try to load the
     corresponding .map file as an image and hook it up to the material's
@@ -870,7 +898,9 @@ def _ensure_map_texture_on_material(mat, map_name, base_dir, texture_dir="", tex
         if texture_zfs:
             sources.append(texture_zfs)
         source_note = "', '".join(source for source in sources if source)
-        print(f"[BZ MAP] Could not find .map file for '{map_name}' under '{source_note}'.")
+        print(
+            f"[BZ MAP] Could not find .map file for '{map_name}' under '{source_note}'."
+        )
         return
 
     image_name = f"{map_name}.map"
@@ -887,47 +917,63 @@ def _ensure_map_texture_on_material(mat, map_name, base_dir, texture_dir="", tex
     # Find or create Principled BSDF
     bsdf = None
     for node in nodes:
-        if node.type == 'BSDF_PRINCIPLED':
+        if node.type == "BSDF_PRINCIPLED":
             bsdf = node
             break
     if bsdf is None:
-        bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
+        bsdf = nodes.new(type="ShaderNodeBsdfPrincipled")
         bsdf.location = (0, 0)
 
     # Find or create Material Output
     output = None
     for node in nodes:
-        if node.type == 'OUTPUT_MATERIAL':
+        if node.type == "OUTPUT_MATERIAL":
             output = node
             break
     if output is None:
-        output = nodes.new(type='ShaderNodeOutputMaterial')
+        output = nodes.new(type="ShaderNodeOutputMaterial")
         output.location = (300, 0)
 
     # Image Texture node
-    tex_node = nodes.new(type='ShaderNodeTexImage')
+    tex_node = nodes.new(type="ShaderNodeTexImage")
     tex_node.image = img
     tex_node.label = map_name
     tex_node.location = (-300, 0)
 
     # Link color + alpha
-    if tex_node.outputs.get('Color') is not None and bsdf.inputs.get('Base Color') is not None:
-        links.new(tex_node.outputs['Color'], bsdf.inputs['Base Color'])
-    if tex_node.outputs.get('Alpha') is not None and bsdf.inputs.get('Alpha') is not None:
-        links.new(tex_node.outputs['Alpha'], bsdf.inputs['Alpha'])
+    if (
+        tex_node.outputs.get("Color") is not None
+        and bsdf.inputs.get("Base Color") is not None
+    ):
+        links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
+    if (
+        tex_node.outputs.get("Alpha") is not None
+        and bsdf.inputs.get("Alpha") is not None
+    ):
+        links.new(tex_node.outputs["Alpha"], bsdf.inputs["Alpha"])
 
     # Ensure BSDF is connected to output
-    if not any(link.to_node == output for link in bsdf.outputs['BSDF'].links):
-        links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
+    if not any(link.to_node == output for link in bsdf.outputs["BSDF"].links):
+        links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
 
 
 # ---------------------------------------------------------------------------
 # GEO loader
 # ---------------------------------------------------------------------------
 
-def geoload(context, geofilepath, *, name=None, flip=True,
-            PreserveFaceColors=False, ImportMapTextures=False,
-            map_base_dir=None, MapTextureDirectory="", MapTextureZFS=""):
+
+def geoload(
+    context,
+    geofilepath,
+    *,
+    name=None,
+    flip=True,
+    PreserveFaceColors=False,
+    ImportMapTextures=False,
+    map_base_dir=None,
+    MapTextureDirectory="",
+    MapTextureZFS="",
+):
     position = 0
     header = None
     verticeslist = []
@@ -936,38 +982,50 @@ def geoload(context, geofilepath, *, name=None, flip=True,
     facelist = []
 
     if not os.path.exists(geofilepath):
-        raise Exception(geofilepath + ' was not found!')
+        raise Exception(geofilepath + " was not found!")
         return None
 
     if map_base_dir is None:
         map_base_dir = os.path.dirname(geofilepath)
 
-    with open(geofilepath, mode='rb') as file:
+    with open(geofilepath, mode="rb") as file:
         fileContent = file.read()
         import struct
 
-        header = geo_classes.GEOHeader(struct.unpack("=4si16siii", fileContent[position:position+36]))
+        header = geo_classes.GEOHeader(
+            struct.unpack("=4si16siii", fileContent[position : position + 36])
+        )
         uvslist = [None] * header.Vertices
         position += 36
 
         # Vertices
         for _ in range(header.Vertices):
-            newvertex = geo_classes.GEOVertex(struct.unpack("=fff", fileContent[position:position+12]))
+            newvertex = geo_classes.GEOVertex(
+                struct.unpack("=fff", fileContent[position : position + 12])
+            )
             position += 12
             verticeslist.append(newvertex)
 
         # Normals
         for _ in range(header.Vertices):
-            newnormal = geo_classes.GEONormal(struct.unpack("=fff", fileContent[position:position+12]))
+            newnormal = geo_classes.GEONormal(
+                struct.unpack("=fff", fileContent[position : position + 12])
+            )
             position += 12
             normalslist.append(newnormal)
 
         # Faces
         for _ in range(header.Faces):
-            newface = geo_classes.GEOFace(struct.unpack("=iiBBBffffi3s13sii", fileContent[position:position+55]))
+            newface = geo_classes.GEOFace(
+                struct.unpack(
+                    "=iiBBBffffi3s13sii", fileContent[position : position + 55]
+                )
+            )
             position += 55
             for _ in range(newface.Vertices):
-                newvert = geo_classes.PolygonVert(struct.unpack("iiff", fileContent[position:position+16]))
+                newvert = geo_classes.PolygonVert(
+                    struct.unpack("iiff", fileContent[position : position + 16])
+                )
                 position += 16
                 newface.VertList.append(newvert)
             facelist.append(newface)
@@ -983,16 +1041,21 @@ def geoload(context, geofilepath, *, name=None, flip=True,
         if view_layer is not None:
             view_layer.objects.active = obj
         if hasattr(obj, "GEOPropertyGroup"):
-            obj.GEOPropertyGroup['GEOHeaderUnknown'] = int(header.Unknown)
-            obj.GEOPropertyGroup['GEOHeaderUnknown2'] = int(header.Unknown2)
+            obj.GEOPropertyGroup["GEOHeaderUnknown"] = int(header.Unknown)
+            obj.GEOPropertyGroup["GEOHeaderUnknown2"] = int(header.Unknown2)
 
         import bmesh
+
         bm = bmesh.new()
         for i in range(header.Vertices):
             if flip:
-                vert = bm.verts.new((verticeslist[i].x, verticeslist[i].z, verticeslist[i].y))
+                vert = bm.verts.new(
+                    (verticeslist[i].x, verticeslist[i].z, verticeslist[i].y)
+                )
             else:
-                vert = bm.verts.new((verticeslist[i].x, verticeslist[i].y, verticeslist[i].z))
+                vert = bm.verts.new(
+                    (verticeslist[i].x, verticeslist[i].y, verticeslist[i].z)
+                )
             vert.normal = (normalslist[i].x, normalslist[i].y, normalslist[i].z)
 
         used_faces = []
@@ -1025,20 +1088,20 @@ def geoload(context, geofilepath, *, name=None, flip=True,
 
         Slots = {}
         face_attribute_names = (
-            ("bz_face_unknown_raw", 'INT'),
-            ("bz_face_shade_type", 'INT'),
-            ("bz_face_texture_type", 'INT'),
-            ("bz_face_xluscent_type", 'INT'),
-            ("bz_face_parent", 'INT'),
-            ("bz_face_node", 'INT'),
-            ("bz_face_plane_x", 'FLOAT'),
-            ("bz_face_plane_y", 'FLOAT'),
-            ("bz_face_plane_z", 'FLOAT'),
-            ("bz_face_plane_d", 'FLOAT'),
+            ("bz_face_unknown_raw", "INT"),
+            ("bz_face_shade_type", "INT"),
+            ("bz_face_texture_type", "INT"),
+            ("bz_face_xluscent_type", "INT"),
+            ("bz_face_parent", "INT"),
+            ("bz_face_node", "INT"),
+            ("bz_face_plane_x", "FLOAT"),
+            ("bz_face_plane_y", "FLOAT"),
+            ("bz_face_plane_z", "FLOAT"),
+            ("bz_face_plane_d", "FLOAT"),
         )
         for attr_name, attr_type in face_attribute_names:
             if mesh.attributes.get(attr_name) is None:
-                mesh.attributes.new(name=attr_name, type=attr_type, domain='FACE')
+                mesh.attributes.new(name=attr_name, type=attr_type, domain="FACE")
 
         # Blender 4.5 can invalidate RNA attribute handles after adding more
         # attributes, so fetch them after all creation is complete.
@@ -1078,7 +1141,12 @@ def geoload(context, geofilepath, *, name=None, flip=True,
                     mat = bpy.data.materials.get(PreservedName)
                     if mat is None:
                         mat = bpy.data.materials.new(name=PreservedName)
-                        mat.diffuse_color = (face.r/255, face.g/255, face.b/255, 1.0)
+                        mat.diffuse_color = (
+                            face.r / 255,
+                            face.g / 255,
+                            face.b / 255,
+                            1.0,
+                        )
                         mat.MaterialPropertyGroup.MapTexture = face.MapName
                     if obj.data.materials.get(PreservedName) is None:
                         Slots[PreservedName] = len(Slots)
@@ -1088,7 +1156,12 @@ def geoload(context, geofilepath, *, name=None, flip=True,
                     mat = bpy.data.materials.get(face.MapName)
                     if mat is None:
                         mat = bpy.data.materials.new(name=face.MapName)
-                        mat.diffuse_color = (face.r/255, face.g/255, face.b/255, 1.0)
+                        mat.diffuse_color = (
+                            face.r / 255,
+                            face.g / 255,
+                            face.b / 255,
+                            1.0,
+                        )
                         mat.MaterialPropertyGroup.MapTexture = face.MapName
                     if obj.data.materials.get(face.MapName) is None:
                         Slots[face.MapName] = len(Slots)
@@ -1113,16 +1186,23 @@ def geoload(context, geofilepath, *, name=None, flip=True,
         return obj
 
 
-def load(context, filepath, *, PreserveFaceColors=True, ImportMapTextures=False,
-         MapTextureDirectory="", MapTextureZFS=""):
+def load(
+    context,
+    filepath,
+    *,
+    PreserveFaceColors=True,
+    ImportMapTextures=False,
+    MapTextureDirectory="",
+    MapTextureZFS="",
+):
     if not os.path.exists(filepath):
-        raise Exception(filepath + ' was not found!')
-        return {'FINISHED'}
+        raise Exception(filepath + " was not found!")
+        return {"FINISHED"}
 
     scene = getattr(context, "scene", None)
     if scene is not None and hasattr(scene, "bz_import_diagnostics"):
         scene.bz_import_diagnostics.clear()
-        with open(filepath, mode='rb') as file:
+        with open(filepath, mode="rb") as file:
             file_content = file.read()
         header = geo_classes.GEOHeader(struct.unpack("=4si16siii", file_content[:36]))
         position = 36 + (header.Vertices * 12) + (header.Vertices * 12)
@@ -1130,7 +1210,11 @@ def load(context, filepath, *, PreserveFaceColors=True, ImportMapTextures=False,
         face_parents = {}
         face_nodes = {}
         for _ in range(header.Faces):
-            face = geo_classes.GEOFace(struct.unpack("=iiBBBffffi3s13sii", file_content[position:position + 55]))
+            face = geo_classes.GEOFace(
+                struct.unpack(
+                    "=iiBBBffffi3s13sii", file_content[position : position + 55]
+                )
+            )
             position += 55 + (face.Vertices * 16)
             raw = getattr(face, "StringHeaderRaw", b"\x00\x00\x00")
             string_headers[raw] = string_headers.get(raw, 0) + 1
@@ -1172,4 +1256,4 @@ def load(context, filepath, *, PreserveFaceColors=True, ImportMapTextures=False,
         MapTextureZFS=MapTextureZFS,
     )
 
-    return {'FINISHED'}
+    return {"FINISHED"}
