@@ -207,7 +207,7 @@ class BaseSerializer:
             struct.pack(self.endiansymbol + str(min(length, len(vals))) + "f", *vals)
         )
 
-    def write_string_nlt(self, s):  # TODO: Experiment with string parsing behavior
+    def write_string_nlt(self, s):
         """Write newline-terminated string"""
         self.stream.write((s + "\n").encode("latin-1"))
 

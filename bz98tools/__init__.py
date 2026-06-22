@@ -1850,6 +1850,7 @@ def _draw_shared_autoport_options(layout, operator):
     layout.prop(operator, "ogre_name")
     layout.prop(operator, "ogre_suffix")
     layout.prop(operator, "ogre_flat_colors")
+    layout.prop(operator, "ogre_normal_mode")
     layout.prop(operator, "ogre_bounds_mult")
     layout.prop(operator, "ogre_act_path")
     layout.prop(operator, "ogre_config_path")
@@ -5320,6 +5321,13 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
         default=False,
     )
 
+    ogre_normal_mode: Any = EnumProperty(
+        name="Normal Porter Mode",
+        description="Porter --normalmode. Specifies how to handle normals.",
+        items=NORMAL_MODE_ITEMS,
+        default="CORRECT",
+    )
+
     ogre_bounds_mult: Any = FloatVectorProperty(
         name="Bounds Scale",
         description="Porter --boundsmult. Scale factors for the mesh bounds (X, Y, Z).",
@@ -5427,6 +5435,7 @@ class ExportGEO(bpy.types.Operator, ExportHelper):
                 "name": self.ogre_name.strip() or None,
                 "suffix": self.ogre_suffix.strip() or "_port",
                 "flat_colors": self.ogre_flat_colors,
+                "normal_mode": self.ogre_normal_mode,
                 "bounds_mult": list(self.ogre_bounds_mult),
                 "act_path": self.ogre_act_path.strip() or None,
                 "config_path": self.ogre_config_path.strip() or None,
@@ -5767,6 +5776,7 @@ class ExportVDF(bpy.types.Operator, ExportHelper):
                 "name": self.ogre_name.strip() or None,
                 "suffix": self.ogre_suffix.strip() or "_port",
                 "flat_colors": self.ogre_flat_colors,
+                "normal_mode": self.ogre_normal_mode,
                 "bounds_mult": list(self.ogre_bounds_mult),
                 "act_path": self.ogre_act_path.strip() or None,
                 "config_path": self.ogre_config_path.strip() or None,
@@ -6019,6 +6029,7 @@ class ExportSDF(bpy.types.Operator, ExportHelper):
                 "name": self.ogre_name.strip() or None,
                 "suffix": self.ogre_suffix.strip() or "_port",
                 "flat_colors": self.ogre_flat_colors,
+                "normal_mode": self.ogre_normal_mode,
                 "bounds_mult": list(self.ogre_bounds_mult),
                 "act_path": self.ogre_act_path.strip() or None,
                 "config_path": self.ogre_config_path.strip() or None,

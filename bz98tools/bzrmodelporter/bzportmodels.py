@@ -11,9 +11,10 @@ import os
 import sys
 import math
 import io
+from enum import Enum
 from collections import namedtuple
 import traceback
-import numpy as np  # TODO: Make better use of numpy
+import numpy as np
 import itertools
 from .utils import remap_range_normal
 
@@ -41,6 +42,17 @@ from .spacial import (
     Vector3,
     Quaternion,
     Transform,
+)
+
+from .exceptions import (
+    ModelPorterError,
+    AnimationAlreadyLoadedError,
+    InvalidBoneTypeError,
+    MaterialConflictError,
+    HierarchyError,
+    UnsupportedFileTypeError,
+    InvalidSettingError,
+    POVNotFoundError,
 )
 
 # These are all sibling modules in bzrmodelporter/
@@ -72,6 +84,12 @@ from .ogreskeleton import Skeleton
 from .ogreskeleton_serializer import SkeletonSerializer
 
 INF = float("inf")
+
+
+class NormalMode(Enum):
+    CORRECT = 0
+    NONE = 1
+    FLIP = 2
 
 
 # "cvartl" and "cvturr" are deliberately missing.
@@ -154,8 +172,14 @@ class InterModel:
         igeom = self.create_igeom(name)
         igeom.add_geo_faces(geo)
         igeom.apply_geometry()
+
+        normal_mode = getattr(self.settings, "normal_mode", NormalMode.CORRECT)
+        if normal_mode == NormalMode.CORRECT:
+            igeom.correct_normals()
+        elif normal_mode == NormalMode.FLIP:
+            igeom.vertex_array["normal"] *= -1
+
         # igeom.restore_normals()
-        # igeom.correct_normals() # TODO: make configurable
         # igeom.normalize_normals()
         return igeom
 
@@ -207,8 +231,10 @@ class InterModel:
         forward = ianim.forward
         backward = not forward
         dir = 1 if forward else -1
-        end_frame = ianim.start_frame + (ianim.framecount - 1) * dir
-        # TODO: What if framecount is 0? What if framecount is 1?
+        if ianim.framecount > 0:
+            end_frame = ianim.start_frame + (ianim.framecount - 1) * dir
+        else:
+            end_frame = ianim.start_frame
 
         # print("\n________________________")
         # print(ianim.index, ianim.start_frame, end_frame, ianim.forward, ianim.framecount)
@@ -217,6 +243,9 @@ class InterModel:
             return
 
         # Slice iobject single-timeline track into individual animation tracks
+        translation_slices = {}
+        rotation_slices = {}
+
         for iobject in self.iobject_list:
             # print(f"  {iobject.name} ({len(iobject.anim_translations)}, {len(iobject.anim_rotations)})")
             # # # # # # # # # # #
@@ -321,16 +350,13 @@ class InterModel:
                     tkf.prev = prev_tkf
                 prev_tkf = tkf
 
-            iobject.anim_translation_slices[ianim.index] = (
-                track  # TODO: Take anim slices out of InterObject
-            )
+            translation_slices[iobject] = track
             # print(f"    {len(track)}")
 
             # # # # # # # # #
             # # Rotations # #
             track = []
 
-            # TODO: include a setting in condition
             if (
                 iobject.is_eyepoint
                 and self.settings.pov_movement_anim_rotations_disabled()
@@ -342,7 +368,7 @@ class InterModel:
                     PERSON_ANIM_STRAFE_RIGHT,
                 }
             ):
-                iobject.anim_rotation_slices[ianim.index] = track
+                rotation_slices[iobject] = track
                 continue
 
             # Initialize rkf_front to be immediately in front of (or equal to) start_frame
@@ -437,7 +463,7 @@ class InterModel:
                     rkf.prev = prev_rkf
                 prev_rkf = rkf
 
-            iobject.anim_rotation_slices[ianim.index] = track
+            rotation_slices[iobject] = track
             # print(f"    {len(track)}")
         # print("  ================")
         # Merge animation data (merge translation and rotation keyframes into one) and put into ibones
@@ -452,12 +478,12 @@ class InterModel:
             track = InterAnimTrack()
 
             try:
-                tkf = iobject.anim_translation_slices[ianim.index][0]
-            except IndexError:
+                tkf = translation_slices[iobject][0]
+            except (KeyError, IndexError):
                 tkf = None
             try:
-                rkf = iobject.anim_rotation_slices[ianim.index][0]
-            except IndexError:
+                rkf = rotation_slices[iobject][0]
+            except (KeyError, IndexError):
                 rkf = None
 
             while tkf is not None and rkf is not None:
@@ -541,7 +567,7 @@ class InterModel:
             return
         ianim = self.ianim_index_map[index]
         if ianim.name is not None:
-            raise Exception(f"Animation {index} already loaded!")
+            raise AnimationAlreadyLoadedError(f"Animation {index} already loaded!")
         if anim_duration is None:
             anim_duration = play_duration
         ianim.name = name
@@ -566,8 +592,7 @@ class InterModel:
         elif type == "cockpit":
             iobject.bone_cockpit = ibone
         else:
-            # TODO: Name this exception
-            raise Exception(f"Bone type {type} is not allowed")
+            raise InvalidBoneTypeError(f"Bone type {type} is not allowed")
         ibone.iobject = iobject
 
     def get_iobject_by_name(self, name):
@@ -647,9 +672,7 @@ class InterModel:
                 geo = _geo
 
         igeom = None
-        if (
-            geo is not None and len(geo.face_list) > 0
-        ):  # TODO: What if no face has enough vertices to make a polygon?
+        if geo is not None and len(geo.face_list) > 0:
             # Build intermediary geometry
             if class_id_renderable(obj.class_id):
                 igeom = self.create_igeom_from_geo(
@@ -721,8 +744,7 @@ class InterModel:
             if mat_info == self.mat_map[mat_info.name]:
                 return
             else:
-                # TODO: Name this exception
-                raise Exception(
+                raise MaterialConflictError(
                     f"Different material already exists by same name {mat_info.name}: {mat_info}, {self.mat_map[mat_info.name]}"
                 )
         else:
@@ -744,8 +766,7 @@ class InterModel:
         if self.group_exists(name):
             g = self.igroup_map[name]
             if g.mat_name != mat_name:
-                # TODO: Name this exception
-                raise Exception(
+                raise MaterialConflictError(
                     f"material name doesn't match for group {name}: {g.mat_name}, {mat_name}"
                 )
             return g
@@ -778,12 +799,19 @@ class InterModel:
             return "_cockpit"
 
     def get_pov_ibone(self):
-        # TODO: When there are multiple POV bones, which one is used?
-        pov = None
-        for ibone in self.ibone_list:
-            if ibone.name.lower()[5:8] == "pov":
-                pov = ibone
-        return pov
+        pov_bones = [
+            ibone
+            for ibone in self.ibone_list
+            if (ibone.iobject and ibone.iobject.is_eyepoint)
+            or ibone.name.lower()[5:8] == "pov"
+        ]
+
+        if len(pov_bones) > 1:
+            print(
+                f"WARNING: Multiple POV bones detected: {[b.name for b in pov_bones]}. Using the first one: {pov_bones[0].name}"
+            )
+
+        return pov_bones[0] if pov_bones else None
 
     def compute_bounds(self):
         min_x = INF
@@ -867,9 +895,15 @@ class InterModel:
         normal_array = buf0["normal"]
         color_array = buf1["color"]
         uv_array = buf1["uv"]
-        tri_array = np.empty(
-            (tri_count,), dtype=("<H", 3)
-        )  # TODO: Use "<I" if there are too many indices
+        # Decide if we need 32-bit indices
+        if vertex_count > 65535:
+            tri_dtype = ("<I", 3)
+            use_32_bit = True
+        else:
+            tri_dtype = ("<H", 3)
+            use_32_bit = False
+
+        tri_array = np.empty((tri_count,), dtype=tri_dtype)
 
         # Fill the vertex data buffers and the triangle buffer
         v0, v1 = 0, 0
@@ -896,23 +930,16 @@ class InterModel:
         submesh.material_name = material_name
 
         submesh.index_count = 3 * tri_count
-        submesh.indexes_32_bit = (
-            False  # The triangle buffer is 16-bits per index (currently hardcoded) TODO
-        )
+        submesh.indices_32_bit = use_32_bit
         submesh.set_index_buffer(tri_array)
 
         # Create the geometry for the submesh (VertexData object)
         vd = submesh.create_vertex_data(vertex_count)
 
-        # TODO: Make adding vertex elements easier? (in ogremesh.py)
-        vd.vertex_declaration.create_vertex_element(0, VET.FLOAT3, VES.POSITION, 0, 0)
-        vd.vertex_declaration.create_vertex_element(0, VET.FLOAT3, VES.NORMAL, 12, 0)
-        vd.vertex_declaration.create_vertex_element(
-            1, 10, VES.COLOUR, 0, 0
-        )  # VET.UBYTE4_NORM
-        vd.vertex_declaration.create_vertex_element(
-            1, VET.FLOAT2, VES.TEXTURE_COORDINATES, 4, 0
-        )
+        vd.vertex_declaration.add_element(0, VET.FLOAT3, VES.POSITION)
+        vd.vertex_declaration.add_element(0, VET.FLOAT3, VES.NORMAL)
+        vd.vertex_declaration.add_element(1, 10, VES.COLOUR)  # VET.UBYTE4_NORM
+        vd.vertex_declaration.add_element(1, VET.FLOAT2, VES.TEXTURE_COORDINATES)
 
         # Add the vertex buffers to the submesh VertexData object
         vd.create_vertex_buffer(buf0, 0, 24)
@@ -992,9 +1019,6 @@ class InterObject:
     anim_translations = None
     anim_rotations = None
 
-    anim_translation_slices = None
-    anim_rotation_slices = None
-
     def __init__(self):
         self.children = []
         self.geometry_primary = None
@@ -1002,8 +1026,6 @@ class InterObject:
 
         self.anim_translations = []
         self.anim_rotations = []
-        self.anim_translation_slices = {}
-        self.anim_rotation_slices = {}
 
     def geometry(self):
         return (
@@ -1023,8 +1045,7 @@ class InterObject:
 
     def add_child(self, child):
         if child.parent is not None:
-            # TODO: Name this exception
-            raise Exception(
+            raise HierarchyError(
                 f"Child object {child.name} already has parent object {child.parent.name}; Cannot parent to {self.name}"
             )
 
@@ -1037,8 +1058,7 @@ class InterObject:
         elif (ibone.type) == 1:
             self.bone_cockpit = ibone
         else:
-            # TODO: Name this exception
-            raise Exception(f"Bone type {ibone.type} is not allowed")
+            raise InvalidBoneTypeError(f"Bone type {ibone.type} is not allowed")
 
         if ibone.igeom is not None:
             ibone.igeom.ibone = ibone
@@ -1178,8 +1198,7 @@ class InterGeometry:
         """
 
         if self._face is not None:
-            # TODO: Name this exception
-            raise Exception(
+            raise ModelPorterError(
                 f"begin_face called before previous face was ended: {self.name}"
             )
         self._face = []
@@ -1238,11 +1257,9 @@ class InterGeometry:
         """
 
         if self._face is not None:
-            # TODO: Name this exception
-            raise Exception(
+            raise ModelPorterError(
                 f"apply_geometry called before previous face was ended: {self.name}"
             )
-            # TODO: ^^ More specific exception
 
         self.vertex_array = np.array(
             self.vertex_list,
@@ -1309,21 +1326,24 @@ class InterGeometry:
 
         # Loop through triangles and count the number of inverted normals
         for i0, i1, i2 in self.tri_array:
+            v0, v1, v2 = (
+                *map(Vector3.from_array_ruf, self.vertex_array["pos"][[i0, i1, i2]]),
+            )  # vertex positions
             n0, n1, n2 = (
                 *map(Vector3.from_array_ruf, self.vertex_array["normal"][[i0, i1, i2]]),
             )  # vertex normals
 
-            # Vector orthogonal to the triangle, not necessarily unit length
-            orth = Vector3.triangle_cross(n0, n1, n2)
+            # Vector orthogonal to the triangle, representing the face normal
+            face_normal = Vector3.triangle_cross(v0, v1, v2)
 
             # Positive dot product means the vertex normal points in roughly
             #   the same direction as the triangle's true normal.
             # Negative dot product means the opposite.
-            if orth.dot(n0) < 0:
+            if face_normal.dot(n0) < 0:
                 inverted_count += 1
-            if orth.dot(n1) < 0:
+            if face_normal.dot(n1) < 0:
                 inverted_count += 1
-            if orth.dot(n2) < 0:
+            if face_normal.dot(n2) < 0:
                 inverted_count += 1
 
         if inverted_count > 0:
@@ -1474,7 +1494,7 @@ class InterBone:
     def set_transform(self, transform):
         self.position = transform.posit()
         self.orientation = transform.compute_orientation()
-        # self.size = ...   # TODO  (for now defaults to [1.0, 1.0, 1.0])
+        self.size = transform.compute_scale()
 
     def get_transform(self):
         return Transform.from_quaternion_translation(self.orientation, self.position)
@@ -1696,8 +1716,7 @@ def bzmap_to_pilimage(bzmap, asset_resolver):
         ar = ar[:, :, [2, 1, 0]]
         return Image.fromarray(ar, mode="RGB")
     else:
-        # TODO: Name this exception
-        raise Exception(f"Unknown BZMapFormat {bzmap.pixel_format}")
+        raise UnsupportedFileTypeError(f"Unknown BZMapFormat {bzmap.pixel_format}")
 
 
 def _get_palette_from_import_geo(map_dir):
@@ -2050,8 +2069,6 @@ def build_skeleton(imodel, type="primary"):
     for ibone in imodel.ibone_list:
         name = ibone.name
         if skeleton.bone_name_exists(name):
-            # Temporary fix for multiple bone with the same name.
-            # TODO: Determine (if there is) a more appropriate way to handle this
             name = name + "_copy"
         ogre_bone = skeleton.create_bone(name, ibone.index)
 
@@ -2141,14 +2158,6 @@ def lte(x, y, forward=True):
     return x <= y if forward else x >= y
 
 
-# TODO: Detect when normals point in the wrong direction and flip them!
-#         (The Shrieking Eagles 'CUBE.Sdf' scrap cube has inside-out normals)
-#       Perhaps add settings to control it:
-#         - CORRECT (default, corrects inverted normals)
-#         - NONE (leaves normals unchanged)
-#         - FLIP (indiscriminately flips all normals)
-
-
 class FixedScopeInfo:
     def __init__(self):
         self.scope_x = 0.0  # Camera-relative coordinates of
@@ -2228,7 +2237,6 @@ PERSON_ANIM_LAND_PARACHUTE = 10
 PERSON_ANIM_JUMP = 11
 
 
-# TODO: Make sure file extensions aren't case sensitive!
 def port_bwd2(target_filepath, asset_resolver, settings):
     print(f"Porting bwd2 model {target_filepath}")
 
@@ -2250,8 +2258,7 @@ def port_bwd2(target_filepath, asset_resolver, settings):
     elif bwd2_ext == ".sdf":
         is_vdf = False
     else:
-        # TODO: Name this exception
-        raise Exception(
+        raise UnsupportedFileTypeError(
             f"Filetype {bwd2_ext} does not have the right extension (.vdf/.sdf)"
         )
     print(f"Is VDF: {is_vdf}")
@@ -2376,8 +2383,7 @@ def port_bwd2(target_filepath, asset_resolver, settings):
     elif settings.separate_cockpit_disabled():
         imodel.use_cockpit = False
     else:
-        # TODO: Name this exception
-        raise Exception(f"Invalid cockpit setting")
+        raise InvalidSettingError(f"Invalid cockpit setting")
 
     print(f"Seperate cockpit files: {imodel.use_cockpit}")
 
@@ -2510,8 +2516,7 @@ def port_bwd2(target_filepath, asset_resolver, settings):
             print(f"Geometry Scope")
             imodel.scope_info = GeometryScopeInfo()
         else:
-            # TODO: Name this exception
-            raise Exception("Invalid scope type")
+            raise InvalidSettingError("Invalid scope type")
 
     # Create flat color images and UVs if applicable
     if imodel.use_flat_colors:
@@ -2562,7 +2567,6 @@ def port_bwd2(target_filepath, asset_resolver, settings):
         else:
             print("Creating sniper scope")
             igeom = imodel.create_igeom("scope")
-            # TODO: Which way do the normals point?
             s0 = 0.001
             s1 = 1.0 - s0
             igeom.vertex_array = np.array(
@@ -2591,10 +2595,7 @@ def port_bwd2(target_filepath, asset_resolver, settings):
             )
             ibone.set_geometry(igeom)
 
-            # TODO: Correctly handle the case that the gun ibone or pov ibone has no parent
-
             if use_fixed_scope_type:
-                # TODO: This comment is nice, but irrelevant here
                 # For some reason, if you copy all pov animations to the scope
                 #   it will slightly jiggle on screen when you move.
                 # I suspect there might be a one frame delay between the camera's
@@ -2604,8 +2605,7 @@ def port_bwd2(target_filepath, asset_resolver, settings):
 
                 pov_ibone = imodel.get_pov_ibone()
                 if pov_ibone is None:
-                    # TODO: Name this exception
-                    raise Exception("No POV found")
+                    raise POVNotFoundError("No POV found")
                 parent_ibone = pov_ibone.parent
 
                 for animname in imodel.ianim_name_map:
@@ -2930,9 +2930,7 @@ def port_geo(target_filepath, asset_resolver, settings):
 
     # Create the intermediary geometry object
     igeom = None
-    if (
-        len(geo.face_list) > 0
-    ):  # TODO: What if no face has enough vertices to make a polygon?
+    if len(geo.face_list) > 0:
         igeom = imodel.create_igeom_from_geo(
             name=imodel.name,
             geo=geo,

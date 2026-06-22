@@ -46,6 +46,12 @@ TERNARY_ITEMS = [
     ("NO", "Force No", "Force disabled"),
 ]
 
+NORMAL_MODE_ITEMS = (
+    ("CORRECT", "Correct Inverted", "Detect and flip mostly-inverted normals (default)"),
+    ("NONE", "Leave Unchanged", "Do not modify normals"),
+    ("FLIP", "Flip All", "Indiscriminately flip all normals"),
+)
+
 ANIMATION_PRESET_ITEMS = (
     (
         "DEPLOY_PAIR",
@@ -125,6 +131,7 @@ EXPORT_PRESET_PROPERTY_NAMES = {
         "ogre_name",
         "ogre_suffix",
         "ogre_flat_colors",
+        "ogre_normal_mode",
         "ogre_bounds_mult",
         "ogre_act_path",
         "ogre_config_path",
@@ -142,6 +149,7 @@ EXPORT_PRESET_PROPERTY_NAMES = {
         "ogre_name",
         "ogre_suffix",
         "ogre_flat_colors",
+        "ogre_normal_mode",
         "ogre_bounds_mult",
         "ogre_act_path",
         "ogre_config_path",
@@ -173,6 +181,7 @@ EXPORT_PRESET_PROPERTY_NAMES = {
         "ogre_name",
         "ogre_suffix",
         "ogre_flat_colors",
+        "ogre_normal_mode",
         "ogre_bounds_mult",
         "ogre_act_path",
         "ogre_config_path",
@@ -195,6 +204,7 @@ BUILTIN_EXPORT_PRESETS = {
                 "ogre_name": "",
                 "ogre_suffix": "_port",
                 "ogre_flat_colors": False,
+                "ogre_normal_mode": "CORRECT",
                 "ogre_bounds_mult": [1.0, 1.0, 1.0],
                 "ogre_act_path": "",
                 "ogre_config_path": "",
@@ -214,6 +224,7 @@ BUILTIN_EXPORT_PRESETS = {
                 "ogre_name": "",
                 "ogre_suffix": "_port",
                 "ogre_flat_colors": False,
+                "ogre_normal_mode": "CORRECT",
                 "ogre_bounds_mult": [1.0, 1.0, 1.0],
                 "ogre_act_path": "",
                 "ogre_config_path": "",
@@ -237,6 +248,7 @@ BUILTIN_EXPORT_PRESETS = {
                 "ogre_name": "",
                 "ogre_suffix": "_port",
                 "ogre_flat_colors": False,
+                "ogre_normal_mode": "CORRECT",
                 "ogre_bounds_mult": [1.0, 1.0, 1.0],
                 "ogre_act_path": "",
                 "ogre_config_path": "",
@@ -285,6 +297,7 @@ BUILTIN_EXPORT_PRESETS = {
                 "ogre_name": "",
                 "ogre_suffix": "_port",
                 "ogre_flat_colors": False,
+                "ogre_normal_mode": "CORRECT",
                 "ogre_bounds_mult": [1.0, 1.0, 1.0],
                 "ogre_act_path": "",
                 "ogre_config_path": "",
@@ -335,6 +348,7 @@ BUILTIN_EXPORT_PRESETS = {
                 "ogre_name": "",
                 "ogre_suffix": "_port",
                 "ogre_flat_colors": False,
+                "ogre_normal_mode": "CORRECT",
                 "ogre_bounds_mult": [1.0, 1.0, 1.0],
                 "ogre_act_path": "",
                 "ogre_config_path": "",
@@ -356,6 +370,7 @@ BUILTIN_EXPORT_PRESETS = {
                 "ogre_name": "",
                 "ogre_suffix": "_port",
                 "ogre_flat_colors": False,
+                "ogre_normal_mode": "CORRECT",
                 "ogre_bounds_mult": [1.0, 1.0, 1.0],
                 "ogre_act_path": "",
                 "ogre_config_path": "",
