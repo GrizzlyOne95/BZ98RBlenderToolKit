@@ -128,6 +128,10 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
         suffix = "_port"
 
     flat_colors = bool(options.get("flat_colors", False))
+
+    normal_mode_str = options.get("normal_mode", "CORRECT")
+    normal_mode = port_models.NormalMode[normal_mode_str]
+
     nowrite = bool(options.get("nowrite", False))
 
     bounds_mult = options.get("bounds_mult")
@@ -194,6 +198,7 @@ def auto_port_bz98_to_ogre(exported_path: str, options: dict | None = None):
         no_pov_rots=no_pov_rots,
         stabilize_walker_cockpit=stabilize_walker_cockpit,
         flat_colors=flat_colors,
+        normal_mode=normal_mode,
         boundingbox_scale_factors=boundingbox_scale_factors,
         nowrite=nowrite,
         verbose=False,

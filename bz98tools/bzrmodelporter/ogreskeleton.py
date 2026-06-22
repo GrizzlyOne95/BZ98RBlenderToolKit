@@ -327,5 +327,21 @@ class Skeleton:
                     f"Name map inconsistent; Got bone {bone} from name '{name}'",
                 )
 
-        # TODO: Verify animations and linked animation sources
+        for anim in self.animation_map.values():
+            for track in anim.tracks():
+                if track.target_bone.handle not in self.bone_map:
+                    return (
+                        False,
+                        f"Animation '{anim.name}' has track for bone {track.target_bone} not in bone map",
+                    )
+                if self.bone_map[track.target_bone.handle] != track.target_bone:
+                    return (
+                        False,
+                        f"Animation '{anim.name}' has track for bone {track.target_bone} that does not match bone in bone map",
+                    )
+
+        for source in self.linked_skeleton_animation_source_list:
+            if not source.skeleton_name:
+                return (False, "Linked skeleton animation source has no name")
+
         return (True, "Verification successful")

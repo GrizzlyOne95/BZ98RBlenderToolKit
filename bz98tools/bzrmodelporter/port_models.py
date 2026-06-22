@@ -17,8 +17,9 @@ from configparser import ConfigParser
 from pathlib import Path
 
 # Use relative imports inside the bz98tools.bzrmodelporter package
-from .bzportmodels import port_bwd2, port_geo, port_map
+from .bzportmodels import port_bwd2, port_geo, port_map, NormalMode
 from .spacial import Transform
+from .exceptions import UnsupportedFileTypeError, InvalidSettingError
 
 
 import re
@@ -54,7 +55,7 @@ def portconfig_from_odf(odf_path):
     if class_label is not None:
         class_label = class_label.strip().strip("\"'")
     else:
-        raise Exception("No classLabel in [GameObjectClass]")
+        raise InvalidSettingError("No classLabel in [GameObjectClass]")
 
     if base_name is not None:
         base_name = base_name.strip().strip("\"'")
@@ -157,7 +158,6 @@ class AssetResolver:
             "output_skipped": 0,
         }
 
-        # TODO: Pull from a config file
         self.act_path = act_path
 
     def _profile_add(self, key, value):
@@ -410,6 +410,7 @@ class SettingsController:
         no_pov_rots=False,  # Boolean
         stabilize_walker_cockpit=False,  # Boolean
         flat_colors=False,  # Boolean
+        normal_mode=NormalMode.CORRECT,
         boundingbox_scale_factors=None,
         nowrite=False,  # Boolean
         verbose=False,  # Boolean
@@ -425,6 +426,7 @@ class SettingsController:
         self.no_pov_rots = no_pov_rots
         self.stabilize_walker_cockpit = stabilize_walker_cockpit
         self.flat_colors = flat_colors
+        self.normal_mode = normal_mode
 
         # Normalize boundingbox_scale_factors so callers can pass None,
         # a BoundingBoxScaleFactors instance, or a (x, y, z) tuple/list.
@@ -660,6 +662,14 @@ The first line of the config file should be a filepath to an .act color palette 
         help="Force the use of flat per-face color texturing.",
     )
     ap.add_argument(
+        "--normalmode",
+        action="store",
+        default="CORRECT",
+        type=str.upper,
+        choices=["CORRECT", "NONE", "FLIP"],
+        help="Specifies how to handle normals: 'CORRECT' (default, detects and fixes inverted normals), 'NONE' (leaves normals as-is), 'FLIP' (flips all normals).",
+    )
+    ap.add_argument(
         "--boundsmult",
         action="store",
         nargs=3,
@@ -691,10 +701,11 @@ The first line of the config file should be a filepath to an .act color palette 
         action="store_true",
         help="Suppress file writing (for testing)",
     )
-    # ap.add_argument("--verbose",  # TODO: Allow verbosity to be changed meaningfully!
-    # 	action='store_true',
-    # 	help="Enable verbose logging",
-    # )
+    ap.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging",
+    )
     ap.add_argument(
         "--dest",
         action="store",
@@ -719,8 +730,6 @@ The first line of the config file should be a filepath to an .act color palette 
     return args
 
 
-# TODO: Turret fix!
-# TODO: Make sure file extensions aren't case sensitive!
 if __name__ == "__main__":
     script_path = Path(sys.argv[0])
     resource_dir_list = []
@@ -728,7 +737,6 @@ if __name__ == "__main__":
     args = parse_args()
     config_path = args.config or (script_path.parent / "config.cfg")
 
-    # TODO: argument to specify the config file
     act_path = None
     try:
         with open(config_path, "rt") as stream:
@@ -738,7 +746,7 @@ if __name__ == "__main__":
     except OSError:
         pass
 
-    # TODO: Track which BWD2s have already been ported - don't port the same model multiple times!
+    ported_bwd2_set = set()
     for i, filepath in enumerate(args.filepaths):
         dirpath = filepath.parent
         ext = filepath.suffix
@@ -785,13 +793,14 @@ if __name__ == "__main__":
             no_pov_rots=args.nopovrots,
             stabilize_walker_cockpit=args.stabilizewalkercockpit,
             flat_colors=args.flatcolors,
+            normal_mode=NormalMode[args.normalmode],
             boundingbox_scale_factors=(
                 BoundingBoxScaleFactors(*args.boundsmult)
                 if args.boundsmult is not None
                 else None
             ),
             nowrite=args.nowrite,
-            # verbose=args.verbose,
+            verbose=args.verbose,
         )
         if args.scopescreen is not None:
             settings.scope.screen = ScopeScreen(
@@ -838,21 +847,29 @@ if __name__ == "__main__":
                 if is_vehicle_type(class_label):
                     bwd2_path = asset_resolver.get_vdf_path(base_name)
                     if bwd2_path is None:
-                        raise Exception(f"VDF file not found: {base_name}")
+                        raise UnsupportedFileTypeError(f"VDF file not found: {base_name}")
                 elif is_building_type(class_label):
                     bwd2_path = asset_resolver.get_sdf_path(base_name)
                     if bwd2_path is None:
-                        raise Exception(f"SDF file not found: {base_name}")
+                        raise UnsupportedFileTypeError(f"SDF file not found: {base_name}")
                 else:
-                    raise Exception(
+                    raise InvalidSettingError(
                         f"Bad GameObject; Unrecognized class label '{class_label}'"
                     )
 
-                port_bwd2(bwd2_path, asset_resolver, settings)
+                if bwd2_path.resolve() in ported_bwd2_set:
+                    print(f"Skipping already ported BWD2: {bwd2_path}")
+                else:
+                    port_bwd2(bwd2_path, asset_resolver, settings)
+                    ported_bwd2_set.add(bwd2_path.resolve())
 
             elif ext.lower() in {".vdf", ".sdf"}:
                 # BWD2 PORT
-                port_bwd2(filepath, asset_resolver, settings)
+                if filepath.resolve() in ported_bwd2_set:
+                    print(f"Skipping already ported BWD2: {filepath}")
+                else:
+                    port_bwd2(filepath, asset_resolver, settings)
+                    ported_bwd2_set.add(filepath.resolve())
 
             elif ext.lower() == ".geo":
                 # GEO PORT
