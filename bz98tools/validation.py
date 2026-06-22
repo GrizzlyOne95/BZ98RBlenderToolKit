@@ -985,13 +985,25 @@ def _collect_vdf_vehicle_required_issues(
     if not has_exportable_geo:
         return issues
 
-    if not any(_geo_type(obj) == 40 for obj in candidates):
+    pov_objects = [obj for obj in candidates if _geo_type(obj) == 40]
+    if not pov_objects:
         issues.append(
             _make_issue(
                 "ERROR",
                 "Scene",
                 "POV",
                 "VDF vehicle export has no exportable Type 40 POV GEO. Battlezone can crash when a vehicle has no POV/eyepoint.",
+                {"VDF"},
+            )
+        )
+    elif len(pov_objects) > 1:
+        pov_names = ", ".join(obj.name for obj in pov_objects)
+        issues.append(
+            _make_issue(
+                "ERROR",
+                "Scene",
+                "POV",
+                f"Multiple exportable Type 40 POV GEOs detected: {pov_names}. Only one POV can be active; remove or rename duplicates.",
                 {"VDF"},
             )
         )

@@ -456,8 +456,18 @@ class VertexBuffer:
         self.vertex_size = vertex_size
 
     def set_buffer(self, buf):
-        # TODO: Check that buffer size is correct
         self.buffer = memoryview(buf)
+
+    def validate_buffer_size(self, vertex_count):
+        """Verify that the buffer size matches the expected size for the given vertex count."""
+        expected_size = vertex_count * self.vertex_size
+        actual_size = self.buffer.nbytes
+        if actual_size != expected_size:
+            raise ValueError(
+                f"VertexBuffer size mismatch for bind index {self.bind_index}: "
+                f"expected {expected_size} bytes ({vertex_count} vertices * {self.vertex_size} bytes), "
+                f"but got {actual_size} bytes."
+            )
 
     def get_buffer(self):
         return self.buffer.obj
@@ -477,6 +487,11 @@ class VertexDeclaration:
         ve = VertexElement(source, type, semantic, offset, index)
         self.vertex_element_list.append(ve)
         return ve
+
+    def add_element(self, source, type, semantic, index=0):
+        """Add a vertex element, automatically calculating the offset based on existing elements in the same source."""
+        offset = self.compute_vertex_size(source)
+        return self.create_vertex_element(source, type, semantic, offset, index)
 
     def clear(self):
         self.vertex_element_list.clear()
@@ -679,6 +694,41 @@ class SubMesh:
             del self.bone_assignment_map[vindex]
 
 
+class Edge:
+    def __init__(self):
+        self.tri_index0 = 0
+        self.tri_index1 = 0
+        self.vert_index0 = 0
+        self.vert_index1 = 0
+        self.shared_vert_index0 = 0
+        self.shared_vert_index1 = 0
+        self.degenerate = False
+
+
+class EdgeGroup:
+    def __init__(self):
+        self.vertex_set = 0
+        self.tri_start = 0
+        self.tri_count = 0
+        self.edge_list = []
+
+
+class EdgeTriangle:
+    def __init__(self):
+        self.index_set = 0
+        self.vertex_set = 0
+        self.vert_indices = [0, 0, 0]
+        self.shared_vert_indices = [0, 0, 0]
+        self.normal = [0.0, 0.0, 0.0, 0.0]
+
+
+class EdgeData:
+    def __init__(self):
+        self.is_closed = False
+        self.triangles = []
+        self.edge_groups = []
+
+
 class Mesh:
     def __init__(self):
         self.shared_vertex_data = None
@@ -693,6 +743,7 @@ class Mesh:
             {}
         )  # Maps vertex indices from VBAs onto lists of those VertexBoneAssignment objects.
         self.name_table = {}
+        self.edge_lists = {}  # Map LOD index to EdgeData
 
     def create_shared_vertex_data(self, vertex_count=0):
         self.shared_vertex_data = VertexData(vertex_count)

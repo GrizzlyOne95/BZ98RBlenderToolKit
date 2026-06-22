@@ -170,13 +170,6 @@ from xml.dom import minidom
 SHOW_IMPORT_DUMPS = False
 SHOW_IMPORT_TRACE = False
 DEFAULT_KEEP_XML = False
-# default blender version of script
-blender_version = 259
-
-# makes sure name doesn't exceeds blender naming limits
-# also keeps after name (as Torchlight uses names to identify types -boots, chest, ...- with names)
-# TODO: this is not needed for Blender 2.62 and above
-
 rounding_epsilon = 1e-4
 
 
@@ -243,12 +236,7 @@ def _run_converter(args):
 
 
 def GetValidBlenderName(name):
-
-    global blender_version
-
-    maxChars = 20
-    if blender_version > 262:
-        maxChars = 63
+    maxChars = 63
 
     newname = name
     if len(name) > maxChars:
@@ -729,8 +717,6 @@ def calcBoneRotations(BonesDic):
     # print("all objects rotated")
     for bone in BonesDic.keys():
         obj = objDic.get(bone)
-        # TODO: need to get rotation matrix out of objects rotation
-        # loc, rot, scale = obj.matrix_local.decompose()
         loc, rot, scale = obj.matrix_world.decompose()  # 02
         rotmatAS = rot.to_matrix()
         # print(rotmatAS)
@@ -745,13 +731,12 @@ def calcBoneRotations(BonesDic):
     #        scn.collection.objects.unlink(obj)
     #        del obj
 
-    # TODO cyclic
     for bone in BonesDic.keys():
         obj = objDic.get(bone)
         #        obj.select = True
         #        #bpy.ops.object.select_name(bone, False)
         #        bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-        scn.collection.objects.unlink(obj)  # TODO: cyclic message in console
+        scn.collection.objects.unlink(obj)
         # del obj
         # bpy.context.scene.objects.unlink(obj)
         bpy.data.objects.remove(obj)
@@ -1054,18 +1039,12 @@ def bCreateSkeleton(meshData, name):
         rotmat = boneData["rotmatAS"]
         # print(rotmat[1].to_tuple())
         # boneObj.matrix = Matrix(rotmat[1],rotmat[0],rotmat[2])
-        if blender_version <= 262:
-            r0 = [rotmat[0].x] + [rotmat[0].y] + [rotmat[0].z]
-            r1 = [rotmat[1].x] + [rotmat[1].y] + [rotmat[1].z]
-            r2 = [rotmat[2].x] + [rotmat[2].y] + [rotmat[2].z]
-            boneRotMatrix = Matrix((r1, r0, r2))
-        elif blender_version > 262:
-            # this is fugly was of flipping matrix
-            r0 = [rotmat.col[0].x] + [rotmat.col[0].y] + [rotmat.col[0].z]
-            r1 = [rotmat.col[1].x] + [rotmat.col[1].y] + [rotmat.col[1].z]
-            r2 = [rotmat.col[2].x] + [rotmat.col[2].y] + [rotmat.col[2].z]
-            tmpR = Matrix((r1, r0, r2))
-            boneRotMatrix = Matrix((tmpR.col[0], tmpR.col[1], tmpR.col[2]))
+        # this is fugly was of flipping matrix
+        r0 = [rotmat.col[0].x] + [rotmat.col[0].y] + [rotmat.col[0].z]
+        r1 = [rotmat.col[1].x] + [rotmat.col[1].y] + [rotmat.col[1].z]
+        r2 = [rotmat.col[2].x] + [rotmat.col[2].y] + [rotmat.col[2].z]
+        tmpR = Matrix((r1, r0, r2))
+        boneRotMatrix = Matrix((tmpR.col[0], tmpR.col[1], tmpR.col[2]))
 
         # pos = Vector([headPos[0],-headPos[2],headPos[1]])
         # axis, roll = mat3_to_vec_roll(boneRotMatrix.to_3x3())
@@ -1560,10 +1539,6 @@ def load(
         "use_selected_skeleton": use_selected_skeleton,
         "import_materials": import_materials,
     }
-
-    global blender_version
-
-    blender_version = bpy.app.version[0] * 100 + bpy.app.version[1]
 
     print("loading", str(filepath))
 

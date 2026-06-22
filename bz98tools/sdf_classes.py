@@ -389,7 +389,6 @@ class ANIMRotation:
         return position + self.binlength
 
 
-# TODO: Figure out what this even does...
 class ANIMTranslation2:
     # Historical toolkit name for the legacy ANIM SCLKEY slot.
     # Engine symbols and stock assets identify this as a scale-key track.

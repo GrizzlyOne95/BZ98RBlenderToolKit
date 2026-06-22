@@ -1345,7 +1345,6 @@ def bCollectSkeletonData(blenderMeshData, selectedObjects):
     if SHOW_EXPORT_TRACE:
         print("bpy.data.armatures = %s" % bpy.data.armatures)
 
-    # TODO, for now just take armature of first selected object
     if selectedObjects[0].find_armature():
         # creates and parses blender skeleton
         skeleton = Skeleton(selectedObjects[0])

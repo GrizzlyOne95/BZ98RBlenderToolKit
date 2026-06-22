@@ -693,6 +693,13 @@ class Transform:
             self.pz,
         )
 
+    def compute_scale(self):
+        """Return a Vector3 describing the scale of this transform."""
+        sx = math.sqrt(self.rx**2 + self.ry**2 + self.rz**2)
+        sy = math.sqrt(self.ux**2 + self.uy**2 + self.uz**2)
+        sz = math.sqrt(self.fx**2 + self.fy**2 + self.fz**2)
+        return Vector3(sx, sy, sz)
+
     def to_nparray_xyz_ruf(self):
         return np.array(
             [

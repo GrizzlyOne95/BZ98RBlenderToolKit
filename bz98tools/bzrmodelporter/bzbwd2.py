@@ -564,17 +564,16 @@ class BWD2:
         return name in self.obj_namemap
 
     def get_parent(self, obj):
-        # TODO: I think this should go through the parent heirarchy in order, depth first, processing children before parents, taking the last matching object.
         if obj.is_root():
             return None
-        return get_object_by_name(obj.parent)
+        return self.get_object_by_name(obj.parent)
 
     def get_primary_parent(self, obj):
         if obj.lod != self.GEO.LOD.PRIMARY or obj.rep != self.GEO.REP.PRIMARY:
             obj = self.get_primary_object(obj.index)
         if obj.is_root():
             return None
-        return get_object_by_name(obj.parent)
+        return self.get_object_by_name(obj.parent)
 
 
 class VDF(BWD2):

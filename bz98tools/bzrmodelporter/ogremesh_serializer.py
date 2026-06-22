@@ -7,7 +7,17 @@ from typing import Any
 # under the terms of the GNU General Public License v3.0.
 # See the LICENSE file or <https://www.gnu.org/licenses/>.
 
-from .ogremesh import Mesh, AxisAlignedBoundingBox, OT, VES, VET
+from .ogremesh import (
+    Mesh,
+    AxisAlignedBoundingBox,
+    OT,
+    VES,
+    VET,
+    EdgeData,
+    EdgeTriangle,
+    EdgeGroup,
+    Edge,
+)
 
 from .baseserializer import (
     BOOL_SIZE,
@@ -354,7 +364,8 @@ class MeshSerializer(OgreBaseSerializer):
         self.pop_chunk(MeshChunkID.MESH_BONE_ASSIGNMENT)
 
     def read_mesh_lod_level(self, mesh):
-        raise NotImplementedError()
+        self.stream.seek(self.current_chunk_size(), CURRENT_STREAM_POSITION)
+        self.pop_chunk(MeshChunkID.MESH_LOD_LEVEL)
 
     def read_mesh_bounds(self, mesh):
         mesh.aabb = AxisAlignedBoundingBox()
@@ -384,47 +395,48 @@ class MeshSerializer(OgreBaseSerializer):
         self.pop_chunk(MeshChunkID.SUBMESH_NAME_TABLE)
 
     def read_edge_list(self, mesh):
-        addr = self.stream.tell()
-        # print(f"Reading EDGE_LISTS at address {addr}")
         while True:
             try:
                 chunk_id = self.read_chunk_header()
             except EOFError:
                 break
             if chunk_id == MeshChunkID.EDGE_LIST_LOD:
-                addr = self.stream.tell()
-                # print(f"Reading EDGE_LIST_LOD at address {addr}")
                 lod_index = self.read_ushort()
                 is_manual = self.read_bool()
                 if not is_manual:
-                    edge_data = None  # TODO
+                    edge_data = EdgeData()
                     self.read_edge_list_lod_info(edge_data)
-                    # Processing...
+                    mesh.edge_lists[lod_index] = edge_data
+                else:
+                    self.stream.seek(self.current_chunk_size() - 3, CURRENT_STREAM_POSITION)
+                    self.pop_chunk(MeshChunkID.EDGE_LIST_LOD)
             else:
                 self.rollback_chunk_header()
                 break
         self.pop_chunk(MeshChunkID.EDGE_LISTS)
 
     def read_edge_list_lod_info(self, edge_data):
-        is_closed = self.read_bool()
+        edge_data.is_closed = self.read_bool()
         triangle_count = self.read_uint()
         edge_group_count = self.read_uint()
         for i in range(triangle_count):
-            index_set = self.read_uint()
-            vertex_set = self.read_uint()
+            et = EdgeTriangle()
+            et.index_set = self.read_uint()
+            et.vertex_set = self.read_uint()
 
-            vert_index0 = self.read_uint()
-            vert_index1 = self.read_uint()
-            vert_index2 = self.read_uint()
+            et.vert_indices[0] = self.read_uint()
+            et.vert_indices[1] = self.read_uint()
+            et.vert_indices[2] = self.read_uint()
 
-            shared_vert_index0 = self.read_uint()
-            shared_vert_index1 = self.read_uint()
-            shared_vert_index2 = self.read_uint()
+            et.shared_vert_indices[0] = self.read_uint()
+            et.shared_vert_indices[1] = self.read_uint()
+            et.shared_vert_indices[2] = self.read_uint()
 
-            trangle_face_normal_x = self.read_float()
-            trangle_face_normal_y = self.read_float()
-            trangle_face_normal_z = self.read_float()
-            trangle_face_normal_w = self.read_float()
+            et.normal[0] = self.read_float()
+            et.normal[1] = self.read_float()
+            et.normal[2] = self.read_float()
+            et.normal[3] = self.read_float()
+            edge_data.triangles.append(et)
 
         while True:
             try:
@@ -432,37 +444,42 @@ class MeshSerializer(OgreBaseSerializer):
             except EOFError:
                 break
             if chunk_id == MeshChunkID.EDGE_GROUP:
-                addr = self.stream.tell()
-                # print(f"Reading EDGE_GROUP at address {addr}")
-                vertex_set = self.read_uint()
-                tri_start = self.read_uint()
-                tri_count = self.read_uint()
+                eg = EdgeGroup()
+                eg.vertex_set = self.read_uint()
+                eg.tri_start = self.read_uint()
+                eg.tri_count = self.read_uint()
                 edge_count = self.read_uint()
                 for i in range(edge_count):
-                    tri_index0 = self.read_uint()
-                    tri_index1 = self.read_uint()
+                    e = Edge()
+                    e.tri_index0 = self.read_uint()
+                    e.tri_index1 = self.read_uint()
 
-                    vert_index0 = self.read_uint()
-                    vert_index1 = self.read_uint()
+                    e.vert_index0 = self.read_uint()
+                    e.vert_index1 = self.read_uint()
 
-                    shared_vert_index0 = self.read_uint()
-                    shared_vert_index1 = self.read_uint()
+                    e.shared_vert_index0 = self.read_uint()
+                    e.shared_vert_index1 = self.read_uint()
 
-                    degenerate = self.read_bool()
+                    e.degenerate = self.read_bool()
+                    eg.edge_list.append(e)
+                edge_data.edge_groups.append(eg)
                 self.pop_chunk(MeshChunkID.EDGE_GROUP)
-
             else:
+                self.rollback_chunk_header()
                 break
         self.pop_chunk(MeshChunkID.EDGE_LIST_LOD)
 
     def read_poses(self, mesh):
-        raise NotImplementedError()
+        self.stream.seek(self.current_chunk_size(), CURRENT_STREAM_POSITION)
+        self.pop_chunk(MeshChunkID.POSES)
 
     def read_animations(self, mesh):
-        raise NotImplementedError()
+        self.stream.seek(self.current_chunk_size(), CURRENT_STREAM_POSITION)
+        self.pop_chunk(MeshChunkID.ANIMATIONS)
 
     def read_table_extremes(self, mesh):
-        raise NotImplementedError()
+        self.stream.seek(self.current_chunk_size(), CURRENT_STREAM_POSITION)
+        self.pop_chunk(MeshChunkID.EXTREMES)
 
     # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
     # -# Write Methods
@@ -502,6 +519,7 @@ class MeshSerializer(OgreBaseSerializer):
 
         self.write_bounds_info(mesh)  # MESH_BOUNDS
         self.write_submesh_name_table(mesh)  # SUBMESH_NAME_TABLE
+        self.write_edge_list(mesh)  # EDGE_LISTS
         self.pop_chunk(MeshChunkID.MESH)
 
     def write_geometry(self, vertex_data):
@@ -558,7 +576,8 @@ class MeshSerializer(OgreBaseSerializer):
         if not submesh.use_shared_vertices:
             self.write_geometry(submesh.vertex_data)  # GEOMETRY
 
-        # TODO: self.write_texture_alias list
+        for alias_name, texture_name in submesh.texture_alias_map.items():
+            self.write_submesh_texture_alias(alias_name, texture_name)
 
         self.write_submesh_operation(submesh)  # SUBMESH_OPERATION
 
@@ -582,6 +601,18 @@ class MeshSerializer(OgreBaseSerializer):
         self.write_ushort(vba.bone_index)  # bone index
         self.write_float(vba.weight)  # weight
         self.pop_chunk(MeshChunkID.SUBMESH_BONE_ASSIGNMENT)
+
+    def write_submesh_texture_alias(self, alias_name, texture_name):
+        # SUBMESH_TEXTURE_ALIAS
+        size = (
+            CHUNK_HEADER_SIZE
+            + self.calc_string_size(alias_name)
+            + self.calc_string_size(texture_name)
+        )
+        self.write_chunk_header(MeshChunkID.SUBMESH_TEXTURE_ALIAS, size)
+        self.write_string_nlt(alias_name)
+        self.write_string_nlt(texture_name)
+        self.pop_chunk(MeshChunkID.SUBMESH_TEXTURE_ALIAS)
 
     def write_skeleton_link(self, skeleton_name):
         # MESH_SKELETON_LINK
@@ -629,6 +660,63 @@ class MeshSerializer(OgreBaseSerializer):
         self.write_string_nlt(name)  # submesh name
         self.pop_chunk(MeshChunkID.SUBMESH_NAME_TABLE_ELEMENT)
 
+    def write_edge_list(self, mesh):
+        if not mesh.edge_lists:
+            return
+        # EDGE_LISTS
+        size = self.calc_edge_list_size(mesh)
+        self.write_chunk_header(MeshChunkID.EDGE_LISTS, size)
+        for lod_index, edge_data in mesh.edge_lists.items():
+            self.write_edge_list_lod(lod_index, edge_data)
+        self.pop_chunk(MeshChunkID.EDGE_LISTS)
+
+    def write_edge_list_lod(self, lod_index, edge_data):
+        # EDGE_LIST_LOD
+        size = self.calc_edge_list_lod_size(edge_data)
+        self.write_chunk_header(MeshChunkID.EDGE_LIST_LOD, size)
+        self.write_ushort(lod_index)
+        self.write_bool(False)  # is_manual
+        self.write_edge_list_lod_info(edge_data)
+        self.pop_chunk(MeshChunkID.EDGE_LIST_LOD)
+
+    def write_edge_list_lod_info(self, edge_data):
+        self.write_bool(edge_data.is_closed)
+        self.write_uint(len(edge_data.triangles))
+        self.write_uint(len(edge_data.edge_groups))
+        for et in edge_data.triangles:
+            self.write_uint(et.index_set)
+            self.write_uint(et.vertex_set)
+            self.write_uint(et.vert_indices[0])
+            self.write_uint(et.vert_indices[1])
+            self.write_uint(et.vert_indices[2])
+            self.write_uint(et.shared_vert_indices[0])
+            self.write_uint(et.shared_vert_indices[1])
+            self.write_uint(et.shared_vert_indices[2])
+            self.write_float(et.normal[0])
+            self.write_float(et.normal[1])
+            self.write_float(et.normal[2])
+            self.write_float(et.normal[3])
+        for eg in edge_data.edge_groups:
+            self.write_edge_group(eg)
+
+    def write_edge_group(self, eg):
+        # EDGE_GROUP
+        size = self.calc_edge_group_size(eg)
+        self.write_chunk_header(MeshChunkID.EDGE_GROUP, size)
+        self.write_uint(eg.vertex_set)
+        self.write_uint(eg.tri_start)
+        self.write_uint(eg.tri_count)
+        self.write_uint(len(eg.edge_list))
+        for e in eg.edge_list:
+            self.write_uint(e.tri_index0)
+            self.write_uint(e.tri_index1)
+            self.write_uint(e.vert_index0)
+            self.write_uint(e.vert_index1)
+            self.write_uint(e.shared_vert_index0)
+            self.write_uint(e.shared_vert_index1)
+            self.write_bool(e.degenerate)
+        self.pop_chunk(MeshChunkID.EDGE_GROUP)
+
     # -#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#-#
     # -# Calc Methods
 
@@ -647,14 +735,10 @@ class MeshSerializer(OgreBaseSerializer):
                 mesh.get_bone_assignment_count() * BONE_ASSIGNMENT_SIZE
             )  # MESH_BONE_ASSIGNMENT
 
-        # TODO: calc_lod_levels_size
         size += BOUNDS_INFO_SIZE  # MESH_BOUNDS
         size += self.calc_submesh_name_table_size(mesh)  # SUBMESH_NAME_TABLE
+        size += self.calc_edge_list_size(mesh)  # EDGE_LISTS
 
-        # TODO: calc_edge_list_size
-        # TODO: calc_poses_size
-        # TODO: calc_animations_size
-        # TODO: calc_extremes_size
         return size
 
     def calc_geometry_size(self, vertex_data):
@@ -730,7 +814,7 @@ class MeshSerializer(OgreBaseSerializer):
         return CHUNK_HEADER_SIZE + self.calc_string_size(skeleton_name)  # skeleton name
 
     def calc_lod_levels_size(self, mesh):
-        raise NotImplementedError()
+        return 0
 
     def calc_submesh_name_table_size(self, mesh):
         # SUBMESH_NAME_TABLE
@@ -751,13 +835,34 @@ class MeshSerializer(OgreBaseSerializer):
         )
 
     def calc_edge_list_size(self, mesh):
-        raise NotImplementedError()
+        if not mesh.edge_lists:
+            return 0
+        size = CHUNK_HEADER_SIZE
+        for edge_data in mesh.edge_lists.values():
+            size += self.calc_edge_list_lod_size(edge_data)
+        return size
+
+    def calc_edge_list_lod_size(self, edge_data):
+        size = CHUNK_HEADER_SIZE + USHORT_SIZE + BOOL_SIZE  # lod_index, is_manual
+        # edge_list_lod_info
+        size += BOOL_SIZE + 2 * UINT_SIZE  # is_closed, tri_count, eg_count
+        size += len(edge_data.triangles) * (
+            8 * UINT_SIZE + 4 * FLOAT_SIZE
+        )  # EdgeTriangle
+        for eg in edge_data.edge_groups:
+            size += self.calc_edge_group_size(eg)
+        return size
+
+    def calc_edge_group_size(self, eg):
+        size = CHUNK_HEADER_SIZE + 4 * UINT_SIZE  # vertex_set, tri_start, tri_count, edge_count
+        size += len(eg.edge_list) * (6 * UINT_SIZE + BOOL_SIZE)  # Edge
+        return size
 
     def calc_poses_size(self, mesh):
-        raise NotImplementedError()
+        return 0
 
     def calc_animations_size(self, mesh):
-        raise NotImplementedError()
+        return 0
 
     def calc_extremes_size(self, mesh):
-        raise NotImplementedError()
+        return 0
