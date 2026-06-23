@@ -1863,10 +1863,75 @@ def _bzmap_to_rgba_bytes(map_source, asset_resolver, map_dir=None):
         rgba[:, :, 3] = 255
         return width, height, rgba.tobytes()
 
-    # ---- the rest of your formats stay the same ----
-    # ARGB4444 / RGB565 / ARGB8888 / XRGB8888 etc.
-    # (keep your existing code for these branches unchanged)
-    ...
+    # ARGB4444
+    elif pixel_format == BZMapFormat.ARGB4444:
+        ar = np.frombuffer(buf, dtype="<H")
+        if ar.size < width * height:
+            return None, None, None
+        ar = ar[: width * height].reshape((height, width))
+
+        rgba = np.zeros((height, width, 4), dtype="B")
+        rgba[:, :, 0] = np.interp(
+            np.bitwise_and(np.right_shift(ar, 8), 15), (0, 15), (0, 255)
+        ).astype("B")
+        rgba[:, :, 1] = np.interp(
+            np.bitwise_and(np.right_shift(ar, 4), 15), (0, 15), (0, 255)
+        ).astype("B")
+        rgba[:, :, 2] = np.interp(
+            np.bitwise_and(ar, 15), (0, 15), (0, 255)
+        ).astype("B")
+        rgba[:, :, 3] = np.interp(
+            np.bitwise_and(np.right_shift(ar, 12), 15), (0, 15), (0, 255)
+        ).astype("B")
+
+        return width, height, rgba.tobytes()
+
+    # RGB565
+    elif pixel_format == BZMapFormat.RGB565:
+        ar = np.frombuffer(buf, dtype="<H")
+        if ar.size < width * height:
+            return None, None, None
+        ar = ar[: width * height].reshape((height, width))
+
+        rgba = np.zeros((height, width, 4), dtype="B")
+        rgba[:, :, 0] = np.interp(np.right_shift(ar, 11), (0, 31), (0, 255)).astype("B")
+        rgba[:, :, 1] = np.interp(
+            np.bitwise_and(np.right_shift(ar, 5), 0b111111), (0, 63), (0, 255)
+        ).astype("B")
+        rgba[:, :, 2] = np.interp(
+            np.bitwise_and(ar, 0b11111), (0, 31), (0, 255)
+        ).astype("B")
+        rgba[:, :, 3] = 255
+
+        return width, height, rgba.tobytes()
+
+    # ARGB8888
+    elif pixel_format == BZMapFormat.ARGB8888:
+        ar = np.frombuffer(buf, dtype="B")
+        if ar.size < width * height * 4:
+            return None, None, None
+        rgba = ar[: width * height * 4].reshape((height, width, 4))
+        # BZ layout is likely BGRA (standard Windows 32bpp) but Pillow logic says [2,1,0,3] reorder.
+        # Let's stick to the existing logic reordering BGRA -> RGBA for consistency
+        rgba = rgba[:, :, [2, 1, 0, 3]]
+        return width, height, rgba.tobytes()
+
+    # XRGB8888
+    elif pixel_format == BZMapFormat.XRGB8888:
+        ar = np.frombuffer(buf, dtype="B")
+        if ar.size < width * height * 4:
+            return None, None, None
+        xrgb = ar[: width * height * 4].reshape((height, width, 4))
+        # Reorder BGRX -> RGBA
+        rgba = np.zeros((height, width, 4), dtype="B")
+        rgba[:, :, 0] = xrgb[:, :, 2]
+        rgba[:, :, 1] = xrgb[:, :, 1]
+        rgba[:, :, 2] = xrgb[:, :, 0]
+        rgba[:, :, 3] = 255
+        return width, height, rgba.tobytes()
+
+    else:
+        raise UnsupportedFileTypeError(f"Unknown BZMapFormat {pixel_format}")
 
 
 def _dds_uncompressed_rgba_bytes(width, height, rgba_bytes):
@@ -1881,20 +1946,10 @@ def _dds_uncompressed_rgba_bytes(width, height, rgba_bytes):
             f"rgba_bytes has wrong size: {len(rgba_bytes)}; expected {width*height*4}"
         )
 
-    # Reorder RGBA -> BGRA for A8R8G8B8 layout
-    rgba = memoryview(rgba_bytes)
-    bgra = bytearray(len(rgba_bytes))
-    j = 0
-    for i in range(0, len(rgba_bytes), 4):
-        r = rgba[i + 0]
-        g = rgba[i + 1]
-        b = rgba[i + 2]
-        a = rgba[i + 3]
-        bgra[j + 0] = b
-        bgra[j + 1] = g
-        bgra[j + 2] = r
-        bgra[j + 3] = a
-        j += 4
+    # Reorder RGBA -> BGRA for A8R8G8B8 layout using numpy for performance
+    rgba_array = np.frombuffer(rgba_bytes, dtype="B").reshape((-1, 4))
+    bgra_array = rgba_array[:, [2, 1, 0, 3]]
+    bgra = bgra_array.tobytes()
 
     def dword(x):
         return struct.pack("<I", x)
