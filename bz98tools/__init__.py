@@ -3112,30 +3112,30 @@ class BZ98TOOLS_PT_view3d_quick_tools(bpy.types.Panel):
         select_box = layout.box()
         select_box.label(text="Selection", icon="RESTRICT_SELECT_OFF")
         row = select_box.row(align=True)
-        mesh_op = row.operator("bz.select_by_object_type", text="Meshes")
+        mesh_op = row.operator("bz.select_by_object_type", text="Meshes", icon="MESH_DATA")
         mesh_op.selection_mode = "MESH"
-        non_mesh_op = row.operator("bz.select_by_object_type", text="Non-Mesh")
+        non_mesh_op = row.operator("bz.select_by_object_type", text="Non-Mesh", icon="EMPTY_DATA")
         non_mesh_op.selection_mode = "NON_MESH"
 
         col_box = layout.box()
         col_box.label(text="VDF COL", icon="CUBE")
         col_row = col_box.row(align=True)
         col_row.operator_context = "EXEC_DEFAULT"
-        shaped_op = col_row.operator("bz.generate_vdf_collision_meshes", text="Shaped")
+        shaped_op = col_row.operator("bz.generate_vdf_collision_meshes", text="Shaped", icon="MESH_UVSPHERE")
         shaped_op.profile = "SHAPED"
-        square_op = col_row.operator("bz.generate_vdf_collision_meshes", text="Square")
+        square_op = col_row.operator("bz.generate_vdf_collision_meshes", text="Square", icon="MESH_CUBE")
         square_op.profile = "SQUARE"
 
         geo_box = layout.box()
         geo_box.label(text="Vehicle GEO Starter", icon="MESH_CUBE")
-        geo_box.operator("bz.create_vehicle_geo_set", text="Create Standard Set")
+        geo_box.operator("bz.create_vehicle_geo_set", text="Create Standard Set", icon="ADD")
 
         normal_box = layout.box()
         normal_box.label(text="Normals", icon="NORMALS_FACE")
         normal_row = normal_box.row(align=True)
-        outside_op = normal_row.operator("bz.quick_normals_fix", text="Outside")
+        outside_op = normal_row.operator("bz.quick_normals_fix", text="Outside", icon="NORMALS_VERTEX_OUTER")
         outside_op.normal_mode = "OUTSIDE"
-        faces_op = normal_row.operator("bz.quick_normals_fix", text="From Faces")
+        faces_op = normal_row.operator("bz.quick_normals_fix", text="From Faces", icon="NORMALS_FACE")
         faces_op.normal_mode = "FACE_NORMALS"
 
         validation_box = layout.box()
@@ -4823,9 +4823,12 @@ class AnimationUIList(bpy.types.UIList):
     def draw_item(
         self, context, layout, data, item, icon, active_data, active_propname, index
     ):
-        layout.label(
-            text=f"Idx {item.Index} | Start {item.Start} | Len {item.Length} | Loop {item.Loop} | Spd {item.Speed:g}"
-        )
+        row = layout.row(align=True)
+        row.label(text=f"Slot {item.Index}", icon="ANIM")
+        row.separator()
+        row.label(text=f"Frames: {item.Start}..{item.Start + item.Length}")
+        row.label(text=f"Loops: {item.Loop}")
+        row.label(text=f"Speed: {item.Speed:g}")
 
 
 # And now we can use this list everywhere in Blender. Here is a small example panel.
@@ -4845,7 +4848,10 @@ class AnimationPanel(bpy.types.Panel):
         box = layout.box()
         box.label(text="Animation Elements")
         _draw_legacy_animation_limits_box(box)
-        box.template_list(
+
+        row = box.row()
+        col = row.column()
+        col.template_list(
             "SCENE_UL_Battlezone_ANIM_Element",
             "",
             scene,
@@ -4854,19 +4860,23 @@ class AnimationPanel(bpy.types.Panel):
             "CurAnimation",
         )
 
+        col = row.column(align=True)
+        col.operator("bz.createanimelement", icon="ADD", text="")
+        col.operator("bz.deleteanimelement", icon="REMOVE", text="")
+        col.separator()
+        op = col.operator("bz.moveanimelement", icon="TRIA_UP", text="")
+        op.direction = "UP"
+        op = col.operator("bz.moveanimelement", icon="TRIA_DOWN", text="")
+        op.direction = "DOWN"
+
         actions = layout.box()
         actions.label(text="Actions")
         row = actions.row(align=True)
-        row.operator("bz.createanimelement", text="New Element")
-        row.operator("bz.duplicateanimelement", text="Duplicate")
-        row.operator("bz.deleteanimelement", text="Delete Element")
-        move_row = actions.row(align=True)
-        move_up = move_row.operator("bz.moveanimelement", text="Move Up")
-        move_up.direction = "UP"
-        move_down = move_row.operator("bz.moveanimelement", text="Move Down")
-        move_down.direction = "DOWN"
+        row.operator("bz.createanimelement", text="New Element", icon="ADD")
+        row.operator("bz.duplicateanimelement", text="Duplicate", icon="DUPLICATE")
+        row.operator("bz.deleteanimelement", text="Delete Element", icon="REMOVE")
         actions.operator_menu_enum(
-            "bz.apply_animation_preset", "preset", text="Add Preset Slots"
+            "bz.apply_animation_preset", "preset", text="Add Preset Slots", icon="PRESET"
         )
 
         editor = layout.box()
